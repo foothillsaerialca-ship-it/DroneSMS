@@ -5,7 +5,7 @@ export function ProtectedRoute() {
   const { status, profileState } = useAuth();
   const location = useLocation();
 
-  if (status === 'loading') {
+  if (status === 'loading' || (status === 'authenticated' && profileState === 'loading')) {
     return <p className="p-4 text-sm text-slate-600">Checking session…</p>;
   }
 

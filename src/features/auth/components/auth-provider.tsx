@@ -7,7 +7,7 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: PropsWithChildren) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [session, setSession] = useState<AuthContextValue['session']>(null);
-  const [profileState, setProfileState] = useState<ProfileState>('missing');
+  const [profileState, setProfileState] = useState<ProfileState>('loading');
 
   const refreshProfileState = useCallback(async () => {
     if (!session?.user?.id) {
@@ -15,18 +15,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return;
     }
 
+    setProfileState('loading');
+
     const { data, error } = await supabase
       .from('profiles')
       .select('id, company_name')
       .eq('id', session.user.id)
       .maybeSingle();
 
-    if (error) {
-      setProfileState('missing');
-      return;
-    }
-
-    if (!data) {
+    if (error || !data) {
       setProfileState('missing');
       return;
     }
