@@ -75,7 +75,7 @@ export function DashboardPage() {
             <p className="mt-2 text-sm text-slate-600">Today&apos;s safety, job, and readiness snapshot.</p>
           </div>
           <Link
-            to="/jobs"
+            to="/jobs/new"
             className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
           >
             Create Job
