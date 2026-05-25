@@ -35,23 +35,60 @@ export function CompanyOnboardingPage() {
       if (userError) throw userError;
       if (!userData.user) throw new Error('You must be signed in to finish company setup.');
 
-      const { data: organization, error: organizationError } = await supabase
-        .from('organizations')
-        .insert({
-          name: trimmedCompanyName,
-          part_107_number: trimmedPart107Number || null,
-          owner_user_id: userData.user.id
-        })
-        .select('id')
-        .single();
+      const { data: profile, error: profileLookupError } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', userData.user.id)
+        .maybeSingle();
 
-      if (organizationError) throw organizationError;
-      if (!organization) throw new Error('Company setup did not return an organization record.');
+      if (profileLookupError) throw profileLookupError;
+
+      let organizationId = profile?.organization_id ?? null;
+
+      if (!organizationId) {
+        const { data: ownedOrganizations, error: ownedOrganizationError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('owner_user_id', userData.user.id)
+          .limit(1);
+
+        if (ownedOrganizationError) throw ownedOrganizationError;
+
+        organizationId = ownedOrganizations?.[0]?.id ?? null;
+      }
+
+      if (organizationId) {
+        const { error: organizationUpdateError } = await supabase
+          .from('organizations')
+          .update({
+            name: trimmedCompanyName,
+            part_107_number: trimmedPart107Number || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', organizationId);
+
+        if (organizationUpdateError) throw organizationUpdateError;
+      } else {
+        const { data: organization, error: organizationError } = await supabase
+          .from('organizations')
+          .insert({
+            name: trimmedCompanyName,
+            part_107_number: trimmedPart107Number || null,
+            owner_user_id: userData.user.id
+          })
+          .select('id')
+          .single();
+
+        if (organizationError) throw organizationError;
+        if (!organization) throw new Error('Company setup did not return an organization record.');
+
+        organizationId = organization.id;
+      }
 
       const { error: profileError } = await supabase.from('profiles').upsert(
         {
           id: userData.user.id,
-          organization_id: organization.id,
+          organization_id: organizationId,
           company_name: trimmedCompanyName,
           updated_at: new Date().toISOString()
         },
