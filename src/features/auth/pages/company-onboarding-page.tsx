@@ -58,17 +58,23 @@ export function CompanyOnboardingPage() {
       }
 
       if (organizationId) {
-        const { error: organizationUpdateError } = await supabase
+        const { data: updatedOrganization, error: organizationUpdateError } = await supabase
           .from('organizations')
           .update({
             name: trimmedCompanyName,
             part_107_number: trimmedPart107Number || null,
             updated_at: new Date().toISOString()
           })
-          .eq('id', organizationId);
+          .eq('id', organizationId)
+          .select('id')
+          .maybeSingle();
 
         if (organizationUpdateError) throw organizationUpdateError;
-      } else {
+
+        organizationId = updatedOrganization?.id ?? null;
+      }
+
+      if (!organizationId) {
         const { data: organization, error: organizationError } = await supabase
           .from('organizations')
           .insert({
