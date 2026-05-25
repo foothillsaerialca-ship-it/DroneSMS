@@ -1,37 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { supabase } from '../../../integrations/supabase/client';
 
-type PlaceholderJob = {
+type Job = {
   id: string;
-  jobName: string;
-  serviceType: string;
-  jobLocation: string;
-  plannedDate: string;
-  status?: string;
+  name: string;
+  service_type: string;
+  location: string;
+  planned_date: string;
+  status: string;
 };
 
-const placeholderJobsKey = 'dronesms.jobs.placeholder';
-
-function isPlaceholderJob(value: unknown): value is PlaceholderJob {
-  if (!value || typeof value !== 'object') return false;
-
-  const job = value as Partial<PlaceholderJob>;
-  return (
-    typeof job.id === 'string' &&
-    typeof job.jobName === 'string' &&
-    typeof job.serviceType === 'string' &&
-    typeof job.jobLocation === 'string' &&
-    typeof job.plannedDate === 'string'
-  );
-}
-
-function loadPlaceholderJobs() {
-  try {
-    const storedJobs = JSON.parse(localStorage.getItem(placeholderJobsKey) ?? '[]') as unknown;
-    return Array.isArray(storedJobs) ? storedJobs.filter(isPlaceholderJob) : [];
-  } catch {
-    return [];
-  }
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Unable to load jobs. Please try again.';
 }
 
 function formatPlannedDate(plannedDate: string) {
@@ -44,7 +25,42 @@ function formatPlannedDate(plannedDate: string) {
 }
 
 export function JobsPage() {
-  const [jobs] = useState(loadPlaceholderJobs);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadJobs() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const { data, error: jobsError } = await supabase
+          .from('jobs')
+          .select('id, name, service_type, location, planned_date, status')
+          .order('planned_date', { ascending: true })
+          .order('created_at', { ascending: false });
+
+        if (jobsError) throw jobsError;
+        if (!isMounted) return;
+
+        setJobs((data ?? []) as Job[]);
+      } catch (loadError) {
+        if (!isMounted) return;
+        setError(getErrorMessage(loadError));
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+
+    void loadJobs();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <section className="space-y-4">
@@ -63,34 +79,49 @@ export function JobsPage() {
         </div>
       </div>
 
-      {jobs.length > 0 ? (
+      {isLoading ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
+          Loading jobs...
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm" role="alert">
+          <h2 className="text-base font-semibold text-red-800">Unable to load jobs</h2>
+          <p className="mt-2 text-sm text-red-700">{error}</p>
+        </div>
+      ) : null}
+
+      {!isLoading && !error && jobs.length > 0 ? (
         <div className="space-y-3">
           {jobs.map((job) => (
             <article key={job.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 className="text-base font-semibold text-brand-900">{job.jobName}</h2>
-                  <p className="mt-1 text-sm text-slate-600">{job.serviceType}</p>
+                  <h2 className="text-base font-semibold text-brand-900">{job.name}</h2>
+                  <p className="mt-1 text-sm text-slate-600">{job.service_type}</p>
                 </div>
                 <span className="inline-flex w-fit rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-brand-700">
-                  {job.status ?? 'Planned'}
+                  {job.status}
                 </span>
               </div>
 
               <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="font-medium text-slate-500">Location</dt>
-                  <dd className="mt-1 text-slate-700">{job.jobLocation}</dd>
+                  <dd className="mt-1 text-slate-700">{job.location}</dd>
                 </div>
                 <div>
                   <dt className="font-medium text-slate-500">Planned date</dt>
-                  <dd className="mt-1 text-slate-700">{formatPlannedDate(job.plannedDate)}</dd>
+                  <dd className="mt-1 text-slate-700">{formatPlannedDate(job.planned_date)}</dd>
                 </div>
               </dl>
             </article>
           ))}
         </div>
-      ) : (
+      ) : null}
+
+      {!isLoading && !error && jobs.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center shadow-sm">
           <h2 className="text-base font-semibold text-brand-900">No jobs yet</h2>
           <p className="mt-2 text-sm text-slate-600">Create your first job to start building an operations list.</p>
@@ -101,7 +132,7 @@ export function JobsPage() {
             New Job
           </Link>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }
