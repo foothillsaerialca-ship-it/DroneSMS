@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../../integrations/supabase/client';
 
 const serviceTypes = [
   'Cleaning Operations',
@@ -20,6 +21,31 @@ const initialFormState = {
   notes: ''
 };
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Unable to save job. Please try again.';
+}
+
+async function getCurrentOrganizationId(userId: string) {
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('organization_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileError) throw profileError;
+  if (profile?.organization_id) return profile.organization_id as string;
+
+  const { data: ownedOrganizations, error: organizationError } = await supabase
+    .from('organizations')
+    .select('id')
+    .eq('owner_user_id', userId)
+    .limit(1);
+
+  if (organizationError) throw organizationError;
+
+  return (ownedOrganizations?.[0]?.id as string | undefined) ?? null;
+}
+
 export function NewJobPage() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState(initialFormState);
@@ -38,7 +64,7 @@ export function NewJobPage() {
     return null;
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const validationError = validateForm();
@@ -50,20 +76,37 @@ export function NewJobPage() {
     setError(null);
     setIsSaving(true);
 
-    const savedJob = {
-      id: crypto.randomUUID(),
-      jobName: formData.jobName.trim(),
-      serviceType: formData.serviceType,
-      jobLocation: formData.jobLocation.trim(),
-      plannedDate: formData.plannedDate,
-      notes: formData.notes.trim(),
-      createdAt: new Date().toISOString()
-    };
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
 
-    const existingJobs = JSON.parse(localStorage.getItem('dronesms.jobs.placeholder') ?? '[]') as unknown[];
-    localStorage.setItem('dronesms.jobs.placeholder', JSON.stringify([savedJob, ...existingJobs]));
+      if (userError) throw userError;
+      if (!userData.user) throw new Error('You must be signed in to save a job.');
 
-    navigate('/jobs', { replace: true });
+      const organizationId = await getCurrentOrganizationId(userData.user.id);
+
+      if (!organizationId) {
+        throw new Error('Finish company onboarding before creating jobs.');
+      }
+
+      const { error: jobError } = await supabase.from('jobs').insert({
+        organization_id: organizationId,
+        user_id: userData.user.id,
+        name: formData.jobName.trim(),
+        service_type: formData.serviceType,
+        location: formData.jobLocation.trim(),
+        planned_date: formData.plannedDate,
+        notes: formData.notes.trim() || null,
+        status: 'Planned'
+      });
+
+      if (jobError) throw jobError;
+
+      navigate('/jobs', { replace: true });
+    } catch (saveError) {
+      setError(getErrorMessage(saveError));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
