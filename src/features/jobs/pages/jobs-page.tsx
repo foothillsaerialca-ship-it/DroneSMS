@@ -95,28 +95,34 @@ export function JobsPage() {
       {!isLoading && !error && jobs.length > 0 ? (
         <div className="space-y-3">
           {jobs.map((job) => (
-            <article key={job.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h2 className="text-base font-semibold text-brand-900">{job.name}</h2>
-                  <p className="mt-1 text-sm text-slate-600">{job.service_type}</p>
+            <Link
+              key={job.id}
+              to={`/jobs/${job.id}`}
+              className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-100"
+            >
+              <article>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-brand-900">{job.name}</h2>
+                    <p className="mt-1 text-sm text-slate-600">{job.service_type}</p>
+                  </div>
+                  <span className="inline-flex w-fit rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-brand-700">
+                    {job.status}
+                  </span>
                 </div>
-                <span className="inline-flex w-fit rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-brand-700">
-                  {job.status}
-                </span>
-              </div>
 
-              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="font-medium text-slate-500">Location</dt>
-                  <dd className="mt-1 text-slate-700">{job.location}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-slate-500">Planned date</dt>
-                  <dd className="mt-1 text-slate-700">{formatPlannedDate(job.planned_date)}</dd>
-                </div>
-              </dl>
-            </article>
+                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="font-medium text-slate-500">Location</dt>
+                    <dd className="mt-1 text-slate-700">{job.location}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-medium text-slate-500">Planned date</dt>
+                    <dd className="mt-1 text-slate-700">{formatPlannedDate(job.planned_date)}</dd>
+                  </div>
+                </dl>
+              </article>
+            </Link>
           ))}
         </div>
       ) : null}
