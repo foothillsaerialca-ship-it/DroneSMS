@@ -75,6 +75,31 @@ export function CompanyOnboardingPage() {
       }
 
       if (!organizationId) {
+        const { data: ownedOrganizations, error: ownedOrganizationError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('owner_user_id', userData.user.id)
+          .limit(1);
+
+        if (ownedOrganizationError) throw ownedOrganizationError;
+
+        organizationId = ownedOrganizations?.[0]?.id ?? null;
+      }
+
+      if (organizationId) {
+        const { error: ownedOrganizationUpdateError } = await supabase
+          .from('organizations')
+          .update({
+            name: trimmedCompanyName,
+            part_107_number: trimmedPart107Number || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', organizationId);
+
+        if (ownedOrganizationUpdateError) throw ownedOrganizationUpdateError;
+      }
+
+      if (!organizationId) {
         const { data: organization, error: organizationError } = await supabase
           .from('organizations')
           .insert({
