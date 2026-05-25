@@ -34,8 +34,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (profileLookupError) throw profileLookupError;
 
       if (profile?.organization_id) {
-        setProfileState('complete');
-        return;
+        const { data: linkedOrganization, error: linkedOrganizationError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('id', profile.organization_id)
+          .maybeSingle();
+
+        if (linkedOrganizationError) throw linkedOrganizationError;
+
+        if (linkedOrganization) {
+          setProfileState('complete');
+          return;
+        }
       }
 
       const { data: ownedOrganizations, error: organizationLookupError } = await supabase
