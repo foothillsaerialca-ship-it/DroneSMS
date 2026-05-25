@@ -7,6 +7,74 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to save company details. Please try again.';
 }
 
+async function findOwnedOrganizationId(userId: string) {
+  const { data, error } = await supabase.from('organizations').select('id').eq('owner_user_id', userId).limit(1);
+
+  if (error) throw error;
+
+  return data?.[0]?.id ?? null;
+}
+
+async function saveOrganization({
+  organizationId,
+  userId,
+  name,
+  part107Number
+}: {
+  organizationId: string | null;
+  userId: string;
+  name: string;
+  part107Number: string | null;
+}) {
+  const organizationChanges = {
+    name,
+    part_107_number: part107Number,
+    updated_at: new Date().toISOString()
+  };
+
+  if (organizationId) {
+    const { data, error } = await supabase
+      .from('organizations')
+      .update(organizationChanges)
+      .eq('id', organizationId)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data?.id) return data.id;
+  }
+
+  const ownedOrganizationId = await findOwnedOrganizationId(userId);
+
+  if (ownedOrganizationId) {
+    const { data, error } = await supabase
+      .from('organizations')
+      .update(organizationChanges)
+      .eq('id', ownedOrganizationId)
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    return data.id;
+  }
+
+  const { data, error } = await supabase
+    .from('organizations')
+    .insert({
+      name,
+      part_107_number: part107Number,
+      owner_user_id: userId
+    })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  if (!data) throw new Error('Company setup did not return an organization record.');
+
+  return data.id;
+}
+
 export function CompanyOnboardingPage() {
   const navigate = useNavigate();
   const { refreshProfileState } = useAuth();
@@ -35,23 +103,25 @@ export function CompanyOnboardingPage() {
       if (userError) throw userError;
       if (!userData.user) throw new Error('You must be signed in to finish company setup.');
 
-      const { data: organization, error: organizationError } = await supabase
-        .from('organizations')
-        .insert({
-          name: trimmedCompanyName,
-          part_107_number: trimmedPart107Number || null,
-          owner_user_id: userData.user.id
-        })
-        .select('id')
-        .single();
+      const { data: profile, error: profileLookupError } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', userData.user.id)
+        .maybeSingle();
 
-      if (organizationError) throw organizationError;
-      if (!organization) throw new Error('Company setup did not return an organization record.');
+      if (profileLookupError) throw profileLookupError;
+
+      const organizationId = await saveOrganization({
+        organizationId: profile?.organization_id ?? null,
+        userId: userData.user.id,
+        name: trimmedCompanyName,
+        part107Number: trimmedPart107Number || null
+      });
 
       const { error: profileError } = await supabase.from('profiles').upsert(
         {
           id: userData.user.id,
-          organization_id: organization.id,
+          organization_id: organizationId,
           company_name: trimmedCompanyName,
           updated_at: new Date().toISOString()
         },
