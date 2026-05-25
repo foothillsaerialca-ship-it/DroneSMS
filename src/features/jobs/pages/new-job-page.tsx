@@ -37,13 +37,29 @@ async function getCurrentOrganizationId(userId: string) {
 
   const { data: ownedOrganizations, error: organizationError } = await supabase
     .from('organizations')
-    .select('id')
+    .select('id, name')
     .eq('owner_user_id', userId)
     .limit(1);
 
   if (organizationError) throw organizationError;
 
-  return (ownedOrganizations?.[0]?.id as string | undefined) ?? null;
+  const organization = ownedOrganizations?.[0];
+
+  if (!organization) return null;
+
+  const { error: profileUpsertError } = await supabase.from('profiles').upsert(
+    {
+      id: userId,
+      organization_id: organization.id,
+      company_name: organization.name,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: 'id' }
+  );
+
+  if (profileUpsertError) throw profileUpsertError;
+
+  return organization.id as string;
 }
 
 export function NewJobPage() {
