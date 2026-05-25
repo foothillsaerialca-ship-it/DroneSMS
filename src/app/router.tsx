@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './shell';
 import { DashboardPage } from '../features/dashboard/pages/dashboard-page';
 import { JobsPage } from '../features/jobs/pages/jobs-page';
+import { NewJobPage } from '../features/jobs/pages/new-job-page';
 import { LoginPage } from '../features/auth/pages/login-page';
 import { RegisterPage } from '../features/auth/pages/register-page';
 import { CompanyOnboardingPage } from '../features/auth/pages/company-onboarding-page';
@@ -28,6 +29,7 @@ export function AppRouter() {
           <Route path="/onboarding/company" element={<CompanyOnboardingPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/jobs/new" element={<NewJobPage />} />
           <Route path="/jobs/:id" element={<PlaceholderPage title="Job Details" />} />
           <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
         </Route>
