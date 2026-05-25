@@ -208,13 +208,21 @@ export function JobDetailPage() {
             <p className="mt-2 text-sm text-slate-600">{job.service_type}</p>
           </div>
           {!isEditing ? (
-            <button
-              type="button"
-              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
-              onClick={() => setIsEditing(true)}
-            >
-              Edit
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Link
+                to={`/jobs/${job.id}/hub`}
+                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
+              >
+                Open Job File
+              </Link>
+              <button
+                type="button"
+                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:min-h-0 sm:py-2"
+                onClick={() => setIsEditing(true)}
+              >
+                Edit
+              </button>
+            </div>
           ) : null}
         </div>
       </div>
