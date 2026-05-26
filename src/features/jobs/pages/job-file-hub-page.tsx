@@ -3,12 +3,12 @@ import { Link, useParams } from 'react-router-dom';
 import { supabase } from '../../../integrations/supabase/client';
 
 const templateChecklist = [
-  'Job Hazard Analysis',
-  'Pre-Flight Checklist',
-  'Crew Briefing',
-  'LAANC / Airspace Log',
-  'Incident / No-Incident Closeout',
-  'Training Summary'
+  { name: 'Job Hazard Analysis', path: 'templates/jha' },
+  { name: 'Pre-Flight Checklist' },
+  { name: 'Crew Briefing' },
+  { name: 'LAANC / Airspace Log' },
+  { name: 'Incident / No-Incident Closeout' },
+  { name: 'Training Summary' }
 ];
 
 type Job = {
@@ -156,16 +156,34 @@ export function JobFileHubPage() {
       </div>
 
       <div className="space-y-3">
-        {templateChecklist.map((templateName) => (
-          <article key={templateName} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        {templateChecklist.map((template) => {
+          const content = (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base font-semibold text-brand-900">{templateName}</h2>
+              <h2 className="text-base font-semibold text-brand-900">{template.name}</h2>
               <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
                 Not started
               </span>
             </div>
-          </article>
-        ))}
+          );
+
+          if (template.path) {
+            return (
+              <Link
+                key={template.name}
+                to={`/jobs/${job.id}/${template.path}`}
+                className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-200 hover:bg-brand-50"
+              >
+                {content}
+              </Link>
+            );
+          }
+
+          return (
+            <article key={template.name} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              {content}
+            </article>
+          );
+        })}
       </div>
     </section>
   );
