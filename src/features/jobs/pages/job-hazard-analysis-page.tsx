@@ -8,9 +8,33 @@ const steps = [
   'Airspace',
   'Environmental',
   'Hazards',
-  'Crew Briefing & Certification'
+  'Crew Briefing & Communications'
 ];
 
+const surfaceTypeOptions = ['Asphalt', 'Concrete', 'Gravel', 'Dirt', 'Grass', 'Rooftop', 'Mixed Surface', 'Other'];
+const siteAccessOptions = [
+  'Open parking lot',
+  'Gated property',
+  'Roof access required',
+  'Public sidewalk nearby',
+  'Active vehicle traffic',
+  'Limited staging area',
+  'Uneven terrain',
+  'Narrow access point',
+  'Alley/rear access only',
+  'Other'
+];
+const exclusionZoneOptions = [
+  'Cones/signage used',
+  'Visual observer assigned',
+  'Ground crew monitoring perimeter',
+  'Public walkway controlled',
+  'Vehicle traffic separated',
+  'Work paused if public enters area',
+  'Restricted access established',
+  'Spotter assigned'
+];
+const communicationMethodOptions = ['Headsets', 'Radios', 'Cell Phones', 'Hand Signals', 'Other'];
 const weatherOptions = ['Clear', 'Partly Cloudy', 'Overcast', 'Light Rain'];
 const visibilityOptions = ['Excellent', 'Good', 'Fair', 'Poor'];
 const airspaceOptions = ['B', 'C', 'D', 'E', 'G'];
@@ -27,12 +51,22 @@ const citationOptions = [
   'OSHA HazCom',
   'Not Applicable'
 ];
+const citationGuidance: Record<string, string> = {
+  'Clean Water Act 402': 'This may apply if wash water or pollutants could enter a storm drain, ditch, creek, or waterway.',
+  'Clean Water Act 404': 'This may apply if work impacts wetlands or protected waters.',
+  FIFRA: 'This may apply if pesticides, disinfectants, or regulated chemicals are used.',
+  'CA DPR': 'This may apply for agricultural chemical applications in California.',
+  'Other State Ag Dept': 'This may apply if state agricultural rules cover the chemical use or application site.',
+  'OSHA HazCom': 'This may apply if workers handle hazardous chemicals requiring SDS/PPE communication.',
+  'Not Applicable': 'This may apply when no listed regulatory citation is relevant to the operation.'
+};
 const ppeOptions = [
   'Safety Glasses',
   'Chemical Resistant Gloves',
   'Non-Slip Footwear',
   'High-Vis Vest',
-  'Hearing Protection'
+  'Hearing Protection',
+  'Hard Hat'
 ];
 
 const probabilityHelp = ['Rare', 'Unlikely', 'Possible', 'Likely', 'Frequent'];
@@ -145,7 +179,8 @@ type HazardEntry = {
   notes: string;
 };
 
-type PpeRequirements = Record<string, boolean>;
+type StoredChecklistValue = boolean | string | string[];
+type PpeRequirements = Record<string, StoredChecklistValue>;
 
 type JhaFormState = {
   operatorCompany: string;
@@ -161,14 +196,17 @@ type JhaFormState = {
   weatherConditions: string;
   faaAirspaceClass: string;
   surfaceType: string;
+  surfaceTypeOther: string;
   buildingHeight: string;
   siteAccess: string;
+  siteAccessOther: string;
   windSpeed: string;
   weather: string;
   visibility: string;
   publicPresence: boolean;
   exclusionZonePlanned: boolean;
-  exclusionZoneDescription: string;
+  exclusionZoneControls: string[];
+  exclusionZoneComments: string;
   runoffRisk: boolean;
   chemicalType: string;
   containmentPlan: string;
@@ -186,6 +224,11 @@ type JhaFormState = {
   nearestHospital: string;
   emergencyContact: string;
   droneIncidentProcedure: string;
+  communicationMethods: string[];
+  communicationMethodOther: string;
+  radioChannel: string;
+  communicationPlanReviewed: boolean;
+  lostCommunicationProcedureReviewed: boolean;
   crewBriefed: boolean;
   controlsInPlace: boolean;
   stopWorkAuthorityAcknowledged: boolean;
@@ -268,6 +311,28 @@ function getInitialPpeRequirements(): PpeRequirements {
   }, {});
 }
 
+function getStoredString(value: StoredChecklistValue | undefined) {
+  return typeof value === 'string' ? value : '';
+}
+
+function getStoredArray(value: StoredChecklistValue | undefined) {
+  return Array.isArray(value) ? value : [];
+}
+
+function splitStoredOption(value: string | null | undefined, options: string[]) {
+  if (!value) return { option: '', other: '' };
+  if (options.includes(value)) return { option: value, other: '' };
+  return { option: 'Other', other: value };
+}
+
+function getEffectiveSurfaceType(formData: JhaFormState) {
+  return formData.surfaceType === 'Other' ? formData.surfaceTypeOther.trim() : formData.surfaceType;
+}
+
+function getEffectiveSiteAccess(formData: JhaFormState) {
+  return formData.siteAccess === 'Other' ? formData.siteAccessOther.trim() : formData.siteAccess;
+}
+
 function getInitialFormState(job: Job | null): JhaFormState {
   return {
     operatorCompany: '',
@@ -283,14 +348,17 @@ function getInitialFormState(job: Job | null): JhaFormState {
     weatherConditions: '',
     faaAirspaceClass: '',
     surfaceType: '',
+    surfaceTypeOther: '',
     buildingHeight: '',
     siteAccess: '',
+    siteAccessOther: '',
     windSpeed: '',
     weather: weatherOptions[0],
     visibility: visibilityOptions[0],
     publicPresence: false,
     exclusionZonePlanned: false,
-    exclusionZoneDescription: '',
+    exclusionZoneControls: [],
+    exclusionZoneComments: '',
     runoffRisk: false,
     chemicalType: '',
     containmentPlan: '',
@@ -308,6 +376,11 @@ function getInitialFormState(job: Job | null): JhaFormState {
     nearestHospital: '',
     emergencyContact: '',
     droneIncidentProcedure: defaultIncidentProcedure,
+    communicationMethods: [],
+    communicationMethodOther: '',
+    radioChannel: '',
+    communicationPlanReviewed: false,
+    lostCommunicationProcedureReviewed: false,
     crewBriefed: false,
     controlsInPlace: false,
     stopWorkAuthorityAcknowledged: false,
@@ -347,6 +420,10 @@ function toFormState(job: Job, assessment: JhaAssessment | null): JhaFormState {
   const defaults = getInitialFormState(job);
   if (!assessment) return defaults;
 
+  const ppeRequirements = normalizePpe(assessment.ppe_requirements);
+  const surfaceType = splitStoredOption(assessment.surface_type, surfaceTypeOptions);
+  const siteAccess = splitStoredOption(assessment.site_access, siteAccessOptions);
+
   return {
     ...defaults,
     operatorCompany: assessment.operator_company ?? '',
@@ -361,15 +438,18 @@ function toFormState(job: Job, assessment: JhaAssessment | null): JhaFormState {
     crewMembers: assessment.crew_members ?? '',
     weatherConditions: assessment.weather_conditions ?? '',
     faaAirspaceClass: assessment.faa_airspace_class ?? '',
-    surfaceType: assessment.surface_type ?? '',
+    surfaceType: surfaceType.option,
+    surfaceTypeOther: surfaceType.other,
     buildingHeight: assessment.building_height?.toString() ?? '',
-    siteAccess: assessment.site_access ?? '',
+    siteAccess: siteAccess.option,
+    siteAccessOther: siteAccess.other,
     windSpeed: assessment.wind_speed?.toString() ?? '',
     weather: assessment.weather ?? defaults.weather,
     visibility: assessment.visibility ?? defaults.visibility,
     publicPresence: Boolean(assessment.public_presence),
     exclusionZonePlanned: Boolean(assessment.exclusion_zone_planned),
-    exclusionZoneDescription: assessment.exclusion_zone_description ?? '',
+    exclusionZoneControls: getStoredArray(ppeRequirements.__exclusionZoneControls),
+    exclusionZoneComments: getStoredString(ppeRequirements.__exclusionZoneComments) || assessment.exclusion_zone_description ?? '',
     runoffRisk: Boolean(assessment.runoff_risk),
     chemicalType: assessment.chemical_type ?? '',
     containmentPlan: assessment.containment_plan ?? '',
@@ -383,10 +463,15 @@ function toFormState(job: Job, assessment: JhaAssessment | null): JhaFormState {
     disposalVendorNameContact: assessment.disposal_vendor_name_contact ?? '',
     laancRequired: assessment.laanc_required ?? defaults.laancRequired,
     hazardEntries: normalizeHazards(assessment.hazard_entries),
-    ppeRequirements: normalizePpe(assessment.ppe_requirements),
+    ppeRequirements,
     nearestHospital: assessment.nearest_hospital ?? '',
     emergencyContact: assessment.emergency_contact ?? '',
     droneIncidentProcedure: assessment.drone_incident_procedure ?? defaultIncidentProcedure,
+    communicationMethods: getStoredArray(ppeRequirements.__communicationMethods),
+    communicationMethodOther: getStoredString(ppeRequirements.__communicationMethodOther),
+    radioChannel: getStoredString(ppeRequirements.__radioChannel),
+    communicationPlanReviewed: Boolean(ppeRequirements.__communicationPlanReviewed),
+    lostCommunicationProcedureReviewed: Boolean(ppeRequirements.__lostCommunicationProcedureReviewed),
     crewBriefed: Boolean(assessment.crew_briefed),
     controlsInPlace: Boolean(assessment.controls_in_place),
     stopWorkAuthorityAcknowledged: Boolean(assessment.stop_work_authority_acknowledged),
@@ -420,7 +505,7 @@ function formatDate(value: string) {
 function getStepCompletion(formData: JhaFormState) {
   return [
     Boolean(formData.jhaNumber && formData.jobDate && formData.siteAddress && formData.jobTypeScope),
-    Boolean(formData.surfaceType && formData.windSpeed && formData.weather && formData.visibility),
+    Boolean(getEffectiveSurfaceType(formData) && formData.windSpeed && formData.weather && formData.visibility),
     Boolean(formData.faaAirspaceClass || formData.laancRequired),
     !formData.runoffRisk || Boolean(formData.containmentPlan),
     formData.hazardEntries.some((entry) => entry.description.trim() && entry.mitigation.trim()),
@@ -580,10 +665,20 @@ export function JobHazardAnalysisPage() {
     setSaveMessage(null);
   }
 
+  function toggleStringListField(field: 'exclusionZoneControls' | 'communicationMethods', value: string) {
+    setFormData((current) => {
+      if (!current) return current;
+      const selected = current[field];
+      const nextValue = selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value];
+      return { ...current, [field]: nextValue };
+    });
+    setSaveMessage(null);
+  }
+
   function validateForm(requireCompletion: boolean) {
     if (!formData) return 'Unable to save this JHA.';
     if (!requireCompletion) return null;
-    if (!formData.surfaceType.trim()) return 'Surface type is required.';
+    if (!getEffectiveSurfaceType(formData)) return 'Surface type is required.';
     if (!formData.windSpeed.trim()) return 'Wind speed is required.';
     if (!formData.weather) return 'Weather is required.';
     if (!formData.visibility) return 'Visibility is required.';
@@ -597,15 +692,22 @@ export function JobHazardAnalysisPage() {
     const incompleteHazard = completeHazards.find((entry) => !entry.description.trim() || !entry.mitigation.trim());
     if (incompleteHazard) return 'Each hazard needs a description and mitigation.';
 
-    if (formData.publicPresence && formData.exclusionZonePlanned && !formData.exclusionZoneDescription.trim()) {
-      return 'Describe the planned exclusion zone.';
+    if (formData.publicPresence && formData.exclusionZonePlanned && formData.exclusionZoneControls.length === 0) {
+      return 'Select at least one exclusion zone control.';
     }
 
     if (formData.runoffRisk && !formData.containmentPlan.trim()) return 'Containment plan is required when runoff risk is present.';
 
+    if (formData.communicationMethods.includes('Other') && !formData.communicationMethodOther.trim()) {
+      return 'Describe the other communication method.';
+    }
+
     if (formData.status === 'Complete') {
       if (!formData.crewBriefed || !formData.controlsInPlace || !formData.stopWorkAuthorityAcknowledged) {
         return 'Complete the RPIC certification acknowledgments before marking the JHA complete.';
+      }
+      if (!formData.communicationPlanReviewed || !formData.lostCommunicationProcedureReviewed) {
+        return 'Review the communication plan and lost communication procedure before marking the JHA complete.';
       }
       if (!formData.rpicPrintedName.trim()) return 'RPIC printed name is required before marking the JHA complete.';
     }
@@ -632,6 +734,17 @@ export function JobHazardAnalysisPage() {
       if (userError) throw userError;
       if (!userData.user) throw new Error('You must be signed in to save a JHA.');
 
+      const ppeRequirements = {
+        ...formData.ppeRequirements,
+        __exclusionZoneControls: formData.exclusionZoneControls,
+        __exclusionZoneComments: formData.exclusionZoneComments.trim(),
+        __communicationMethods: formData.communicationMethods,
+        __communicationMethodOther: formData.communicationMethodOther.trim(),
+        __radioChannel: formData.radioChannel.trim(),
+        __communicationPlanReviewed: formData.communicationPlanReviewed,
+        __lostCommunicationProcedureReviewed: formData.lostCommunicationProcedureReviewed
+      };
+
       const { error } = await supabase.from('jha_assessments').upsert(
         {
           job_id: job.id,
@@ -649,15 +762,15 @@ export function JobHazardAnalysisPage() {
           crew_members: formData.crewMembers.trim() || null,
           weather_conditions: formData.weatherConditions.trim() || null,
           faa_airspace_class: formData.faaAirspaceClass || null,
-          surface_type: formData.surfaceType.trim() || null,
+          surface_type: getEffectiveSurfaceType(formData) || null,
           building_height: parseNullableNumber(formData.buildingHeight),
-          site_access: formData.siteAccess.trim() || null,
+          site_access: getEffectiveSiteAccess(formData) || null,
           wind_speed: parseNullableNumber(formData.windSpeed),
           weather: formData.weather,
           visibility: formData.visibility,
           public_presence: formData.publicPresence,
           exclusion_zone_planned: formData.exclusionZonePlanned,
-          exclusion_zone_description: formData.exclusionZoneDescription.trim() || null,
+          exclusion_zone_description: formData.exclusionZoneComments.trim() || null,
           runoff_risk: formData.runoffRisk,
           chemical_type: formData.chemicalType.trim() || null,
           containment_plan: formData.containmentPlan.trim() || null,
@@ -672,7 +785,7 @@ export function JobHazardAnalysisPage() {
           laanc_required: formData.laancRequired,
           hazard_entries: formData.hazardEntries.map((entry) => ({ ...entry, riskScore: getRiskScore(entry) })),
           overall_risk_rating: overallRiskRating,
-          ppe_requirements: formData.ppeRequirements,
+          ppe_requirements: ppeRequirements,
           nearest_hospital: formData.nearestHospital.trim() || null,
           emergency_contact: formData.emergencyContact.trim() || null,
           drone_incident_procedure: formData.droneIncidentProcedure.trim() || null,
@@ -782,7 +895,14 @@ export function JobHazardAnalysisPage() {
           </div>
 
           {activeStep === 0 ? <MissionBasicsStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}
-          {activeStep === 1 ? <SiteConditionsStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}
+          {activeStep === 1 ? (
+            <SiteConditionsStep
+              formData={formData}
+              updateField={updateField}
+              toggleStringListField={toggleStringListField}
+              isSaving={isSaving}
+            />
+          ) : null}
           {activeStep === 2 ? <AirspaceStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}
           {activeStep === 3 ? (
             <EnvironmentalStep
@@ -807,6 +927,7 @@ export function JobHazardAnalysisPage() {
               formData={formData}
               updateField={updateField}
               togglePpe={togglePpe}
+              toggleStringListField={toggleStringListField}
               isSaving={isSaving}
             />
           ) : null}
@@ -936,18 +1057,26 @@ function MissionBasicsStep({
 function SiteConditionsStep({
   formData,
   updateField,
+  toggleStringListField,
   isSaving
 }: {
   formData: JhaFormState;
   updateField: <T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) => void;
+  toggleStringListField: (field: 'exclusionZoneControls' | 'communicationMethods', value: string) => void;
   isSaving: boolean;
 }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextInput label="Surface type" value={formData.surfaceType} onChange={(value) => updateField('surfaceType', value)} disabled={isSaving} required />
+        <SelectInput label="Surface type" value={formData.surfaceType} options={['', ...surfaceTypeOptions]} onChange={(value) => updateField('surfaceType', value)} disabled={isSaving} required />
+        {formData.surfaceType === 'Other' ? (
+          <TextInput label="Custom surface type" value={formData.surfaceTypeOther} onChange={(value) => updateField('surfaceTypeOther', value)} disabled={isSaving} required />
+        ) : null}
         <TextInput label="Building height (feet)" type="number" value={formData.buildingHeight} onChange={(value) => updateField('buildingHeight', value)} disabled={isSaving} />
-        <TextInput label="Site access" value={formData.siteAccess} onChange={(value) => updateField('siteAccess', value)} disabled={isSaving} />
+        <SelectInput label="Site access" value={formData.siteAccess} options={['', ...siteAccessOptions]} onChange={(value) => updateField('siteAccess', value)} disabled={isSaving} />
+        {formData.siteAccess === 'Other' ? (
+          <TextInput label="Custom site access" value={formData.siteAccessOther} onChange={(value) => updateField('siteAccessOther', value)} disabled={isSaving} />
+        ) : null}
         <TextInput label="Wind speed (MPH)" type="number" value={formData.windSpeed} onChange={(value) => updateField('windSpeed', value)} disabled={isSaving} required />
         <SelectInput label="Weather" value={formData.weather} options={weatherOptions} onChange={(value) => updateField('weather', value)} disabled={isSaving} />
         <SelectInput label="Visibility" value={formData.visibility} options={visibilityOptions} onChange={(value) => updateField('visibility', value)} disabled={isSaving} />
@@ -960,7 +1089,23 @@ function SiteConditionsStep({
           <div className="mt-3 space-y-3">
             <Checkbox label="Exclusion zone planned" checked={formData.exclusionZonePlanned} onChange={(checked) => updateField('exclusionZonePlanned', checked)} disabled={isSaving} />
             {formData.exclusionZonePlanned ? (
-              <TextArea label="Exclusion zone description" value={formData.exclusionZoneDescription} onChange={(value) => updateField('exclusionZoneDescription', value)} disabled={isSaving} />
+              <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+                <fieldset>
+                  <legend className="text-sm font-medium text-slate-700">Exclusion zone controls</legend>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    {exclusionZoneOptions.map((option) => (
+                      <Checkbox
+                        key={option}
+                        label={option}
+                        checked={formData.exclusionZoneControls.includes(option)}
+                        onChange={() => toggleStringListField('exclusionZoneControls', option)}
+                        disabled={isSaving}
+                      />
+                    ))}
+                  </div>
+                </fieldset>
+                <TextArea label="Additional exclusion zone comments" value={formData.exclusionZoneComments} onChange={(value) => updateField('exclusionZoneComments', value)} disabled={isSaving} />
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -1042,7 +1187,19 @@ function EnvironmentalStep({
           <legend className="text-sm font-medium text-slate-700">Regulatory citations</legend>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {citationOptions.map((citation) => (
-              <Checkbox key={citation} label={citation} checked={formData.regulatoryCitations.includes(citation)} onChange={() => toggleCitation(citation)} disabled={isSaving} />
+              <label key={citation} className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+                <span className="flex items-start gap-3 font-medium">
+                  <input
+                    className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700"
+                    type="checkbox"
+                    checked={formData.regulatoryCitations.includes(citation)}
+                    onChange={() => toggleCitation(citation)}
+                    disabled={isSaving}
+                  />
+                  <span>{citation}</span>
+                </span>
+                <span className="mt-2 block text-xs leading-5 text-slate-500">{citationGuidance[citation]}</span>
+              </label>
             ))}
           </div>
         </fieldset>
@@ -1146,11 +1303,13 @@ function CertificationStep({
   formData,
   updateField,
   togglePpe,
+  toggleStringListField,
   isSaving
 }: {
   formData: JhaFormState;
   updateField: <T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) => void;
   togglePpe: (option: string) => void;
+  toggleStringListField: (field: 'exclusionZoneControls' | 'communicationMethods', value: string) => void;
   isSaving: boolean;
 }) {
   return (
@@ -1159,7 +1318,7 @@ function CertificationStep({
         <legend className="text-sm font-medium text-slate-700">PPE Requirements</legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {ppeOptions.map((option) => (
-            <Checkbox key={option} label={option} checked={formData.ppeRequirements[option]} onChange={() => togglePpe(option)} disabled={isSaving} />
+            <Checkbox key={option} label={option} checked={Boolean(formData.ppeRequirements[option])} onChange={() => togglePpe(option)} disabled={isSaving} />
           ))}
         </div>
       </fieldset>
@@ -1173,11 +1332,41 @@ function CertificationStep({
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <h3 className="text-base font-semibold text-brand-900">Communications</h3>
+        <fieldset className="mt-3">
+          <legend className="text-sm font-medium text-slate-700">Communication Method</legend>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {communicationMethodOptions.map((option) => (
+              <Checkbox
+                key={option}
+                label={option}
+                checked={formData.communicationMethods.includes(option)}
+                onChange={() => toggleStringListField('communicationMethods', option)}
+                disabled={isSaving}
+              />
+            ))}
+          </div>
+        </fieldset>
+        {formData.communicationMethods.includes('Other') ? (
+          <div className="mt-3">
+            <TextInput label="Other communication method" value={formData.communicationMethodOther} onChange={(value) => updateField('communicationMethodOther', value)} disabled={isSaving} />
+          </div>
+        ) : null}
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <TextInput label="Radio frequency/channel assigned or discussed" value={formData.radioChannel} onChange={(value) => updateField('radioChannel', value)} disabled={isSaving} />
+          <div className="space-y-3 sm:pt-7">
+            <Checkbox label="Communication plan reviewed" checked={formData.communicationPlanReviewed} onChange={(checked) => updateField('communicationPlanReviewed', checked)} disabled={isSaving} />
+            <Checkbox label="Lost communication procedure reviewed" checked={formData.lostCommunicationProcedureReviewed} onChange={(checked) => updateField('lostCommunicationProcedureReviewed', checked)} disabled={isSaving} />
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
         <p className="text-sm text-slate-600">
           RPIC certifies that hazards were assessed, controls are in place before work begins, crew members were briefed, and stop-work authority is retained.
         </p>
         <div className="mt-4 space-y-3">
-          <Checkbox label="Crew briefed on hazards, controls, PPE, emergency procedures, and stop-work authority" checked={formData.crewBriefed} onChange={(checked) => updateField('crewBriefed', checked)} disabled={isSaving} />
+          <Checkbox label="Crew briefed on hazards, controls, PPE, emergency procedures, and communications" checked={formData.crewBriefed} onChange={(checked) => updateField('crewBriefed', checked)} disabled={isSaving} />
           <Checkbox label="Controls are in place before operations begin" checked={formData.controlsInPlace} onChange={(checked) => updateField('controlsInPlace', checked)} disabled={isSaving} />
           <Checkbox label="RPIC stop-work authority acknowledged" checked={formData.stopWorkAuthorityAcknowledged} onChange={(checked) => updateField('stopWorkAuthorityAcknowledged', checked)} disabled={isSaving} />
         </div>
@@ -1231,10 +1420,11 @@ function TextArea({ label, value, onChange, disabled }: FieldProps) {
   );
 }
 
-function SelectInput({ label, value, options, onChange, disabled }: FieldProps & { options: string[] }) {
+function SelectInput({ label, value, options, onChange, disabled, required }: FieldProps & { options: string[] }) {
   return (
     <label className="block text-sm font-medium text-slate-700">
       {label}
+      {required ? <span className="text-red-600"> *</span> : null}
       <select
         className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
         value={value}
