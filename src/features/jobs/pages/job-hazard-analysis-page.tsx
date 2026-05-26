@@ -2,15 +2,10 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '../../../integrations/supabase/client';
 
-const steps = [
-  'Mission Basics',
-  'Site Conditions',
-  'Airspace',
-  'Environmental',
-  'Hazards',
-  'Crew Briefing & Certification'
-];
-
+const steps = ['Mission Basics', 'Site Conditions', 'Airspace', 'Environmental', 'Hazards', 'Crew Briefing & Certification'];
+const groundSurfaceOptions = ['Asphalt', 'Concrete', 'Gravel', 'Grass', 'Dirt', 'Rooftop', 'Muddy/Wet', 'Mixed Surface', 'Other'];
+const workSurfaceOptions = ['Solar Panels', 'Building Facade', 'Windows / Glass', 'Roof', 'Agricultural Field', 'Tower / Structure', 'Parking Structure', 'Industrial Equipment', 'Other'];
+const siteConstraintOptions = ['Public sidewalk nearby', 'Active vehicle traffic', 'Limited staging area', 'Roof access required', 'Gated property', 'Uneven terrain', 'Narrow access point', 'Alley/rear access only', 'Other'];
 const weatherOptions = ['Clear', 'Partly Cloudy', 'Overcast', 'Light Rain'];
 const visibilityOptions = ['Excellent', 'Good', 'Fair', 'Poor'];
 const airspaceOptions = ['B', 'C', 'D', 'E', 'G'];
@@ -18,135 +13,32 @@ const laancOptions = ['Yes', 'No', 'Not Applicable'];
 const waterBodyTypeOptions = ['River', 'Stream', 'Lake', 'Pond', 'Irrigation Canal', 'Storm Drain', 'Wetland', 'Other'];
 const reclamationMethodOptions = ['Collection Tank', 'Absorbent Material', 'Containment Berm', 'Third Party Vendor', 'Not Required'];
 const statusOptions = ['Draft', 'Complete'];
-const citationOptions = [
-  'Clean Water Act 402',
-  'Clean Water Act 404',
-  'FIFRA',
-  'CA DPR',
-  'Other State Ag Dept',
-  'OSHA HazCom',
-  'Not Applicable'
-];
-const ppeOptions = [
-  'Safety Glasses',
-  'Chemical Resistant Gloves',
-  'Non-Slip Footwear',
-  'High-Vis Vest',
-  'Hearing Protection'
-];
-
+const citationOptions = ['Clean Water Act 402', 'Clean Water Act 404', 'FIFRA', 'CA DPR', 'Other State Ag Dept', 'OSHA HazCom', 'Not Applicable'];
+const ppeOptions = ['Safety Glasses', 'Chemical Resistant Gloves', 'Non-Slip Footwear', 'High-Vis Vest', 'Hearing Protection'];
 const probabilityHelp = ['Rare', 'Unlikely', 'Possible', 'Likely', 'Frequent'];
 const severityHelp = ['Minimal', 'Minor', 'Moderate', 'Serious', 'Catastrophic'];
+const today = new Date().toISOString().slice(0, 10);
+const defaultIncidentProcedure = 'Land immediately, secure area, assess injuries, notify RPIC, document, and report per FAA requirements if applicable.';
+const runoffHelperText = 'Storm drains may discharge directly to creeks, rivers, lakes, or oceans. Even non-chemical wash water may become contaminated after contacting surfaces.';
 
 const commonHazards = [
-  {
-    description: 'Drone fly-away or loss of control over public or personnel',
-    likelihood: 2,
-    severity: 5,
-    owner: 'RPIC',
-    controls:
-      'Pre-flight checks, VLOS maintained, visual observer assigned, exclusion zone established, emergency procedure briefed.'
-  },
-  {
-    description: 'Drone rotor strike to ground personnel or public',
-    likelihood: 2,
-    severity: 5,
-    owner: 'VO',
-    controls: 'Exclusion zone marked and enforced, VO monitors perimeter, public warning signage posted, site access controlled.'
-  },
-  {
-    description: 'Pressure equipment failure or hose burst',
-    likelihood: 3,
-    severity: 4,
-    owner: 'RPIC',
-    controls: 'Pre-job equipment inspection, pressure relief valve verified, hose hazard briefed, PPE worn by all crew.'
-  },
-  {
-    description: 'Hose trip hazard to crew or public',
-    likelihood: 4,
-    severity: 3,
-    owner: 'Crew',
-    controls: 'Hoses routed and secured, cones or barriers placed, ground crew maintains awareness, public exclusion enforced.'
-  },
-  {
-    description: 'Chemical or soft wash exposure to personnel',
-    likelihood: 3,
-    severity: 4,
-    owner: 'RPIC',
-    controls: 'SDS reviewed, PPE issued, dilution ratios verified, containment plan in place, eyewash available.'
-  },
-  {
-    description: 'Chemical runoff to storm drain or waterway',
-    likelihood: 3,
-    severity: 4,
-    owner: 'RPIC',
-    controls: 'Storm drain covered or blocked, containment berm deployed, runoff direction assessed, local requirements checked.'
-  },
-  {
-    description: 'Water or slip hazard on ground surface',
-    likelihood: 5,
-    severity: 3,
-    owner: 'Crew',
-    controls: 'Non-slip footwear required, wet surface signage posted, work area monitored continuously, crew briefed.'
-  },
-  {
-    description: 'Electrical hazard from overhead power lines',
-    likelihood: 2,
-    severity: 5,
-    owner: 'RPIC',
-    controls: 'Site survey identifies power lines, minimum clearance maintained, VO monitors proximity, suspend if clearance is unsafe.'
-  },
-  {
-    description: 'Battery fire or thermal runaway',
-    likelihood: 2,
-    severity: 4,
-    owner: 'RPIC',
-    controls: 'Battery inspection before flight, LiPo-safe transport, fire extinguisher on site, no charging near combustibles.'
-  },
-  {
-    description: 'Unauthorized airspace or LAANC violation',
-    likelihood: 2,
-    severity: 4,
-    owner: 'RPIC',
-    controls: 'Airspace checked before operation, LAANC authorization obtained where required, documentation stored in job file.'
-  },
-  {
-    description: 'Heat stress or dehydration',
-    likelihood: 4,
-    severity: 3,
-    owner: 'RPIC',
-    controls: 'Water on site, rest breaks scheduled, heat index monitored, work suspended if conditions exceed safe limits.'
-  }
-];
+  ['Drone fly-away or loss of control over public or personnel', 2, 5, 'RPIC', 'Pre-flight checks, VLOS maintained, visual observer assigned, exclusion zone established, emergency procedure briefed.'],
+  ['Drone rotor strike to ground personnel or public', 2, 5, 'VO', 'Exclusion zone marked and enforced, VO monitors perimeter, public warning signage posted, site access controlled.'],
+  ['Pressure equipment failure or hose burst', 3, 4, 'RPIC', 'Pre-job equipment inspection, pressure relief valve verified, hose hazard briefed, PPE worn by all crew.'],
+  ['Hose trip hazard to crew or public', 4, 3, 'Crew', 'Hoses routed and secured, cones or barriers placed, ground crew maintains awareness, public exclusion enforced.'],
+  ['Chemical or soft wash exposure to personnel', 3, 4, 'RPIC', 'SDS reviewed, PPE issued, dilution ratios verified, containment plan in place, eyewash available.'],
+  ['Contaminated runoff entering storm drains or waterways', 3, 4, 'RPIC', 'Storm drains and waterways identified, drains covered or blocked, containment berm deployed, runoff direction assessed, wash water contained where required.'],
+  ['Water or slip hazard on ground surface', 5, 3, 'Crew', 'Non-slip footwear required, wet surface signage posted, work area monitored continuously, crew briefed.'],
+  ['Electrical hazard from overhead power lines', 2, 5, 'RPIC', 'Site survey identifies power lines, minimum clearance maintained, VO monitors proximity, suspend if clearance is unsafe.'],
+  ['Battery fire or thermal runaway', 2, 4, 'RPIC', 'Battery inspection before flight, LiPo-safe transport, fire extinguisher on site, no charging near combustibles.'],
+  ['Unauthorized airspace or LAANC violation', 2, 4, 'RPIC', 'Airspace checked before operation, LAANC authorization obtained where required, documentation stored in job file.'],
+  ['Heat stress or dehydration', 4, 3, 'RPIC', 'Water on site, rest breaks scheduled, heat index monitored, work suspended if conditions exceed safe limits.']
+] as const;
 
-const today = new Date().toISOString().slice(0, 10);
-
-const defaultIncidentProcedure =
-  'Land immediately, secure area, assess injuries, notify RPIC, document, and report per FAA requirements if applicable.';
-
-type Job = {
-  id: string;
-  organization_id: string;
-  name: string;
-  service_type: string;
-  location: string;
-  planned_date: string;
-  status: string;
-};
-
-type HazardEntry = {
-  id: string;
-  description: string;
-  likelihood: number;
-  severity: number;
-  mitigation: string;
-  owner: string;
-  residualRisk: string;
-  notes: string;
-};
-
-type PpeRequirements = Record<string, boolean>;
-
+type Job = { id: string; organization_id: string; name: string; service_type: string; location: string; planned_date: string; status: string };
+type HazardEntry = { id: string; description: string; likelihood: number; severity: number; mitigation: string; owner: string; residualRisk: string; notes: string };
+type PpeValue = boolean | string | string[];
+type PpeRequirements = Record<string, PpeValue>;
 type JhaFormState = {
   operatorCompany: string;
   jhaNumber: string;
@@ -161,8 +53,14 @@ type JhaFormState = {
   weatherConditions: string;
   faaAirspaceClass: string;
   surfaceType: string;
+  surfaceTypeOther: string;
+  workSurfaceType: string;
+  workSurfaceTypeOther: string;
   buildingHeight: string;
   siteAccess: string;
+  siteAccessConstraints: string[];
+  siteAccessOther: string;
+  siteAccessNotes: string;
   windSpeed: string;
   weather: string;
   visibility: string;
@@ -194,78 +92,59 @@ type JhaFormState = {
   rpicPrintedName: string;
   status: string;
 };
-
-type JhaAssessment = {
-  operator_company: string | null;
-  jha_number: string | null;
-  remote_pilot_in_command: string | null;
-  date_prepared: string | null;
-  client_property_owner: string | null;
-  job_date: string | null;
-  site_address: string | null;
-  drone_platform: string | null;
-  job_type_scope: string | null;
-  crew_members: string | null;
-  weather_conditions: string | null;
-  faa_airspace_class: string | null;
-  surface_type: string | null;
-  building_height: number | null;
-  site_access: string | null;
-  wind_speed: number | null;
-  weather: string | null;
-  visibility: string | null;
-  public_presence: boolean | null;
-  exclusion_zone_planned: boolean | null;
-  exclusion_zone_description: string | null;
-  runoff_risk: boolean | null;
-  chemical_type: string | null;
-  containment_plan: string | null;
-  regulatory_citations: string[] | null;
-  water_body_proximity: boolean | null;
-  water_body_distance: number | null;
-  water_body_type: string | null;
-  secondary_containment_in_place: boolean | null;
-  reclamation_method: string | null;
-  reclamation_volume_estimate: number | null;
-  disposal_vendor_name_contact: string | null;
-  laanc_required: string | null;
-  hazard_entries: unknown;
-  ppe_requirements: unknown;
-  nearest_hospital: string | null;
-  emergency_contact: string | null;
-  drone_incident_procedure: string | null;
-  crew_briefed: boolean | null;
-  controls_in_place: boolean | null;
-  stop_work_authority_acknowledged: boolean | null;
-  assessor_name: string | null;
-  assessment_date: string | null;
-  rpic_printed_name: string | null;
-  status: string | null;
-};
+type JhaAssessment = Record<string, any>;
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
 }
 
 function createHazardEntry(overrides: Partial<HazardEntry> = {}): HazardEntry {
-  return {
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    description: '',
-    likelihood: 1,
-    severity: 1,
-    mitigation: '',
-    owner: '',
-    residualRisk: 'Low',
-    notes: '',
-    ...overrides
-  };
+  return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, description: '', likelihood: 1, severity: 1, mitigation: '', owner: '', residualRisk: 'Low', notes: '', ...overrides };
 }
 
 function getInitialPpeRequirements(): PpeRequirements {
-  return ppeOptions.reduce<PpeRequirements>((requirements, option) => {
-    requirements[option] = false;
-    return requirements;
-  }, {});
+  return ppeOptions.reduce<PpeRequirements>((requirements, option) => ({ ...requirements, [option]: false }), {});
+}
+
+function getStoredArray(value: PpeValue | undefined) {
+  return Array.isArray(value) ? value : [];
+}
+
+function getStoredString(value: PpeValue | undefined) {
+  return typeof value === 'string' ? value : '';
+}
+
+function splitStoredOption(value: string | null | undefined, options: string[]) {
+  if (!value) return { option: '', other: '' };
+  return options.includes(value) ? { option: value, other: '' } : { option: 'Other', other: value };
+}
+
+function getEffectiveGroundSurface(formData: JhaFormState) {
+  return formData.surfaceType === 'Other' ? formData.surfaceTypeOther.trim() : formData.surfaceType;
+}
+
+function getEffectiveWorkSurface(formData: JhaFormState) {
+  return formData.workSurfaceType === 'Other' ? formData.workSurfaceTypeOther.trim() : formData.workSurfaceType;
+}
+
+function getRiskScore(entry: HazardEntry) {
+  return entry.likelihood * entry.severity;
+}
+
+function getRiskRating(score: number) {
+  if (score >= 15) return 'High';
+  if (score >= 9) return 'Medium';
+  return 'Low';
+}
+
+function parseNullableNumber(value: string) {
+  return value.trim() ? Number(value) : null;
+}
+
+function formatDate(value: string) {
+  if (!value) return 'Not scheduled';
+  const [year, month, day] = value.split('-');
+  return year && month && day ? `${month}/${day}/${year}` : value;
 }
 
 function getInitialFormState(job: Job | null): JhaFormState {
@@ -283,8 +162,14 @@ function getInitialFormState(job: Job | null): JhaFormState {
     weatherConditions: '',
     faaAirspaceClass: '',
     surfaceType: '',
+    surfaceTypeOther: '',
+    workSurfaceType: '',
+    workSurfaceTypeOther: '',
     buildingHeight: '',
     siteAccess: '',
+    siteAccessConstraints: [],
+    siteAccessOther: '',
+    siteAccessNotes: '',
     windSpeed: '',
     weather: weatherOptions[0],
     visibility: visibilityOptions[0],
@@ -320,32 +205,23 @@ function getInitialFormState(job: Job | null): JhaFormState {
 
 function normalizeHazards(value: unknown) {
   if (!Array.isArray(value)) return [];
-
   return value.map((entry) => {
-    const item = entry as Partial<HazardEntry> & { riskScore?: number };
-    return {
-      id: item.id || createHazardEntry().id,
-      description: item.description ?? '',
-      likelihood: Number(item.likelihood) || 1,
-      severity: Number(item.severity) || 1,
-      mitigation: item.mitigation ?? '',
-      owner: item.owner ?? '',
-      residualRisk: item.residualRisk ?? 'Low',
-      notes: item.notes ?? ''
-    };
+    const item = entry as Partial<HazardEntry>;
+    return createHazardEntry({ id: item.id || createHazardEntry().id, description: item.description ?? '', likelihood: Number(item.likelihood) || 1, severity: Number(item.severity) || 1, mitigation: item.mitigation ?? '', owner: item.owner ?? '', residualRisk: item.residualRisk ?? 'Low', notes: item.notes ?? '' });
   });
 }
 
 function normalizePpe(value: unknown) {
-  const defaults = getInitialPpeRequirements();
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return defaults;
-
-  return { ...defaults, ...(value as PpeRequirements) };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return getInitialPpeRequirements();
+  return { ...getInitialPpeRequirements(), ...(value as PpeRequirements) };
 }
 
 function toFormState(job: Job, assessment: JhaAssessment | null): JhaFormState {
   const defaults = getInitialFormState(job);
   if (!assessment) return defaults;
+  const ppeRequirements = normalizePpe(assessment.ppe_requirements);
+  const groundSurface = splitStoredOption(assessment.surface_type, groundSurfaceOptions);
+  const workSurface = splitStoredOption(getStoredString(ppeRequirements.__workSurfaceType), workSurfaceOptions);
 
   return {
     ...defaults,
@@ -361,9 +237,15 @@ function toFormState(job: Job, assessment: JhaAssessment | null): JhaFormState {
     crewMembers: assessment.crew_members ?? '',
     weatherConditions: assessment.weather_conditions ?? '',
     faaAirspaceClass: assessment.faa_airspace_class ?? '',
-    surfaceType: assessment.surface_type ?? '',
+    surfaceType: groundSurface.option,
+    surfaceTypeOther: groundSurface.other,
+    workSurfaceType: workSurface.option,
+    workSurfaceTypeOther: workSurface.other,
     buildingHeight: assessment.building_height?.toString() ?? '',
     siteAccess: assessment.site_access ?? '',
+    siteAccessConstraints: getStoredArray(ppeRequirements.__siteAccessConstraints),
+    siteAccessOther: getStoredString(ppeRequirements.__siteAccessOther),
+    siteAccessNotes: (getStoredString(ppeRequirements.__siteAccessNotes) || assessment.site_access) ?? '',
     windSpeed: assessment.wind_speed?.toString() ?? '',
     weather: assessment.weather ?? defaults.weather,
     visibility: assessment.visibility ?? defaults.visibility,
@@ -383,7 +265,7 @@ function toFormState(job: Job, assessment: JhaAssessment | null): JhaFormState {
     disposalVendorNameContact: assessment.disposal_vendor_name_contact ?? '',
     laancRequired: assessment.laanc_required ?? defaults.laancRequired,
     hazardEntries: normalizeHazards(assessment.hazard_entries),
-    ppeRequirements: normalizePpe(assessment.ppe_requirements),
+    ppeRequirements,
     nearestHospital: assessment.nearest_hospital ?? '',
     emergencyContact: assessment.emergency_contact ?? '',
     droneIncidentProcedure: assessment.drone_incident_procedure ?? defaultIncidentProcedure,
@@ -397,30 +279,10 @@ function toFormState(job: Job, assessment: JhaAssessment | null): JhaFormState {
   };
 }
 
-function getRiskScore(entry: HazardEntry) {
-  return entry.likelihood * entry.severity;
-}
-
-function getRiskRating(score: number) {
-  if (score >= 15) return 'High';
-  if (score >= 9) return 'Medium';
-  return 'Low';
-}
-
-function parseNullableNumber(value: string) {
-  return value.trim() ? Number(value) : null;
-}
-
-function formatDate(value: string) {
-  if (!value) return 'Not scheduled';
-  const [year, month, day] = value.split('-');
-  return year && month && day ? `${month}/${day}/${year}` : value;
-}
-
 function getStepCompletion(formData: JhaFormState) {
   return [
     Boolean(formData.jhaNumber && formData.jobDate && formData.siteAddress && formData.jobTypeScope),
-    Boolean(formData.surfaceType && formData.windSpeed && formData.weather && formData.visibility),
+    Boolean(getEffectiveGroundSurface(formData) && getEffectiveWorkSurface(formData) && formData.windSpeed && formData.weather && formData.visibility),
     Boolean(formData.faaAirspaceClass || formData.laancRequired),
     !formData.runoffRisk || Boolean(formData.containmentPlan),
     formData.hazardEntries.some((entry) => entry.description.trim() && entry.mitigation.trim()),
@@ -441,63 +303,41 @@ export function JobHazardAnalysisPage() {
 
   useEffect(() => {
     let isMounted = true;
-
     async function loadJha() {
       if (!jobId) {
         setLoadError('Missing job id.');
         setIsLoading(false);
         return;
       }
-
       setIsLoading(true);
       setLoadError(null);
-
       try {
-        const { data: jobData, error: jobError } = await supabase
-          .from('jobs')
-          .select('id, organization_id, name, service_type, location, planned_date, status')
-          .eq('id', jobId)
-          .maybeSingle();
-
+        const { data: jobData, error: jobError } = await supabase.from('jobs').select('id, organization_id, name, service_type, location, planned_date, status').eq('id', jobId).maybeSingle();
         if (jobError) throw jobError;
         if (!jobData) throw new Error('Job not found.');
-
-        const { data: assessmentData, error: assessmentError } = await supabase
-          .from('jha_assessments')
-          .select('*')
-          .eq('job_id', jobId)
-          .maybeSingle();
-
+        const { data: assessmentData, error: assessmentError } = await supabase.from('jha_assessments').select('*').eq('job_id', jobId).maybeSingle();
         if (assessmentError) throw assessmentError;
         if (!isMounted) return;
-
         const loadedJob = jobData as Job;
         setJob(loadedJob);
         setFormData(toFormState(loadedJob, assessmentData as JhaAssessment | null));
       } catch (error) {
-        if (!isMounted) return;
-        setLoadError(getErrorMessage(error));
+        if (isMounted) setLoadError(getErrorMessage(error));
       } finally {
         if (isMounted) setIsLoading(false);
       }
     }
-
     void loadJha();
-
     return () => {
       isMounted = false;
     };
   }, [jobId]);
 
   const highestRiskScore = useMemo(() => {
-    if (!formData || formData.hazardEntries.length === 0) return 0;
+    if (!formData?.hazardEntries.length) return 0;
     return Math.max(...formData.hazardEntries.map(getRiskScore), 0);
   }, [formData]);
-
   const overallRiskRating = getRiskRating(highestRiskScore);
-  const hasHighRisk = highestRiskScore >= 15;
-  const stepCompletion = formData ? getStepCompletion(formData) : [];
-  const currentStepName = steps[activeStep];
 
   function updateField<T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) {
     setFormData((current) => (current ? { ...current, [field]: value } : current));
@@ -507,33 +347,19 @@ export function JobHazardAnalysisPage() {
   function updateHazard(index: number, field: keyof HazardEntry, value: string | number) {
     setFormData((current) => {
       if (!current) return current;
-      const hazardEntries = current.hazardEntries.map((entry, entryIndex) =>
-        entryIndex === index ? { ...entry, [field]: value } : entry
-      );
-      return { ...current, hazardEntries };
+      return { ...current, hazardEntries: current.hazardEntries.map((entry, entryIndex) => (entryIndex === index ? { ...entry, [field]: value } : entry)) };
     });
     setSaveMessage(null);
   }
 
   function addHazardFromSuggestion(hazard: (typeof commonHazards)[number]) {
     setFormData((current) => {
-      if (!current) return current;
-
-      const exists = current.hazardEntries.some((entry) => entry.description === hazard.description);
-      if (exists) return current;
-
+      if (!current || current.hazardEntries.some((entry) => entry.description === hazard[0])) return current;
       return {
         ...current,
         hazardEntries: [
           ...current.hazardEntries,
-          createHazardEntry({
-            description: hazard.description,
-            likelihood: hazard.likelihood,
-            severity: hazard.severity,
-            mitigation: hazard.controls,
-            owner: hazard.owner,
-            residualRisk: getRiskRating(hazard.likelihood * hazard.severity) === 'High' ? 'Medium' : 'Low'
-          })
+          createHazardEntry({ description: hazard[0], likelihood: hazard[1], severity: hazard[2], owner: hazard[3], mitigation: hazard[4], residualRisk: getRiskRating(hazard[1] * hazard[2]) === 'High' ? 'Medium' : 'Low' })
         ]
       };
     });
@@ -541,26 +367,19 @@ export function JobHazardAnalysisPage() {
   }
 
   function addCustomHazard() {
-    setFormData((current) =>
-      current ? { ...current, hazardEntries: [...current.hazardEntries, createHazardEntry()] } : current
-    );
+    setFormData((current) => (current ? { ...current, hazardEntries: [...current.hazardEntries, createHazardEntry()] } : current));
     setSaveMessage(null);
   }
 
   function removeHazard(index: number) {
-    setFormData((current) => {
-      if (!current) return current;
-      return { ...current, hazardEntries: current.hazardEntries.filter((_, entryIndex) => entryIndex !== index) };
-    });
+    setFormData((current) => (current ? { ...current, hazardEntries: current.hazardEntries.filter((_, entryIndex) => entryIndex !== index) } : current));
     setSaveMessage(null);
   }
 
   function toggleCitation(citation: string) {
     setFormData((current) => {
       if (!current) return current;
-      const regulatoryCitations = current.regulatoryCitations.includes(citation)
-        ? current.regulatoryCitations.filter((item) => item !== citation)
-        : [...current.regulatoryCitations, citation];
+      const regulatoryCitations = current.regulatoryCitations.includes(citation) ? current.regulatoryCitations.filter((item) => item !== citation) : [...current.regulatoryCitations, citation];
       return { ...current, regulatoryCitations };
     });
     setSaveMessage(null);
@@ -569,13 +388,7 @@ export function JobHazardAnalysisPage() {
   function togglePpe(option: string) {
     setFormData((current) => {
       if (!current) return current;
-      return {
-        ...current,
-        ppeRequirements: {
-          ...current.ppeRequirements,
-          [option]: !current.ppeRequirements[option]
-        }
-      };
+      return { ...current, ppeRequirements: { ...current.ppeRequirements, [option]: !current.ppeRequirements[option] } };
     });
     setSaveMessage(null);
   }
@@ -583,55 +396,54 @@ export function JobHazardAnalysisPage() {
   function validateForm(requireCompletion: boolean) {
     if (!formData) return 'Unable to save this JHA.';
     if (!requireCompletion) return null;
-    if (!formData.surfaceType.trim()) return 'Surface type is required.';
+    if (!getEffectiveGroundSurface(formData)) return 'Ground / Staging Surface is required.';
+    if (!getEffectiveWorkSurface(formData)) return 'Work Surface / Structure Type is required.';
     if (!formData.windSpeed.trim()) return 'Wind speed is required.';
     if (!formData.weather) return 'Weather is required.';
     if (!formData.visibility) return 'Visibility is required.';
     if (!formData.faaAirspaceClass && !formData.laancRequired) return 'Airspace class or LAANC status is required.';
+    if (formData.siteAccessConstraints.includes('Other') && !formData.siteAccessOther.trim()) return 'Describe the other site access or operational constraint.';
     if (!formData.assessorName.trim()) return 'Assessor name is required.';
     if (!formData.assessmentDate) return 'Assessment date is required.';
-
     const completeHazards = formData.hazardEntries.filter((entry) => entry.description.trim() || entry.mitigation.trim());
     if (completeHazards.length === 0) return 'Select or add at least one hazard.';
-
-    const incompleteHazard = completeHazards.find((entry) => !entry.description.trim() || !entry.mitigation.trim());
-    if (incompleteHazard) return 'Each hazard needs a description and mitigation.';
-
-    if (formData.publicPresence && formData.exclusionZonePlanned && !formData.exclusionZoneDescription.trim()) {
-      return 'Describe the planned exclusion zone.';
-    }
-
+    if (completeHazards.some((entry) => !entry.description.trim() || !entry.mitigation.trim())) return 'Each hazard needs a description and mitigation.';
+    if (formData.publicPresence && formData.exclusionZonePlanned && !formData.exclusionZoneDescription.trim()) return 'Describe the planned exclusion zone.';
     if (formData.runoffRisk && !formData.containmentPlan.trim()) return 'Containment plan is required when runoff risk is present.';
-
     if (formData.status === 'Complete') {
-      if (!formData.crewBriefed || !formData.controlsInPlace || !formData.stopWorkAuthorityAcknowledged) {
-        return 'Complete the RPIC certification acknowledgments before marking the JHA complete.';
-      }
+      if (!formData.crewBriefed || !formData.controlsInPlace || !formData.stopWorkAuthorityAcknowledged) return 'Complete the RPIC certification acknowledgments before marking the JHA complete.';
       if (!formData.rpicPrintedName.trim()) return 'RPIC printed name is required before marking the JHA complete.';
     }
-
     return null;
   }
 
   async function saveAssessment(options: { requireCompletion?: boolean; message?: string } = {}) {
     if (!job || !formData) return false;
-
     const validationError = validateForm(Boolean(options.requireCompletion));
     if (validationError) {
       setSaveError(validationError);
       setSaveMessage(null);
       return false;
     }
-
     setIsSaving(true);
     setSaveError(null);
     setSaveMessage(null);
-
     try {
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
       if (!userData.user) throw new Error('You must be signed in to save a JHA.');
-
+      const ppeRequirements = {
+        ...formData.ppeRequirements,
+        __workSurfaceType: getEffectiveWorkSurface(formData),
+        __siteAccessConstraints: formData.siteAccessConstraints,
+        __siteAccessOther: formData.siteAccessOther.trim(),
+        __siteAccessNotes: formData.siteAccessNotes.trim()
+      };
+      const siteAccessSummary = [
+        ...formData.siteAccessConstraints.filter((constraint) => constraint !== 'Other'),
+        formData.siteAccessConstraints.includes('Other') ? formData.siteAccessOther.trim() : '',
+        formData.siteAccessNotes.trim()
+      ].filter(Boolean).join('; ');
       const { error } = await supabase.from('jha_assessments').upsert(
         {
           job_id: job.id,
@@ -649,9 +461,9 @@ export function JobHazardAnalysisPage() {
           crew_members: formData.crewMembers.trim() || null,
           weather_conditions: formData.weatherConditions.trim() || null,
           faa_airspace_class: formData.faaAirspaceClass || null,
-          surface_type: formData.surfaceType.trim() || null,
+          surface_type: getEffectiveGroundSurface(formData) || null,
           building_height: parseNullableNumber(formData.buildingHeight),
-          site_access: formData.siteAccess.trim() || null,
+          site_access: siteAccessSummary || null,
           wind_speed: parseNullableNumber(formData.windSpeed),
           weather: formData.weather,
           visibility: formData.visibility,
@@ -672,7 +484,7 @@ export function JobHazardAnalysisPage() {
           laanc_required: formData.laancRequired,
           hazard_entries: formData.hazardEntries.map((entry) => ({ ...entry, riskScore: getRiskScore(entry) })),
           overall_risk_rating: overallRiskRating,
-          ppe_requirements: formData.ppeRequirements,
+          ppe_requirements: ppeRequirements,
           nearest_hospital: formData.nearestHospital.trim() || null,
           emergency_contact: formData.emergencyContact.trim() || null,
           drone_incident_procedure: formData.droneIncidentProcedure.trim() || null,
@@ -688,7 +500,6 @@ export function JobHazardAnalysisPage() {
         },
         { onConflict: 'job_id' }
       );
-
       if (error) throw error;
       setSaveMessage(options.message ?? 'Progress saved.');
       return true;
@@ -705,583 +516,93 @@ export function JobHazardAnalysisPage() {
     const saved = await saveAssessment({ message: 'Progress saved.' });
     if (saved) setActiveStep(stepIndex);
   }
-
   async function goNext() {
     if (activeStep >= steps.length - 1) return;
     const saved = await saveAssessment({ message: 'Progress saved.' });
     if (saved) setActiveStep((current) => Math.min(current + 1, steps.length - 1));
   }
-
   async function goBack() {
     if (activeStep <= 0) return;
     const saved = await saveAssessment({ message: 'Progress saved.' });
     if (saved) setActiveStep((current) => Math.max(current - 1, 0));
   }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await saveAssessment({ requireCompletion: true, message: 'JHA saved.' });
   }
 
-  if (isLoading) {
-    return (
-      <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-        Loading job hazard analysis...
-      </section>
-    );
-  }
-
+  if (isLoading) return <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">Loading job hazard analysis...</section>;
   if (loadError || !job || !formData) {
-    return (
-      <section className="space-y-4">
-        <Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to={jobId ? `/jobs/${jobId}/hub` : '/jobs'}>
-          Back to Job File
-        </Link>
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm" role="alert">
-          <h1 className="text-base font-semibold text-red-800">Unable to load JHA</h1>
-          <p className="mt-2 text-sm text-red-700">{loadError ?? 'Please try again.'}</p>
-        </div>
-      </section>
-    );
+    return <section className="space-y-4"><Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to={jobId ? `/jobs/${jobId}/hub` : '/jobs'}>Back to Job File</Link><div className="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm" role="alert"><h1 className="text-base font-semibold text-red-800">Unable to load JHA</h1><p className="mt-2 text-sm text-red-700">{loadError ?? 'Please try again.'}</p></div></section>;
   }
 
   return (
     <section className="space-y-4">
-      <Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to={`/jobs/${job.id}/hub`}>
-        Back to Job File
-      </Link>
-
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Pillar 2: Risk Management</p>
-            <h1 className="mt-1 text-2xl font-semibold text-brand-900">Job Hazard Analysis</h1>
-            <p className="mt-2 text-sm text-slate-600">
-              {job.name} - {job.service_type} - {formatDate(job.planned_date)}
-            </p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            <span className="font-medium text-slate-900">Overall risk:</span> {overallRiskRating || 'Low'}
-          </div>
-        </div>
-      </div>
-
-      <ProgressIndicator activeStep={activeStep} completedSteps={stepCompletion} onStepClick={goToStep} disabled={isSaving} />
-
-      {hasHighRisk ? (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm" role="alert">
-          Risk score of 15 or higher detected. Reduce or document controls before this job proceeds.
-        </div>
-      ) : null}
-
+      <Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to={`/jobs/${job.id}/hub`}>Back to Job File</Link>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-sm font-medium text-slate-500">Pillar 2: Risk Management</p><h1 className="mt-1 text-2xl font-semibold text-brand-900">Job Hazard Analysis</h1><p className="mt-2 text-sm text-slate-600">{job.name} - {job.service_type} - {formatDate(job.planned_date)}</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-medium text-slate-900">Overall risk:</span> {overallRiskRating}</div></div></div>
+      <ProgressIndicator activeStep={activeStep} completedSteps={getStepCompletion(formData)} onStepClick={goToStep} disabled={isSaving} />
+      {highestRiskScore >= 15 ? <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm" role="alert">Risk score of 15 or higher detected. Reduce or document controls before this job proceeds.</div> : null}
       <form className="space-y-4" onSubmit={handleSubmit}>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-          <div className="mb-5 flex flex-col gap-1">
-            <p className="text-sm font-medium text-slate-500">Step {activeStep + 1} of {steps.length}</p>
-            <h2 className="text-xl font-semibold text-brand-900">{currentStepName}</h2>
-          </div>
-
-          {activeStep === 0 ? <MissionBasicsStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}
-          {activeStep === 1 ? <SiteConditionsStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}
-          {activeStep === 2 ? <AirspaceStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}
-          {activeStep === 3 ? (
-            <EnvironmentalStep
-              formData={formData}
-              updateField={updateField}
-              toggleCitation={toggleCitation}
-              isSaving={isSaving}
-            />
-          ) : null}
-          {activeStep === 4 ? (
-            <HazardsStep
-              formData={formData}
-              updateHazard={updateHazard}
-              addHazardFromSuggestion={addHazardFromSuggestion}
-              addCustomHazard={addCustomHazard}
-              removeHazard={removeHazard}
-              isSaving={isSaving}
-            />
-          ) : null}
-          {activeStep === 5 ? (
-            <CertificationStep
-              formData={formData}
-              updateField={updateField}
-              togglePpe={togglePpe}
-              isSaving={isSaving}
-            />
-          ) : null}
-        </div>
-
-        {saveError ? (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
-            {saveError}
-          </p>
-        ) : null}
-        {saveMessage ? (
-          <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700" role="status">
-            {saveMessage}
-          </p>
-        ) : null}
-
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
-            className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:py-2"
-            onClick={goBack}
-            disabled={isSaving || activeStep === 0}
-          >
-            Back
-          </button>
-
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 sm:py-2"
-              onClick={() => saveAssessment({ message: 'Progress saved.' })}
-              disabled={isSaving}
-            >
-              {isSaving ? 'Saving...' : 'Save Progress'}
-            </button>
-            {activeStep < steps.length - 1 ? (
-              <button
-                type="button"
-                className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-                onClick={goNext}
-                disabled={isSaving}
-              >
-                {isSaving ? 'Saving...' : 'Next'}
-              </button>
-            ) : (
-              <button
-                type="submit"
-                className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-                disabled={isSaving}
-              >
-                {isSaving ? 'Saving...' : 'Save JHA'}
-              </button>
-            )}
-          </div>
-        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"><div className="mb-5 flex flex-col gap-1"><p className="text-sm font-medium text-slate-500">Step {activeStep + 1} of {steps.length}</p><h2 className="text-xl font-semibold text-brand-900">{steps[activeStep]}</h2></div>{activeStep === 0 ? <MissionBasicsStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}{activeStep === 1 ? <SiteConditionsStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}{activeStep === 2 ? <AirspaceStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}{activeStep === 3 ? <EnvironmentalStep formData={formData} updateField={updateField} toggleCitation={toggleCitation} isSaving={isSaving} /> : null}{activeStep === 4 ? <HazardsStep formData={formData} updateHazard={updateHazard} addHazardFromSuggestion={addHazardFromSuggestion} addCustomHazard={addCustomHazard} removeHazard={removeHazard} isSaving={isSaving} /> : null}{activeStep === 5 ? <CertificationStep formData={formData} updateField={updateField} togglePpe={togglePpe} isSaving={isSaving} /> : null}</div>
+        {saveError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{saveError}</p> : null}
+        {saveMessage ? <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700" role="status">{saveMessage}</p> : null}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:py-2" onClick={goBack} disabled={isSaving || activeStep === 0}>Back</button><div className="flex flex-col gap-2 sm:flex-row"><button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 sm:py-2" onClick={() => saveAssessment({ message: 'Progress saved.' })} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Progress'}</button>{activeStep < steps.length - 1 ? <button type="button" className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2" onClick={goNext} disabled={isSaving}>{isSaving ? 'Saving...' : 'Next'}</button> : <button type="submit" className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2" disabled={isSaving}>{isSaving ? 'Saving...' : 'Save JHA'}</button>}</div></div>
       </form>
     </section>
   );
 }
 
-function ProgressIndicator({
-  activeStep,
-  completedSteps,
-  onStepClick,
-  disabled
-}: {
-  activeStep: number;
-  completedSteps: boolean[];
-  onStepClick: (step: number) => void;
-  disabled: boolean;
-}) {
-  return (
-    <nav className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="JHA progress">
-      <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-        {steps.map((step, index) => {
-          const isActive = index === activeStep;
-          const isComplete = completedSteps[index];
-          return (
-            <li key={step}>
-              <button
-                type="button"
-                className={`min-h-11 w-full rounded-lg border px-3 py-2 text-left text-sm transition ${
-                  isActive
-                    ? 'border-brand-700 bg-brand-50 text-brand-900'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                }`}
-                onClick={() => onStepClick(index)}
-                disabled={disabled}
-              >
-                <span className="block text-xs font-semibold uppercase text-slate-500">Step {index + 1}</span>
-                <span className="mt-1 block font-semibold">{step}</span>
-                <span className="mt-1 block text-xs">{isComplete ? 'Started' : 'Not started'}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
+function ProgressIndicator({ activeStep, completedSteps, onStepClick, disabled }: { activeStep: number; completedSteps: boolean[]; onStepClick: (step: number) => void; disabled: boolean }) {
+  return <nav className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="JHA progress"><ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">{steps.map((step, index) => <li key={step}><button type="button" className={`min-h-11 w-full rounded-lg border px-3 py-2 text-left text-sm transition ${index === activeStep ? 'border-brand-700 bg-brand-50 text-brand-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`} onClick={() => onStepClick(index)} disabled={disabled}><span className="block text-xs font-semibold uppercase text-slate-500">Step {index + 1}</span><span className="mt-1 block font-semibold">{step}</span><span className="mt-1 block text-xs">{completedSteps[index] ? 'Started' : 'Not started'}</span></button></li>)}</ol></nav>;
 }
 
-function MissionBasicsStep({
-  formData,
-  updateField,
-  isSaving
-}: {
-  formData: JhaFormState;
-  updateField: <T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) => void;
-  isSaving: boolean;
-}) {
-  return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <TextInput label="Operator / Company" value={formData.operatorCompany} onChange={(value) => updateField('operatorCompany', value)} disabled={isSaving} />
-      <TextInput label="JHA Number" value={formData.jhaNumber} onChange={(value) => updateField('jhaNumber', value)} disabled={isSaving} />
-      <TextInput label="Remote Pilot in Command" value={formData.remotePilotInCommand} onChange={(value) => updateField('remotePilotInCommand', value)} disabled={isSaving} />
-      <TextInput label="Date Prepared" type="date" value={formData.datePrepared} onChange={(value) => updateField('datePrepared', value)} disabled={isSaving} />
-      <TextInput label="Client / Property Owner" value={formData.clientPropertyOwner} onChange={(value) => updateField('clientPropertyOwner', value)} disabled={isSaving} />
-      <TextInput label="Job Date" type="date" value={formData.jobDate} onChange={(value) => updateField('jobDate', value)} disabled={isSaving} />
-      <TextInput label="Site Address" value={formData.siteAddress} onChange={(value) => updateField('siteAddress', value)} disabled={isSaving} />
-      <TextInput label="Drone Platform" value={formData.dronePlatform} onChange={(value) => updateField('dronePlatform', value)} disabled={isSaving} />
-      <TextInput label="Job Type / Scope" value={formData.jobTypeScope} onChange={(value) => updateField('jobTypeScope', value)} disabled={isSaving} />
-      <TextInput label="Crew Members" value={formData.crewMembers} onChange={(value) => updateField('crewMembers', value)} disabled={isSaving} />
-    </div>
-  );
+type StepProps = { formData: JhaFormState; updateField: <T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) => void; isSaving: boolean };
+function MissionBasicsStep({ formData, updateField, isSaving }: StepProps) {
+  return <div className="grid gap-4 sm:grid-cols-2"><TextInput label="Operator / Company" value={formData.operatorCompany} onChange={(value) => updateField('operatorCompany', value)} disabled={isSaving} /><TextInput label="JHA Number" value={formData.jhaNumber} onChange={(value) => updateField('jhaNumber', value)} disabled={isSaving} /><TextInput label="Remote Pilot in Command" value={formData.remotePilotInCommand} onChange={(value) => updateField('remotePilotInCommand', value)} disabled={isSaving} /><TextInput label="Date Prepared" type="date" value={formData.datePrepared} onChange={(value) => updateField('datePrepared', value)} disabled={isSaving} /><TextInput label="Client / Property Owner" value={formData.clientPropertyOwner} onChange={(value) => updateField('clientPropertyOwner', value)} disabled={isSaving} /><TextInput label="Job Date" type="date" value={formData.jobDate} onChange={(value) => updateField('jobDate', value)} disabled={isSaving} /><TextInput label="Site Address" value={formData.siteAddress} onChange={(value) => updateField('siteAddress', value)} disabled={isSaving} /><TextInput label="Drone Platform" value={formData.dronePlatform} onChange={(value) => updateField('dronePlatform', value)} disabled={isSaving} /><TextInput label="Job Type / Scope" value={formData.jobTypeScope} onChange={(value) => updateField('jobTypeScope', value)} disabled={isSaving} /><TextInput label="Crew Members" value={formData.crewMembers} onChange={(value) => updateField('crewMembers', value)} disabled={isSaving} /></div>;
 }
 
-function SiteConditionsStep({
-  formData,
-  updateField,
-  isSaving
-}: {
-  formData: JhaFormState;
-  updateField: <T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) => void;
-  isSaving: boolean;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextInput label="Surface type" value={formData.surfaceType} onChange={(value) => updateField('surfaceType', value)} disabled={isSaving} required />
-        <TextInput label="Building height (feet)" type="number" value={formData.buildingHeight} onChange={(value) => updateField('buildingHeight', value)} disabled={isSaving} />
-        <TextInput label="Site access" value={formData.siteAccess} onChange={(value) => updateField('siteAccess', value)} disabled={isSaving} />
-        <TextInput label="Wind speed (MPH)" type="number" value={formData.windSpeed} onChange={(value) => updateField('windSpeed', value)} disabled={isSaving} required />
-        <SelectInput label="Weather" value={formData.weather} options={weatherOptions} onChange={(value) => updateField('weather', value)} disabled={isSaving} />
-        <SelectInput label="Visibility" value={formData.visibility} options={visibilityOptions} onChange={(value) => updateField('visibility', value)} disabled={isSaving} />
-        <TextInput label="Weather Conditions" value={formData.weatherConditions} onChange={(value) => updateField('weatherConditions', value)} disabled={isSaving} />
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <Checkbox label="Public presence" checked={formData.publicPresence} onChange={(checked) => updateField('publicPresence', checked)} disabled={isSaving} />
-        {formData.publicPresence ? (
-          <div className="mt-3 space-y-3">
-            <Checkbox label="Exclusion zone planned" checked={formData.exclusionZonePlanned} onChange={(checked) => updateField('exclusionZonePlanned', checked)} disabled={isSaving} />
-            {formData.exclusionZonePlanned ? (
-              <TextArea label="Exclusion zone description" value={formData.exclusionZoneDescription} onChange={(value) => updateField('exclusionZoneDescription', value)} disabled={isSaving} />
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
+function SiteConditionsStep({ formData, updateField, isSaving }: StepProps) {
+  function toggleConstraint(constraint: string) {
+    const constraints = formData.siteAccessConstraints.includes(constraint) ? formData.siteAccessConstraints.filter((item) => item !== constraint) : [...formData.siteAccessConstraints, constraint];
+    updateField('siteAccessConstraints', constraints);
+  }
+  return <div className="space-y-4"><div className="grid gap-4 sm:grid-cols-2"><SelectInput label="Ground / Staging Surface" value={formData.surfaceType} options={['', ...groundSurfaceOptions]} onChange={(value) => updateField('surfaceType', value)} disabled={isSaving} required />{formData.surfaceType === 'Other' ? <TextInput label="Custom ground / staging surface" value={formData.surfaceTypeOther} onChange={(value) => updateField('surfaceTypeOther', value)} disabled={isSaving} required /> : null}<SelectInput label="Work Surface / Structure Type" value={formData.workSurfaceType} options={['', ...workSurfaceOptions]} onChange={(value) => updateField('workSurfaceType', value)} disabled={isSaving} required />{formData.workSurfaceType === 'Other' ? <TextInput label="Custom work surface / structure type" value={formData.workSurfaceTypeOther} onChange={(value) => updateField('workSurfaceTypeOther', value)} disabled={isSaving} required /> : null}<TextInput label="Building height (feet)" type="number" value={formData.buildingHeight} onChange={(value) => updateField('buildingHeight', value)} disabled={isSaving} /><TextInput label="Wind speed (MPH)" type="number" value={formData.windSpeed} onChange={(value) => updateField('windSpeed', value)} disabled={isSaving} required /><SelectInput label="Weather" value={formData.weather} options={weatherOptions} onChange={(value) => updateField('weather', value)} disabled={isSaving} /><SelectInput label="Visibility" value={formData.visibility} options={visibilityOptions} onChange={(value) => updateField('visibility', value)} disabled={isSaving} /><TextInput label="Weather Conditions" value={formData.weatherConditions} onChange={(value) => updateField('weatherConditions', value)} disabled={isSaving} /></div><fieldset className="rounded-lg border border-slate-200 bg-slate-50 p-3"><legend className="px-1 text-sm font-medium text-slate-700">Site Access / Operational Constraints</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{siteConstraintOptions.map((constraint) => <Checkbox key={constraint} label={constraint} checked={formData.siteAccessConstraints.includes(constraint)} onChange={() => toggleConstraint(constraint)} disabled={isSaving} />)}</div>{formData.siteAccessConstraints.includes('Other') ? <div className="mt-3"><TextInput label="Custom site access / operational constraint" value={formData.siteAccessOther} onChange={(value) => updateField('siteAccessOther', value)} disabled={isSaving} /></div> : null}<div className="mt-3"><TextArea label="Additional site access / operational notes" value={formData.siteAccessNotes} onChange={(value) => updateField('siteAccessNotes', value)} disabled={isSaving} /></div></fieldset><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Public presence" checked={formData.publicPresence} onChange={(checked) => updateField('publicPresence', checked)} disabled={isSaving} />{formData.publicPresence ? <div className="mt-3 space-y-3"><Checkbox label="Exclusion zone planned" checked={formData.exclusionZonePlanned} onChange={(checked) => updateField('exclusionZonePlanned', checked)} disabled={isSaving} />{formData.exclusionZonePlanned ? <TextArea label="Exclusion zone description" value={formData.exclusionZoneDescription} onChange={(value) => updateField('exclusionZoneDescription', value)} disabled={isSaving} /> : null}</div> : null}</div></div>;
 }
 
-function AirspaceStep({
-  formData,
-  updateField,
-  isSaving
-}: {
-  formData: JhaFormState;
-  updateField: <T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) => void;
-  isSaving: boolean;
-}) {
-  return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <SelectInput label="FAA Airspace Class" value={formData.faaAirspaceClass} options={['', ...airspaceOptions]} onChange={(value) => updateField('faaAirspaceClass', value)} disabled={isSaving} />
-      <SelectInput label="LAANC required" value={formData.laancRequired} options={laancOptions} onChange={(value) => updateField('laancRequired', value)} disabled={isSaving} />
-      {formData.laancRequired === 'Yes' ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:col-span-2">
-          Keep LAANC authorization documentation in the job file before operations begin.
-        </div>
-      ) : null}
-    </div>
-  );
+function AirspaceStep({ formData, updateField, isSaving }: StepProps) {
+  return <div className="grid gap-4 sm:grid-cols-2"><SelectInput label="FAA Airspace Class" value={formData.faaAirspaceClass} options={['', ...airspaceOptions]} onChange={(value) => updateField('faaAirspaceClass', value)} disabled={isSaving} /><SelectInput label="LAANC required" value={formData.laancRequired} options={laancOptions} onChange={(value) => updateField('laancRequired', value)} disabled={isSaving} />{formData.laancRequired === 'Yes' ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:col-span-2">Keep LAANC authorization documentation in the job file before operations begin.</div> : null}</div>;
 }
 
-function EnvironmentalStep({
-  formData,
-  updateField,
-  toggleCitation,
-  isSaving
-}: {
-  formData: JhaFormState;
-  updateField: <T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) => void;
-  toggleCitation: (citation: string) => void;
-  isSaving: boolean;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <Checkbox label="Runoff risk" checked={formData.runoffRisk} onChange={(checked) => updateField('runoffRisk', checked)} disabled={isSaving} />
-        {formData.runoffRisk ? (
-          <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <TextInput label="Chemical type" value={formData.chemicalType} onChange={(value) => updateField('chemicalType', value)} disabled={isSaving} />
-            <TextInput label="Containment plan" value={formData.containmentPlan} onChange={(value) => updateField('containmentPlan', value)} disabled={isSaving} />
-          </div>
-        ) : null}
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <Checkbox label="Water body proximity" checked={formData.waterBodyProximity} onChange={(checked) => updateField('waterBodyProximity', checked)} disabled={isSaving} />
-        {formData.waterBodyProximity ? (
-          <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <TextInput label="Water body distance (feet)" type="number" value={formData.waterBodyDistance} onChange={(value) => updateField('waterBodyDistance', value)} disabled={isSaving} />
-            <SelectInput label="Water body type" value={formData.waterBodyType} options={waterBodyTypeOptions} onChange={(value) => updateField('waterBodyType', value)} disabled={isSaving} />
-          </div>
-        ) : null}
-      </div>
-
-      {(formData.runoffRisk || formData.waterBodyProximity) ? (
-        <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-3">
-          <Checkbox label="Secondary containment in place" checked={formData.secondaryContainmentInPlace} onChange={(checked) => updateField('secondaryContainmentInPlace', checked)} disabled={isSaving} />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <SelectInput label="Reclamation method" value={formData.reclamationMethod} options={reclamationMethodOptions} onChange={(value) => updateField('reclamationMethod', value)} disabled={isSaving} />
-            <TextInput label="Reclamation volume estimate (gallons)" type="number" value={formData.reclamationVolumeEstimate} onChange={(value) => updateField('reclamationVolumeEstimate', value)} disabled={isSaving} />
-            {formData.reclamationMethod === 'Third Party Vendor' ? (
-              <TextInput label="Disposal vendor name and contact" value={formData.disposalVendorNameContact} onChange={(value) => updateField('disposalVendorNameContact', value)} disabled={isSaving} />
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {(formData.runoffRisk || formData.waterBodyProximity) ? (
-        <fieldset>
-          <legend className="text-sm font-medium text-slate-700">Regulatory citations</legend>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {citationOptions.map((citation) => (
-              <Checkbox key={citation} label={citation} checked={formData.regulatoryCitations.includes(citation)} onChange={() => toggleCitation(citation)} disabled={isSaving} />
-            ))}
-          </div>
-        </fieldset>
-      ) : (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-          Advanced regulatory fields appear when runoff risk or water body proximity is selected.
-        </div>
-      )}
-    </div>
-  );
+function EnvironmentalStep({ formData, updateField, toggleCitation, isSaving }: StepProps & { toggleCitation: (citation: string) => void }) {
+  return <div className="space-y-4"><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Runoff risk" checked={formData.runoffRisk} onChange={(checked) => updateField('runoffRisk', checked)} disabled={isSaving} />{formData.runoffRisk ? <div className="mt-3 grid gap-4 sm:grid-cols-2"><TextInput label="Chemical type" value={formData.chemicalType} onChange={(value) => updateField('chemicalType', value)} disabled={isSaving} /><TextInput label="Containment plan" value={formData.containmentPlan} onChange={(value) => updateField('containmentPlan', value)} disabled={isSaving} /></div> : null}</div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Water body proximity" checked={formData.waterBodyProximity} onChange={(checked) => updateField('waterBodyProximity', checked)} disabled={isSaving} />{formData.waterBodyProximity ? <div className="mt-3 grid gap-4 sm:grid-cols-2"><TextInput label="Water body distance (feet)" type="number" value={formData.waterBodyDistance} onChange={(value) => updateField('waterBodyDistance', value)} disabled={isSaving} /><SelectInput label="Water body type" value={formData.waterBodyType} options={waterBodyTypeOptions} onChange={(value) => updateField('waterBodyType', value)} disabled={isSaving} /></div> : null}</div>{formData.runoffRisk || formData.waterBodyProximity ? <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-3"><Checkbox label="Secondary containment in place" checked={formData.secondaryContainmentInPlace} onChange={(checked) => updateField('secondaryContainmentInPlace', checked)} disabled={isSaving} /><div className="grid gap-4 sm:grid-cols-2"><SelectInput label="Reclamation method" value={formData.reclamationMethod} options={reclamationMethodOptions} onChange={(value) => updateField('reclamationMethod', value)} disabled={isSaving} /><TextInput label="Reclamation volume estimate (gallons)" type="number" value={formData.reclamationVolumeEstimate} onChange={(value) => updateField('reclamationVolumeEstimate', value)} disabled={isSaving} />{formData.reclamationMethod === 'Third Party Vendor' ? <TextInput label="Disposal vendor name and contact" value={formData.disposalVendorNameContact} onChange={(value) => updateField('disposalVendorNameContact', value)} disabled={isSaving} /> : null}</div></div> : null}{formData.runoffRisk || formData.waterBodyProximity ? <fieldset><legend className="text-sm font-medium text-slate-700">Regulatory citations</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{citationOptions.map((citation) => <Checkbox key={citation} label={citation} checked={formData.regulatoryCitations.includes(citation)} onChange={() => toggleCitation(citation)} disabled={isSaving} />)}</div></fieldset> : <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Advanced regulatory fields appear when runoff risk or water body proximity is selected.</div>}</div>;
 }
 
-function HazardsStep({
-  formData,
-  updateHazard,
-  addHazardFromSuggestion,
-  addCustomHazard,
-  removeHazard,
-  isSaving
-}: {
-  formData: JhaFormState;
-  updateHazard: (index: number, field: keyof HazardEntry, value: string | number) => void;
-  addHazardFromSuggestion: (hazard: (typeof commonHazards)[number]) => void;
-  addCustomHazard: () => void;
-  removeHazard: (index: number) => void;
-  isSaving: boolean;
-}) {
-  return (
-    <div className="space-y-5">
-      <div>
-        <h3 className="text-base font-semibold text-brand-900">Common hazards</h3>
-        <p className="mt-1 text-sm text-slate-600">Select common drone cleaning hazards to add them with editable suggested controls.</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {commonHazards.map((hazard) => {
-            const selected = formData.hazardEntries.some((entry) => entry.description === hazard.description);
-            return (
-              <button
-                key={hazard.description}
-                type="button"
-                className={`rounded-lg border p-3 text-left text-sm transition ${
-                  selected ? 'border-brand-700 bg-brand-50 text-brand-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-                onClick={() => addHazardFromSuggestion(hazard)}
-                disabled={isSaving || selected}
-              >
-                <span className="block font-semibold">{hazard.description}</span>
-                <span className="mt-1 block text-xs text-slate-500">Suggested owner: {hazard.owner}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:py-2" onClick={addCustomHazard} disabled={isSaving}>
-        Add Custom Hazard
-      </button>
-
-      <div className="space-y-4">
-        {formData.hazardEntries.length === 0 ? (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-            Select a common hazard above or add a custom hazard to begin the risk assessment.
-          </div>
-        ) : null}
-
-        {formData.hazardEntries.map((entry, index) => {
-          const score = getRiskScore(entry);
-          const rating = getRiskRating(score);
-          return (
-            <div key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <h3 className="text-sm font-semibold text-brand-900">Hazard {index + 1}</h3>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
-                    {rating} - {score}
-                  </span>
-                  <button type="button" className="text-sm font-medium text-red-700 disabled:text-slate-400" onClick={() => removeHazard(index)} disabled={isSaving}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                <TextArea label="Hazard description" value={entry.description} onChange={(value) => updateHazard(index, 'description', value)} disabled={isSaving} />
-                <TextArea label="Controls / Mitigation Measures" value={entry.mitigation} onChange={(value) => updateHazard(index, 'mitigation', value)} disabled={isSaving} />
-                <RangeSelect label="Likelihood" value={entry.likelihood} helper={probabilityHelp} onChange={(value) => updateHazard(index, 'likelihood', value)} disabled={isSaving} />
-                <RangeSelect label="Severity" value={entry.severity} helper={severityHelp} onChange={(value) => updateHazard(index, 'severity', value)} disabled={isSaving} />
-                <SelectInput label="Residual risk" value={entry.residualRisk} options={['Low', 'Medium', 'High']} onChange={(value) => updateHazard(index, 'residualRisk', value)} disabled={isSaving} />
-                <TextInput label="Notes / Owner" value={entry.owner} onChange={(value) => updateHazard(index, 'owner', value)} disabled={isSaving} />
-                <div className="sm:col-span-2">
-                  <TextArea label="Additional notes" value={entry.notes} onChange={(value) => updateHazard(index, 'notes', value)} disabled={isSaving} />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+function HazardsStep({ formData, updateHazard, addHazardFromSuggestion, addCustomHazard, removeHazard, isSaving }: { formData: JhaFormState; updateHazard: (index: number, field: keyof HazardEntry, value: string | number) => void; addHazardFromSuggestion: (hazard: (typeof commonHazards)[number]) => void; addCustomHazard: () => void; removeHazard: (index: number) => void; isSaving: boolean }) {
+  return <div className="space-y-5"><div><h3 className="text-base font-semibold text-brand-900">Common hazards</h3><p className="mt-1 text-sm text-slate-600">Select common drone cleaning hazards to add them with editable suggested controls.</p><p className="mt-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700">{runoffHelperText}</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{commonHazards.map((hazard) => { const selected = formData.hazardEntries.some((entry) => entry.description === hazard[0]); return <button key={hazard[0]} type="button" className={`rounded-lg border p-3 text-left text-sm transition ${selected ? 'border-brand-700 bg-brand-50 text-brand-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`} onClick={() => addHazardFromSuggestion(hazard)} disabled={isSaving || selected}><span className="block font-semibold">{hazard[0]}</span><span className="mt-1 block text-xs text-slate-500">Suggested owner: {hazard[3]}</span></button>; })}</div></div><button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:py-2" onClick={addCustomHazard} disabled={isSaving}>Add Custom Hazard</button>{formData.hazardEntries.length === 0 ? <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Select a common hazard above or add a custom hazard to begin the risk assessment.</div> : null}{formData.hazardEntries.map((entry, index) => <HazardCard key={entry.id} entry={entry} index={index} updateHazard={updateHazard} removeHazard={removeHazard} disabled={isSaving} />)}</div>;
 }
 
-function CertificationStep({
-  formData,
-  updateField,
-  togglePpe,
-  isSaving
-}: {
-  formData: JhaFormState;
-  updateField: <T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) => void;
-  togglePpe: (option: string) => void;
-  isSaving: boolean;
-}) {
-  return (
-    <div className="space-y-5">
-      <fieldset>
-        <legend className="text-sm font-medium text-slate-700">PPE Requirements</legend>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {ppeOptions.map((option) => (
-            <Checkbox key={option} label={option} checked={formData.ppeRequirements[option]} onChange={() => togglePpe(option)} disabled={isSaving} />
-          ))}
-        </div>
-      </fieldset>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextInput label="Nearest Hospital" value={formData.nearestHospital} onChange={(value) => updateField('nearestHospital', value)} disabled={isSaving} />
-        <TextInput label="Emergency Contact" value={formData.emergencyContact} onChange={(value) => updateField('emergencyContact', value)} disabled={isSaving} />
-        <div className="sm:col-span-2">
-          <TextArea label="Drone Incident Procedure" value={formData.droneIncidentProcedure} onChange={(value) => updateField('droneIncidentProcedure', value)} disabled={isSaving} />
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <p className="text-sm text-slate-600">
-          RPIC certifies that hazards were assessed, controls are in place before work begins, crew members were briefed, and stop-work authority is retained.
-        </p>
-        <div className="mt-4 space-y-3">
-          <Checkbox label="Crew briefed on hazards, controls, PPE, emergency procedures, and stop-work authority" checked={formData.crewBriefed} onChange={(checked) => updateField('crewBriefed', checked)} disabled={isSaving} />
-          <Checkbox label="Controls are in place before operations begin" checked={formData.controlsInPlace} onChange={(checked) => updateField('controlsInPlace', checked)} disabled={isSaving} />
-          <Checkbox label="RPIC stop-work authority acknowledged" checked={formData.stopWorkAuthorityAcknowledged} onChange={(checked) => updateField('stopWorkAuthorityAcknowledged', checked)} disabled={isSaving} />
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextInput label="Assessor name" value={formData.assessorName} onChange={(value) => updateField('assessorName', value)} disabled={isSaving} required />
-        <TextInput label="Assessment date" type="date" value={formData.assessmentDate} onChange={(value) => updateField('assessmentDate', value)} disabled={isSaving} required />
-        <TextInput label="RPIC Printed Name" value={formData.rpicPrintedName} onChange={(value) => updateField('rpicPrintedName', value)} disabled={isSaving} />
-        <SelectInput label="Status" value={formData.status} options={statusOptions} onChange={(value) => updateField('status', value)} disabled={isSaving} />
-      </div>
-    </div>
-  );
+function HazardCard({ entry, index, updateHazard, removeHazard, disabled }: { entry: HazardEntry; index: number; updateHazard: (index: number, field: keyof HazardEntry, value: string | number) => void; removeHazard: (index: number) => void; disabled: boolean }) {
+  const score = getRiskScore(entry);
+  return <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h3 className="text-sm font-semibold text-brand-900">Hazard {index + 1}</h3><div className="flex items-center gap-2"><span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{getRiskRating(score)} - {score}</span><button type="button" className="text-sm font-medium text-red-700 disabled:text-slate-400" onClick={() => removeHazard(index)} disabled={disabled}>Remove</button></div></div><div className="mt-3 grid gap-4 sm:grid-cols-2"><TextArea label="Hazard description" value={entry.description} onChange={(value) => updateHazard(index, 'description', value)} disabled={disabled} /><TextArea label="Controls / Mitigation Measures" value={entry.mitigation} onChange={(value) => updateHazard(index, 'mitigation', value)} disabled={disabled} /><RangeSelect label="Likelihood" value={entry.likelihood} helper={probabilityHelp} onChange={(value) => updateHazard(index, 'likelihood', value)} disabled={disabled} /><RangeSelect label="Severity" value={entry.severity} helper={severityHelp} onChange={(value) => updateHazard(index, 'severity', value)} disabled={disabled} /><SelectInput label="Residual risk" value={entry.residualRisk} options={['Low', 'Medium', 'High']} onChange={(value) => updateHazard(index, 'residualRisk', value)} disabled={disabled} /><TextInput label="Notes / Owner" value={entry.owner} onChange={(value) => updateHazard(index, 'owner', value)} disabled={disabled} /><div className="sm:col-span-2"><TextArea label="Additional notes" value={entry.notes} onChange={(value) => updateHazard(index, 'notes', value)} disabled={disabled} /></div></div></div>;
 }
 
-type FieldProps = {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-  required?: boolean;
-};
+function CertificationStep({ formData, updateField, togglePpe, isSaving }: StepProps & { togglePpe: (option: string) => void }) {
+  return <div className="space-y-5"><fieldset><legend className="text-sm font-medium text-slate-700">PPE Requirements</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{ppeOptions.map((option) => <Checkbox key={option} label={option} checked={Boolean(formData.ppeRequirements[option])} onChange={() => togglePpe(option)} disabled={isSaving} />)}</div></fieldset><div className="grid gap-4 sm:grid-cols-2"><TextInput label="Nearest Hospital" value={formData.nearestHospital} onChange={(value) => updateField('nearestHospital', value)} disabled={isSaving} /><TextInput label="Emergency Contact" value={formData.emergencyContact} onChange={(value) => updateField('emergencyContact', value)} disabled={isSaving} /><div className="sm:col-span-2"><TextArea label="Drone Incident Procedure" value={formData.droneIncidentProcedure} onChange={(value) => updateField('droneIncidentProcedure', value)} disabled={isSaving} /></div></div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-sm text-slate-600">RPIC certifies that hazards were assessed, controls are in place before work begins, crew members were briefed, and stop-work authority is retained.</p><div className="mt-4 space-y-3"><Checkbox label="Crew briefed on hazards, controls, PPE, emergency procedures, and stop-work authority" checked={formData.crewBriefed} onChange={(checked) => updateField('crewBriefed', checked)} disabled={isSaving} /><Checkbox label="Controls are in place before operations begin" checked={formData.controlsInPlace} onChange={(checked) => updateField('controlsInPlace', checked)} disabled={isSaving} /><Checkbox label="RPIC stop-work authority acknowledged" checked={formData.stopWorkAuthorityAcknowledged} onChange={(checked) => updateField('stopWorkAuthorityAcknowledged', checked)} disabled={isSaving} /></div></div><div className="grid gap-4 sm:grid-cols-2"><TextInput label="Assessor name" value={formData.assessorName} onChange={(value) => updateField('assessorName', value)} disabled={isSaving} required /><TextInput label="Assessment date" type="date" value={formData.assessmentDate} onChange={(value) => updateField('assessmentDate', value)} disabled={isSaving} required /><TextInput label="RPIC Printed Name" value={formData.rpicPrintedName} onChange={(value) => updateField('rpicPrintedName', value)} disabled={isSaving} /><SelectInput label="Status" value={formData.status} options={statusOptions} onChange={(value) => updateField('status', value)} disabled={isSaving} /></div></div>;
+}
 
+type FieldProps = { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; required?: boolean };
 function TextInput({ label, value, onChange, disabled, required, type = 'text' }: FieldProps & { type?: string }) {
-  return (
-    <label className="block text-sm font-medium text-slate-700">
-      {label}
-      {required ? <span className="text-red-600"> *</span> : null}
-      <input
-        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-      />
-    </label>
-  );
+  return <label className="block text-sm font-medium text-slate-700">{label}{required ? <span className="text-red-600"> *</span> : null}<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm" type={type} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} /></label>;
 }
-
 function TextArea({ label, value, onChange, disabled }: FieldProps) {
-  return (
-    <label className="block text-sm font-medium text-slate-700">
-      {label}
-      <textarea
-        className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-      />
-    </label>
-  );
+  return <label className="block text-sm font-medium text-slate-700">{label}<textarea className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} /></label>;
 }
-
-function SelectInput({ label, value, options, onChange, disabled }: FieldProps & { options: string[] }) {
-  return (
-    <label className="block text-sm font-medium text-slate-700">
-      {label}
-      <select
-        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-      >
-        {options.map((option) => (
-          <option key={option || 'blank'} value={option}>
-            {option || 'Select one'}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+function SelectInput({ label, value, options, onChange, disabled, required }: FieldProps & { options: string[] }) {
+  return <label className="block text-sm font-medium text-slate-700">{label}{required ? <span className="text-red-600"> *</span> : null}<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>{options.map((option) => <option key={option || 'blank'} value={option}>{option || 'Select one'}</option>)}</select></label>;
 }
-
 function RangeSelect({ label, value, helper, onChange, disabled }: { label: string; value: number; helper: string[]; onChange: (value: number) => void; disabled?: boolean }) {
-  return (
-    <label className="block text-sm font-medium text-slate-700">
-      {label}
-      <select
-        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        disabled={disabled}
-      >
-        {[1, 2, 3, 4, 5].map((score) => (
-          <option key={score} value={score}>
-            {score} - {helper[score - 1]}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+  return <label className="block text-sm font-medium text-slate-700">{label}<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm" value={value} onChange={(event) => onChange(Number(event.target.value))} disabled={disabled}>{[1, 2, 3, 4, 5].map((score) => <option key={score} value={score}>{score} - {helper[score - 1]}</option>)}</select></label>;
 }
-
 function Checkbox({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
-  return (
-    <label className="flex items-start gap-3 text-sm font-medium text-slate-700">
-      <input
-        className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700"
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        disabled={disabled}
-      />
-      <span>{label}</span>
-    </label>
-  );
+  return <label className="flex items-start gap-3 text-sm font-medium text-slate-700"><input className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} disabled={disabled} /><span>{label}</span></label>;
 }
