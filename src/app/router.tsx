@@ -6,6 +6,7 @@ import { NewJobPage } from '../features/jobs/pages/new-job-page';
 import { JobDetailPage } from '../features/jobs/pages/job-detail-page';
 import { JobFileHubPage } from '../features/jobs/pages/job-file-hub-page';
 import { JobHazardAnalysisPage } from '../features/jobs/pages/job-hazard-analysis-page';
+import { PreflightChecklistPage } from '../features/preflight/pages/preflight-checklist-page';
 import { LoginPage } from '../features/auth/pages/login-page';
 import { RegisterPage } from '../features/auth/pages/register-page';
 import { CompanyOnboardingPage } from '../features/auth/pages/company-onboarding-page';
@@ -36,6 +37,7 @@ export function AppRouter() {
           <Route path="/jobs/:jobId" element={<JobDetailPage />} />
           <Route path="/jobs/:jobId/hub" element={<JobFileHubPage />} />
           <Route path="/jobs/:jobId/templates/jha" element={<JobHazardAnalysisPage />} />
+          <Route path="/jobs/:jobId/templates/preflight" element={<PreflightChecklistPage />} />
           <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
         </Route>
       </Route>

@@ -4,7 +4,7 @@ import { supabase } from '../../../integrations/supabase/client';
 
 const templateChecklist = [
   { name: 'Job Hazard Analysis', path: 'templates/jha' },
-  { name: 'Pre-Flight Checklist' },
+  { name: 'Pre-Flight Checklist', path: 'templates/preflight' },
   { name: 'Crew Briefing' },
   { name: 'LAANC / Airspace Log' },
   { name: 'Incident / No-Incident Closeout' },
