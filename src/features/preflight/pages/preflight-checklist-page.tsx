@@ -64,7 +64,15 @@ const statusLabels = { Draft: 'Draft', Complete: 'Complete' } as const;
 type ChecklistStatus = keyof typeof statusLabels;
 type Job = { id: string; organization_id: string; name: string; service_type: string; location: string; planned_date: string | null; status: string };
 type Checklist = Record<ChecklistKey, boolean> & { notes: string; status: ChecklistStatus };
-type PreflightChecklistRow = Partial<Record<ChecklistKey, boolean>> & { notes: string | null; status: string | null };
+type PreflightChecklistRow = Partial<Record<ChecklistKey, boolean>> & { id: string; notes: string | null; status: string | null };
+type ChecklistPayload = Record<ChecklistKey, boolean> & {
+  job_id: string;
+  organization_id: string;
+  user_id: string;
+  notes: string | null;
+  status: ChecklistStatus;
+  updated_at: string;
+};
 
 const emptyChecklist: Checklist = {
   aircraft_selected: false,
@@ -87,8 +95,14 @@ const emptyChecklist: Checklist = {
   status: 'Draft'
 };
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to load the pre-flight checklist. Please try again.';
+function getErrorMessage(error: unknown, fallback = 'Unable to load the pre-flight checklist. Please try again.') {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = String(error.message);
+    if (message) return message;
+  }
+
+  return fallback;
 }
 
 function toChecklist(row: PreflightChecklistRow | null): Checklist {
@@ -148,6 +162,8 @@ export function PreflightChecklistPage() {
           .from('preflight_checklists')
           .select('*')
           .eq('job_id', jobId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
         if (checklistError) throw checklistError;
         if (!isMounted) return;
@@ -201,24 +217,42 @@ export function PreflightChecklistPage() {
       if (userError) throw userError;
       if (!userData.user) throw new Error('You must be signed in to save a pre-flight checklist.');
 
-      const { error } = await supabase.from('preflight_checklists').upsert(
-        {
-          ...Object.fromEntries(allItems.map(({ key }) => [key, checklist[key]])),
-          job_id: job.id,
-          organization_id: job.organization_id,
-          user_id: userData.user.id,
-          notes: checklist.notes.trim() || null,
-          status,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'job_id' }
-      );
-      if (error) throw error;
+      const payload: ChecklistPayload = {
+        ...(Object.fromEntries(allItems.map(({ key }) => [key, checklist[key]])) as Record<ChecklistKey, boolean>),
+        job_id: job.id,
+        organization_id: job.organization_id,
+        user_id: userData.user.id,
+        notes: checklist.notes.trim() || null,
+        status,
+        updated_at: new Date().toISOString()
+      };
 
-      setChecklist((current) => ({ ...current, status }));
+      const { data: existingChecklist, error: existingChecklistError } = await supabase
+        .from('preflight_checklists')
+        .select('id')
+        .eq('job_id', job.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingChecklistError) throw existingChecklistError;
+
+      if (existingChecklist) {
+        const { error } = await supabase.from('preflight_checklists').update(payload).eq('id', existingChecklist.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('preflight_checklists').insert(payload);
+        if (error) throw error;
+      }
+
+      setChecklist((current) => ({
+        ...current,
+        ...(Object.fromEntries(allItems.map(({ key }) => [key, payload[key]])) as Record<ChecklistKey, boolean>),
+        notes: payload.notes ?? '',
+        status: payload.status
+      }));
       setSaveMessage(status === 'Complete' ? 'Pre-flight checklist completed.' : 'Draft saved.');
     } catch (error) {
-      setSaveError(getErrorMessage(error));
+      setSaveError(getErrorMessage(error, 'Unable to save the pre-flight checklist. Please try again.'));
     } finally {
       setIsSaving(false);
     }
@@ -295,7 +329,11 @@ export function PreflightChecklistPage() {
         <textarea
           className="mt-2 min-h-28 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
           value={checklist.notes}
-          onChange={(event) => setChecklist((current) => ({ ...current, notes: event.target.value }))}
+          onChange={(event) => {
+            setChecklist((current) => ({ ...current, notes: event.target.value }));
+            setSaveMessage(null);
+            setSaveError(null);
+          }}
           disabled={isSaving}
           placeholder="Add aircraft, weather, airspace, or crew notes for this job."
         />
