@@ -12,9 +12,6 @@ This project is a frontend application built with React, TypeScript, Vite, and S
 
 1. Open a terminal in the project root:
 
-```bash
-cd c:\Users\nicon\Desktop\Drone
-```
 
 2. Install dependencies:
 
