@@ -38,6 +38,18 @@ type JobPersonnelAssignment = {
   personnel: PersonnelOption | null;
 };
 
+type EquipmentOption = {
+  id: string;
+  name: string;
+  equipment_type: string;
+  status: string;
+};
+
+type JobEquipmentAssignment = {
+  id: string;
+  equipment: EquipmentOption | null;
+};
+
 type ReadinessIndicator = {
   label: 'Current' | 'Expiring Soon' | 'Expired' | 'Missing';
   className: string;
@@ -97,7 +109,7 @@ function getReadinessIndicator(date: string | null): ReadinessIndicator {
 }
 
 function getStatusClassName(status: string | undefined) {
-  return status === 'Active' ? currentClassName : missingClassName;
+  return status === 'Active' || status === 'Available' ? currentClassName : missingClassName;
 }
 
 function normalizeAssignment(row: unknown): JobPersonnelAssignment {
@@ -111,19 +123,36 @@ function normalizeAssignment(row: unknown): JobPersonnelAssignment {
   };
 }
 
+function normalizeEquipmentAssignment(row: unknown): JobEquipmentAssignment {
+  const assignment = row as JobEquipmentAssignment & { equipment: EquipmentOption | EquipmentOption[] | null };
+  const equipment = Array.isArray(assignment.equipment) ? assignment.equipment[0] ?? null : assignment.equipment;
+
+  return {
+    id: assignment.id,
+    equipment
+  };
+}
+
 export function JobFileHubPage() {
   const { jobId } = useParams();
   const [job, setJob] = useState<Job | null>(null);
   const [personnel, setPersonnel] = useState<PersonnelOption[]>([]);
+  const [equipmentKits, setEquipmentKits] = useState<EquipmentOption[]>([]);
   const [assignments, setAssignments] = useState<JobPersonnelAssignment[]>([]);
+  const [equipmentAssignments, setEquipmentAssignments] = useState<JobEquipmentAssignment[]>([]);
   const [selectedPersonnelId, setSelectedPersonnelId] = useState('');
   const [selectedRole, setSelectedRole] = useState(crewRoleOptions[0]);
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingAssignment, setIsSavingAssignment] = useState(false);
+  const [isSavingEquipmentAssignment, setIsSavingEquipmentAssignment] = useState(false);
   const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null);
+  const [removingEquipmentAssignmentId, setRemovingEquipmentAssignmentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [crewError, setCrewError] = useState<string | null>(null);
   const [crewMessage, setCrewMessage] = useState<string | null>(null);
+  const [equipmentError, setEquipmentError] = useState<string | null>(null);
+  const [equipmentMessage, setEquipmentMessage] = useState<string | null>(null);
 
   async function loadAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
@@ -135,6 +164,18 @@ export function JobFileHubPage() {
     if (assignmentsError) throw assignmentsError;
 
     setAssignments((data ?? []).map(normalizeAssignment));
+  }
+
+  async function loadEquipmentAssignments(currentJobId: string) {
+    const { data, error: assignmentsError } = await supabase
+      .from('job_equipment')
+      .select('id, equipment:equipment_id(id, name, equipment_type, status)')
+      .eq('job_id', currentJobId)
+      .order('created_at', { ascending: true });
+
+    if (assignmentsError) throw assignmentsError;
+
+    setEquipmentAssignments((data ?? []).map(normalizeEquipmentAssignment));
   }
 
   useEffect(() => {
@@ -150,6 +191,7 @@ export function JobFileHubPage() {
       setIsLoading(true);
       setError(null);
       setCrewError(null);
+      setEquipmentError(null);
 
       try {
         const jobQuery = supabase
@@ -166,27 +208,53 @@ export function JobFileHubPage() {
           .select('id, assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status)')
           .eq('job_id', jobId)
           .order('created_at', { ascending: true });
+        const equipmentQuery = supabase
+          .from('equipment')
+          .select('id, name, equipment_type, status')
+          .neq('status', 'Retired')
+          .order('name', { ascending: true });
+        const equipmentAssignmentsQuery = supabase
+          .from('job_equipment')
+          .select('id, equipment:equipment_id(id, name, equipment_type, status)')
+          .eq('job_id', jobId)
+          .order('created_at', { ascending: true });
 
-        const [jobResult, personnelResult, assignmentsResult] = await Promise.all([jobQuery, personnelQuery, assignmentsQuery]);
+        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult] = await Promise.all([
+          jobQuery,
+          personnelQuery,
+          assignmentsQuery,
+          equipmentQuery,
+          equipmentAssignmentsQuery
+        ]);
 
         if (jobResult.error) throw jobResult.error;
         if (personnelResult.error) throw personnelResult.error;
         if (assignmentsResult.error) throw assignmentsResult.error;
+        if (equipmentResult.error) throw equipmentResult.error;
+        if (equipmentAssignmentsResult.error) throw equipmentAssignmentsResult.error;
         if (!isMounted) return;
 
         if (!jobResult.data) {
           setError('Job not found.');
           setJob(null);
           setPersonnel([]);
+          setEquipmentKits([]);
           setAssignments([]);
+          setEquipmentAssignments([]);
           return;
         }
 
         const loadedPersonnel = (personnelResult.data ?? []) as PersonnelOption[];
+        const loadedEquipment = (equipmentResult.data ?? []) as EquipmentOption[];
+        const loadedEquipmentAssignments = (equipmentAssignmentsResult.data ?? []).map(normalizeEquipmentAssignment);
+        const loadedAssignedEquipmentIds = new Set(loadedEquipmentAssignments.map((assignment) => assignment.equipment?.id).filter(Boolean));
         setJob(jobResult.data as Job);
         setPersonnel(loadedPersonnel);
+        setEquipmentKits(loadedEquipment);
         setAssignments((assignmentsResult.data ?? []).map(normalizeAssignment));
+        setEquipmentAssignments(loadedEquipmentAssignments);
         setSelectedPersonnelId(loadedPersonnel[0]?.id ?? '');
+        setSelectedEquipmentId(loadedEquipment.find((equipment) => !loadedAssignedEquipmentIds.has(equipment.id))?.id ?? loadedEquipment[0]?.id ?? '');
       } catch (loadError) {
         if (!isMounted) return;
         setError(getErrorMessage(loadError));
@@ -203,6 +271,7 @@ export function JobFileHubPage() {
   }, [jobId]);
 
   const assignedPersonnelIds = useMemo(() => new Set(assignments.map((assignment) => assignment.personnel?.id).filter(Boolean)), [assignments]);
+  const assignedEquipmentIds = useMemo(() => new Set(equipmentAssignments.map((assignment) => assignment.equipment?.id).filter(Boolean)), [equipmentAssignments]);
   const activePersonnelCount = personnel.filter((person) => person.status === 'Active').length;
 
   async function handleAddAssignment(event: FormEvent<HTMLFormElement>) {
@@ -254,6 +323,63 @@ export function JobFileHubPage() {
       setCrewError(getErrorMessage(removeError));
     } finally {
       setRemovingAssignmentId(null);
+    }
+  }
+
+  async function handleAddEquipmentAssignment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!job || !selectedEquipmentId) {
+      setEquipmentError('Select an equipment kit before assigning equipment.');
+      return;
+    }
+
+    if (assignedEquipmentIds.has(selectedEquipmentId)) {
+      setEquipmentError('This equipment kit is already assigned to this Job File.');
+      return;
+    }
+
+    setEquipmentError(null);
+    setEquipmentMessage(null);
+    setIsSavingEquipmentAssignment(true);
+
+    try {
+      const { error: insertError } = await supabase.from('job_equipment').insert({
+        job_id: job.id,
+        equipment_id: selectedEquipmentId,
+        organization_id: job.organization_id
+      });
+
+      if (insertError) throw insertError;
+
+      await loadEquipmentAssignments(job.id);
+      setSelectedEquipmentId(equipmentKits.find((equipment) => equipment.id !== selectedEquipmentId && !assignedEquipmentIds.has(equipment.id))?.id ?? selectedEquipmentId);
+      setEquipmentMessage('Equipment assignment added to this Job File.');
+    } catch (assignmentError) {
+      setEquipmentError(getErrorMessage(assignmentError));
+    } finally {
+      setIsSavingEquipmentAssignment(false);
+    }
+  }
+
+  async function handleRemoveEquipmentAssignment(assignmentId: string) {
+    if (!job) return;
+
+    setEquipmentError(null);
+    setEquipmentMessage(null);
+    setRemovingEquipmentAssignmentId(assignmentId);
+
+    try {
+      const { error: deleteError } = await supabase.from('job_equipment').delete().eq('id', assignmentId);
+
+      if (deleteError) throw deleteError;
+
+      await loadEquipmentAssignments(job.id);
+      setEquipmentMessage('Equipment assignment removed from this Job File.');
+    } catch (removeError) {
+      setEquipmentError(getErrorMessage(removeError));
+    } finally {
+      setRemovingEquipmentAssignmentId(null);
     }
   }
 
@@ -449,6 +575,98 @@ export function JobFileHubPage() {
                     </dd>
                   </div>
                 </dl>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-brand-900">Equipment Assignment</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Assign aircraft or equipment kits to this operation. Accessories, batteries, controllers, and payloads are not assigned individually.
+            </p>
+          </div>
+          <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            {equipmentAssignments.length} assigned
+          </span>
+        </div>
+
+        <form className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={handleAddEquipmentAssignment}>
+          <label className="block text-sm font-medium text-slate-700">
+            Equipment Kit
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+              value={selectedEquipmentId}
+              onChange={(event) => setSelectedEquipmentId(event.target.value)}
+              disabled={isSavingEquipmentAssignment || equipmentKits.length === 0}
+            >
+              {equipmentKits.length === 0 ? <option value="">No active equipment kits available</option> : null}
+              {equipmentKits.map((equipment) => (
+                <option key={equipment.id} value={equipment.id}>
+                  {equipment.name} — {equipment.equipment_type}{assignedEquipmentIds.has(equipment.id) ? ' (already assigned)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="submit"
+            className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
+            disabled={isSavingEquipmentAssignment || equipmentKits.length === 0 || assignedEquipmentIds.has(selectedEquipmentId)}
+          >
+            {isSavingEquipmentAssignment ? 'Assigning...' : 'Assign Equipment'}
+          </button>
+        </form>
+
+        {equipmentKits.length === 0 ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            Add active equipment kit records before assigning equipment to this job.
+          </p>
+        ) : null}
+
+        {equipmentError ? (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{equipmentError}</p>
+        ) : null}
+
+        {equipmentMessage ? (
+          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{equipmentMessage}</p>
+        ) : null}
+
+        <div className="mt-4 space-y-3">
+          {equipmentAssignments.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+              No equipment assigned yet. Select an Equipment Repository kit to add the first aircraft or equipment kit.
+            </div>
+          ) : null}
+
+          {equipmentAssignments.map((assignment) => {
+            const equipment = assignment.equipment;
+
+            return (
+              <article key={assignment.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold text-brand-900">{equipment?.name ?? 'Equipment record unavailable'}</h3>
+                      <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getStatusClassName(equipment?.status)}`}>
+                        {equipment?.status ?? 'Missing'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">Equipment type: {equipment?.equipment_type ?? 'Not available'}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
+                    onClick={() => void handleRemoveEquipmentAssignment(assignment.id)}
+                    disabled={removingEquipmentAssignmentId === assignment.id}
+                  >
+                    {removingEquipmentAssignmentId === assignment.id ? 'Removing...' : 'Remove'}
+                  </button>
+                </div>
               </article>
             );
           })}
