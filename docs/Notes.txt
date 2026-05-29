@@ -4,3 +4,21 @@
 2. add logout button on dashboard 
 3. create user based session browsing to prevent login bypass
 4. 
+
+Eventual:
+    Subscription Paywall info
+    session safety and middleware for user verification
+    pdf exportation
+
+
+Suggest getting it out on market locally 
+make sure no other competitors
+    Alloft
+    Others
+        More operation do this before you fly, not job hazard analysis/SMS
+
+
+Longterm vision:
+    advertisement?
+    subscription based.
+        not navigate around ads, make relevant from insurance/other companies that "partner" with DroneSMS
