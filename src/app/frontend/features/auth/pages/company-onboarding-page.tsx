@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../../../backend/integrations/supabase/client';
+import { supabase } from '@frontend/lib/supabase';
 import { useAuth } from '../components/use-auth';
 
 function getErrorMessage(error: unknown) {

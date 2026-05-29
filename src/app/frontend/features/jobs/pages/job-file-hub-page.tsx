@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { supabase } from '../../../../backend/integrations/supabase/client';
+import { supabase } from '@frontend/lib/supabase';
 
 const templateChecklist = [
   { name: 'Job Hazard Analysis', path: 'templates/jha' },

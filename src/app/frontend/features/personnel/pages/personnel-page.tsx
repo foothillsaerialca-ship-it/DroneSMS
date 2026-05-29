@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { supabase } from '../../../../backend/integrations/supabase/client';
+import { supabase } from '@frontend/lib/supabase';
 
 const roleOptions = ['Remote Pilot in Command', 'Visual Observer', 'Crew Member', 'Payload Operator', 'Safety Manager'];
 const statusOptions = ['Active', 'Training', 'Inactive'];

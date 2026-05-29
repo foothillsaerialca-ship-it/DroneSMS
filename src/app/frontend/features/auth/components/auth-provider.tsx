@@ -1,5 +1,5 @@
 import { type PropsWithChildren, createContext, useCallback, useEffect, useMemo, useState } from 'react';
-import { supabase } from '../../../../backend/integrations/supabase/client';
+import { supabase } from '@frontend/lib/supabase';
 import type { AuthContextValue, AuthStatus, ProfileState } from '../types/auth-context';
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

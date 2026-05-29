@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '../../../../backend/integrations/supabase/client';
+import { supabase } from '@frontend/lib/supabase';
 
 type Job = {
   id: string;

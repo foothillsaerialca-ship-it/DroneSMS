@@ -1,7 +1,6 @@
 import { type FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { supabase } from '../../../../backend/integrations/supabase/client';
-import { isSupabaseConfigured } from '../../../../backend/lib/env';
+import { supabase, isSupabaseConfigured } from '@frontend/lib/supabase';
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to create account. Please try again.';

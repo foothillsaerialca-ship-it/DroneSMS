@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { supabase } from '../../../../backend/integrations/supabase/client';
+import { supabase } from '@frontend/lib/supabase';
 
 const typeOptions = ['Drone', 'Controller', 'Battery', 'Payload', 'Charger', 'Safety Kit', 'Other'];
 const statusOptions = ['Available', 'In Use', 'Maintenance', 'Retired'];

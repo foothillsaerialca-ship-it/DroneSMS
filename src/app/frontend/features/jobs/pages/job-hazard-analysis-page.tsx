@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { supabase } from '../../../../backend/integrations/supabase/client';
+import { supabase } from '@frontend/lib/supabase';
 
 const steps = ['Mission Basics', 'Site Conditions', 'Airspace', 'Environmental', 'Hazards', 'Crew Briefing & Communications'];
 const groundSurfaceOptions = ['Asphalt', 'Concrete', 'Gravel', 'Grass', 'Dirt', 'Rooftop', 'Muddy/Wet', 'Mixed Surface', 'Other'];
