@@ -20,8 +20,11 @@ Server: `https://109b8de1.dronesms-app.pages.dev/`
   - `react` `^18.3.1`
   - `react-dom` `^18.3.1`
   - `react-router-dom` `^6.30.1`
-  - `typescript` `^5.6.3`
-  - `vite` `^5.4.10`
+  - `@supabase/supabase-js` `^2.49.8`
+  - `@vitejs/plugin-react` `^6.0.2`
+  - `rollup-plugin-license` `^3.7.1`
+  - `typescript` `^6.0.0`
+  - `vite` `^8.0.14`
   - `tailwindcss` `^3.4.17`
   - `eslint` `^9.15.0`
 
@@ -37,4 +40,5 @@ Server: `https://109b8de1.dronesms-app.pages.dev/`
 - The app uses Supabase as the backend service for data persistence and auth.
 - Frontend source files live under `src/` with app routing, features, and integration code.
 - Environment and runtime configuration is managed through `package.json`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.js`, and `vite.config.ts`.
+ - A `lodash` override is applied in `package.json` to ensure the dependency tree uses a patched `4.17.30` release.
 

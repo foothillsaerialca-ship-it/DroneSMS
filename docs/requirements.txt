@@ -1,6 +1,8 @@
 # This project is a Node.js/React app and does not require Python packages.
 # No pip-installable Python dependencies are needed to run the app.
-# To install the app dependencies, use npm or yarn as described in install.md.
+# To install the app dependencies, use npm as described in install.md.
+
+# Dependency information is maintained in package.json/package-lock.json.
 
 # Architecture license references
 # Node.js: https://github.com/nodejs/node/blob/main/LICENSE
