@@ -1,0 +1,6 @@
+0. verify current application infrastructure works post refactorization. 
+1. create login and registration edits for verified password, email varification, 
+    password requirements like capitals and such
+2. add logout button on dashboard 
+3. create user based session browsing to prevent login bypass
+4. 
