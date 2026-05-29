@@ -1,0 +1,16 @@
+# This project is a Node.js/React app and does not require Python packages.
+# No pip-installable Python dependencies are needed to run the app.
+# To install the app dependencies, use npm or yarn as described in install.md.
+
+# Architecture license references
+# Node.js: https://github.com/nodejs/node/blob/main/LICENSE
+# React: https://github.com/facebook/react/blob/main/LICENSE
+# Vite: https://github.com/vitejs/vite/blob/main/LICENSE
+# TypeScript: https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt
+# Tailwind CSS: https://github.com/tailwindlabs/tailwindcss/blob/master/LICENSE.md
+# Supabase JS: https://github.com/supabase/supabase-js/blob/master/LICENSE
+# PostCSS: https://github.com/postcss/postcss/blob/main/LICENSE
+# ESLint: https://github.com/eslint/eslint/blob/main/LICENSE
+# @vitejs/plugin-react: https://github.com/vitejs/vite/tree/main/packages/plugin-react#license
+# Vite React plugin / React Refresh: https://github.com/vitejs/vite/tree/main/packages/plugin-react#license
+# GitHub Copilot / tools are not part of runtime dependencies; see individual package licenses above.
