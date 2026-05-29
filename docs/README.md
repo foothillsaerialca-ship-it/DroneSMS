@@ -1,4 +1,5 @@
 DroneSMS project documents and development briefs.
+Server: `https://109b8de1.dronesms-app.pages.dev/`
 
 ## Infrastructure
 
