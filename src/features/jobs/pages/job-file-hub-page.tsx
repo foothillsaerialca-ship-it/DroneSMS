@@ -12,6 +12,16 @@ const templateChecklist = [
 ];
 
 const crewRoleOptions = ['RPIC', 'Pilot', 'Visual Observer', 'Payload Operator', 'Ground Crew'];
+const safetyEventCategories = ['Operational', 'Environmental', 'Equipment', 'Personnel', 'Public'];
+const safetyEventOutcomes = ['Resolved', 'Operation Paused', 'Operation Terminated'];
+
+const initialSafetyEventFormState = {
+  category: safetyEventCategories[0],
+  description: '',
+  immediateActionsTaken: '',
+  outcome: safetyEventOutcomes[0],
+  promoteToHazardLibrary: false
+};
 
 type Job = {
   id: string;
@@ -49,6 +59,18 @@ type JobEquipmentAssignment = {
   id: string;
   equipment: EquipmentOption | null;
 };
+
+type JobSafetyEvent = {
+  id: string;
+  category: string;
+  description: string;
+  immediate_actions_taken: string | null;
+  outcome: string;
+  promote_to_hazard_library: boolean;
+  created_at: string;
+};
+
+type SafetyEventFormState = typeof initialSafetyEventFormState;
 
 type ReadinessIndicator = {
   label: 'Current' | 'Expiring Soon' | 'Expired' | 'Missing';
@@ -140,21 +162,29 @@ export function JobFileHubPage() {
   const [equipmentKits, setEquipmentKits] = useState<EquipmentOption[]>([]);
   const [assignments, setAssignments] = useState<JobPersonnelAssignment[]>([]);
   const [equipmentAssignments, setEquipmentAssignments] = useState<JobEquipmentAssignment[]>([]);
+  const [safetyEvents, setSafetyEvents] = useState<JobSafetyEvent[]>([]);
   const [selectedPersonnelId, setSelectedPersonnelId] = useState('');
   const [selectedRole, setSelectedRole] = useState(crewRoleOptions[0]);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
+  const [safetyEventFormData, setSafetyEventFormData] = useState<SafetyEventFormState>(initialSafetyEventFormState);
+  const [editingSafetyEventId, setEditingSafetyEventId] = useState<string | null>(null);
   const [isCrewFormOpen, setIsCrewFormOpen] = useState(false);
   const [isEquipmentFormOpen, setIsEquipmentFormOpen] = useState(false);
+  const [isSafetyEventFormOpen, setIsSafetyEventFormOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingAssignment, setIsSavingAssignment] = useState(false);
   const [isSavingEquipmentAssignment, setIsSavingEquipmentAssignment] = useState(false);
+  const [isSavingSafetyEvent, setIsSavingSafetyEvent] = useState(false);
   const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null);
   const [removingEquipmentAssignmentId, setRemovingEquipmentAssignmentId] = useState<string | null>(null);
+  const [removingSafetyEventId, setRemovingSafetyEventId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [crewError, setCrewError] = useState<string | null>(null);
   const [crewMessage, setCrewMessage] = useState<string | null>(null);
   const [equipmentError, setEquipmentError] = useState<string | null>(null);
   const [equipmentMessage, setEquipmentMessage] = useState<string | null>(null);
+  const [safetyEventError, setSafetyEventError] = useState<string | null>(null);
+  const [safetyEventMessage, setSafetyEventMessage] = useState<string | null>(null);
 
   async function loadAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
@@ -180,6 +210,27 @@ export function JobFileHubPage() {
     setEquipmentAssignments((data ?? []).map(normalizeEquipmentAssignment));
   }
 
+  async function loadSafetyEvents(currentJobId: string) {
+    const { data, error: safetyEventsError } = await supabase
+      .from('job_safety_events')
+      .select('id, category, description, immediate_actions_taken, outcome, promote_to_hazard_library, created_at')
+      .eq('job_id', currentJobId)
+      .order('created_at', { ascending: false });
+
+    if (safetyEventsError) throw safetyEventsError;
+
+    setSafetyEvents((data ?? []) as JobSafetyEvent[]);
+  }
+
+  function resetSafetyEventForm() {
+    setSafetyEventFormData(initialSafetyEventFormState);
+    setEditingSafetyEventId(null);
+  }
+
+  function updateSafetyEventField<Key extends keyof SafetyEventFormState>(field: Key, value: SafetyEventFormState[Key]) {
+    setSafetyEventFormData((currentFormData) => ({ ...currentFormData, [field]: value }));
+  }
+
   useEffect(() => {
     let isMounted = true;
 
@@ -194,6 +245,7 @@ export function JobFileHubPage() {
       setError(null);
       setCrewError(null);
       setEquipmentError(null);
+      setSafetyEventError(null);
 
       try {
         const jobQuery = supabase
@@ -220,13 +272,19 @@ export function JobFileHubPage() {
           .select('id, equipment:equipment_id(id, name, equipment_type, status)')
           .eq('job_id', jobId)
           .order('created_at', { ascending: true });
+        const safetyEventsQuery = supabase
+          .from('job_safety_events')
+          .select('id, category, description, immediate_actions_taken, outcome, promote_to_hazard_library, created_at')
+          .eq('job_id', jobId)
+          .order('created_at', { ascending: false });
 
-        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult] = await Promise.all([
+        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult] = await Promise.all([
           jobQuery,
           personnelQuery,
           assignmentsQuery,
           equipmentQuery,
-          equipmentAssignmentsQuery
+          equipmentAssignmentsQuery,
+          safetyEventsQuery
         ]);
 
         if (jobResult.error) throw jobResult.error;
@@ -234,6 +292,7 @@ export function JobFileHubPage() {
         if (assignmentsResult.error) throw assignmentsResult.error;
         if (equipmentResult.error) throw equipmentResult.error;
         if (equipmentAssignmentsResult.error) throw equipmentAssignmentsResult.error;
+        if (safetyEventsResult.error) throw safetyEventsResult.error;
         if (!isMounted) return;
 
         if (!jobResult.data) {
@@ -243,6 +302,7 @@ export function JobFileHubPage() {
           setEquipmentKits([]);
           setAssignments([]);
           setEquipmentAssignments([]);
+          setSafetyEvents([]);
           return;
         }
 
@@ -255,6 +315,7 @@ export function JobFileHubPage() {
         setEquipmentKits(loadedEquipment);
         setAssignments((assignmentsResult.data ?? []).map(normalizeAssignment));
         setEquipmentAssignments(loadedEquipmentAssignments);
+        setSafetyEvents((safetyEventsResult.data ?? []) as JobSafetyEvent[]);
         setSelectedPersonnelId(loadedPersonnel[0]?.id ?? '');
         setSelectedEquipmentId(loadedEquipment.find((equipment) => !loadedAssignedEquipmentIds.has(equipment.id))?.id ?? loadedEquipment[0]?.id ?? '');
       } catch (loadError) {
@@ -384,6 +445,102 @@ export function JobFileHubPage() {
       setEquipmentError(getErrorMessage(removeError));
     } finally {
       setRemovingEquipmentAssignmentId(null);
+    }
+  }
+
+  async function handleSaveSafetyEvent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!job) return;
+
+    if (!safetyEventFormData.description.trim()) {
+      setSafetyEventError('Describe the safety event before saving it.');
+      return;
+    }
+
+    setSafetyEventError(null);
+    setSafetyEventMessage(null);
+    setIsSavingSafetyEvent(true);
+
+    try {
+      const payload = {
+        category: safetyEventFormData.category,
+        description: safetyEventFormData.description.trim(),
+        immediate_actions_taken: safetyEventFormData.immediateActionsTaken.trim() || null,
+        outcome: safetyEventFormData.outcome,
+        promote_to_hazard_library: safetyEventFormData.promoteToHazardLibrary
+      };
+
+      if (editingSafetyEventId) {
+        const { error: updateError } = await supabase.from('job_safety_events').update(payload).eq('id', editingSafetyEventId);
+        if (updateError) throw updateError;
+      } else {
+        const { data: userResult, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+
+        const userId = userResult.user?.id;
+        if (!userId) throw new Error('Sign in again before documenting a safety event.');
+
+        const { error: insertError } = await supabase.from('job_safety_events').insert({
+          ...payload,
+          job_id: job.id,
+          organization_id: job.organization_id,
+          created_by: userId
+        });
+
+        if (insertError) throw insertError;
+      }
+
+      await loadSafetyEvents(job.id);
+      setSafetyEventMessage(editingSafetyEventId ? 'Safety event updated.' : 'Safety event added to this Job File.');
+      resetSafetyEventForm();
+      setIsSafetyEventFormOpen(false);
+    } catch (saveError) {
+      setSafetyEventError(getErrorMessage(saveError));
+    } finally {
+      setIsSavingSafetyEvent(false);
+    }
+  }
+
+  function handleEditSafetyEvent(safetyEvent: JobSafetyEvent) {
+    setEditingSafetyEventId(safetyEvent.id);
+    setSafetyEventFormData({
+      category: safetyEvent.category,
+      description: safetyEvent.description,
+      immediateActionsTaken: safetyEvent.immediate_actions_taken ?? '',
+      outcome: safetyEvent.outcome,
+      promoteToHazardLibrary: safetyEvent.promote_to_hazard_library
+    });
+    setSafetyEventError(null);
+    setSafetyEventMessage(null);
+    setIsSafetyEventFormOpen(true);
+  }
+
+  async function handleDeleteSafetyEvent(safetyEvent: JobSafetyEvent) {
+    if (!job) return;
+
+    const confirmed = window.confirm('Delete this safety event from the Job File? This cannot be undone.');
+    if (!confirmed) return;
+
+    setSafetyEventError(null);
+    setSafetyEventMessage(null);
+    setRemovingSafetyEventId(safetyEvent.id);
+
+    try {
+      const { error: deleteError } = await supabase.from('job_safety_events').delete().eq('id', safetyEvent.id);
+      if (deleteError) throw deleteError;
+
+      if (editingSafetyEventId === safetyEvent.id) {
+        resetSafetyEventForm();
+        setIsSafetyEventFormOpen(false);
+      }
+
+      await loadSafetyEvents(job.id);
+      setSafetyEventMessage('Safety event deleted from this Job File.');
+    } catch (deleteError) {
+      setSafetyEventError(getErrorMessage(deleteError));
+    } finally {
+      setRemovingSafetyEventId(null);
     }
   }
 
@@ -724,97 +881,196 @@ export function JobFileHubPage() {
         ) : null}
       </div>
 
-
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-brand-900">Equipment Assignment</h2>
+            <h2 className="text-base font-semibold text-brand-900">Safety Events</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Assign aircraft or equipment kits to this operation. Accessories, batteries, controllers, and payloads are not assigned individually.
+              Document unexpected hazards, near misses, lessons learned, and operational deviations encountered during this mission.
             </p>
           </div>
           <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {equipmentAssignments.length} assigned
+            {safetyEvents.length} recorded
           </span>
         </div>
 
-        <form className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end" onSubmit={handleAddEquipmentAssignment}>
-          <label className="block text-sm font-medium text-slate-700">
-            Equipment Kit
-            <select
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
-              value={selectedEquipmentId}
-              onChange={(event) => setSelectedEquipmentId(event.target.value)}
-              disabled={isSavingEquipmentAssignment || equipmentKits.length === 0}
-            >
-              {equipmentKits.length === 0 ? <option value="">No active equipment kits available</option> : null}
-              {equipmentKits.map((equipment) => (
-                <option key={equipment.id} value={equipment.id}>
-                  {equipment.name} — {equipment.equipment_type}{assignedEquipmentIds.has(equipment.id) ? ' (already assigned)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <button
-            type="submit"
-            className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-            disabled={isSavingEquipmentAssignment || equipmentKits.length === 0 || assignedEquipmentIds.has(selectedEquipmentId)}
-          >
-            {isSavingEquipmentAssignment ? 'Assigning...' : 'Assign Equipment'}
-          </button>
-        </form>
-
-        {equipmentKits.length === 0 ? (
-          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-            Add active equipment kit records before assigning equipment to this job.
-          </p>
-        ) : null}
-
-        {equipmentError ? (
-          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{equipmentError}</p>
-        ) : null}
-
-        {equipmentMessage ? (
-          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{equipmentMessage}</p>
-        ) : null}
-
         <div className="mt-4 space-y-3">
-          {equipmentAssignments.length === 0 ? (
+          {safetyEvents.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-              No equipment assigned yet. Select an Equipment Repository kit to add the first aircraft or equipment kit.
+              No safety events recorded yet. Add one if unexpected hazards, near misses, or operational deviations occur.
             </div>
           ) : null}
 
-          {equipmentAssignments.map((assignment) => {
-            const equipment = assignment.equipment;
-
-            return (
-              <article key={assignment.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-base font-semibold text-brand-900">{equipment?.name ?? 'Equipment record unavailable'}</h3>
-                      <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getStatusClassName(equipment?.status)}`}>
-                        {equipment?.status ?? 'Missing'}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm text-slate-600">Equipment type: {equipment?.equipment_type ?? 'Not available'}</p>
+          {safetyEvents.map((safetyEvent) => (
+            <article key={safetyEvent.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-brand-700">
+                      {safetyEvent.category}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                      {safetyEvent.outcome}
+                    </span>
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                        safetyEvent.promote_to_hazard_library ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-600'
+                      }`}
+                    >
+                      {safetyEvent.promote_to_hazard_library ? 'Promote to Hazard Library' : 'Do not promote'}
+                    </span>
                   </div>
+                  <p className="text-sm text-slate-800">{safetyEvent.description}</p>
+                  {safetyEvent.immediate_actions_taken ? (
+                    <p className="text-sm text-slate-600">
+                      <span className="font-medium text-slate-700">Immediate actions:</span> {safetyEvent.immediate_actions_taken}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
+                    onClick={() => handleEditSafetyEvent(safetyEvent)}
+                    disabled={isSavingSafetyEvent || removingSafetyEventId === safetyEvent.id}
+                  >
+                    Edit
+                  </button>
                   <button
                     type="button"
                     className="inline-flex min-h-11 items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
-                    onClick={() => void handleRemoveEquipmentAssignment(assignment.id)}
-                    disabled={removingEquipmentAssignmentId === assignment.id}
+                    onClick={() => void handleDeleteSafetyEvent(safetyEvent)}
+                    disabled={removingSafetyEventId === safetyEvent.id}
                   >
-                    {removingEquipmentAssignmentId === assignment.id ? 'Removing...' : 'Remove'}
+                    {removingSafetyEventId === safetyEvent.id ? 'Deleting...' : 'Delete'}
                   </button>
                 </div>
-              </article>
-            );
-          })}
+              </div>
+            </article>
+          ))}
         </div>
+
+        {safetyEventError ? (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{safetyEventError}</p>
+        ) : null}
+
+        {safetyEventMessage ? (
+          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{safetyEventMessage}</p>
+        ) : null}
+
+        {isSafetyEventFormOpen ? (
+          <form id="safety-event-form" className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3" onSubmit={handleSaveSafetyEvent}>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-brand-900">{editingSafetyEventId ? 'Edit Safety Event' : 'Add Safety Event'}</h3>
+                <p className="mt-1 text-sm text-slate-600">Capture the condition, response, outcome, and whether it should be promoted later.</p>
+              </div>
+              <button
+                type="button"
+                className="text-sm font-medium text-brand-700 hover:text-brand-900 disabled:text-slate-400"
+                onClick={() => {
+                  resetSafetyEventForm();
+                  setIsSafetyEventFormOpen(false);
+                }}
+                disabled={isSavingSafetyEvent}
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-slate-700">
+                Category
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+                  value={safetyEventFormData.category}
+                  onChange={(event) => updateSafetyEventField('category', event.target.value)}
+                  disabled={isSavingSafetyEvent}
+                >
+                  {safetyEventCategories.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700">
+                Outcome
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+                  value={safetyEventFormData.outcome}
+                  onChange={(event) => updateSafetyEventField('outcome', event.target.value)}
+                  disabled={isSavingSafetyEvent}
+                >
+                  {safetyEventOutcomes.map((outcome) => (
+                    <option key={outcome} value={outcome}>{outcome}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                Description
+                <textarea
+                  className="mt-1 min-h-28 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
+                  value={safetyEventFormData.description}
+                  onChange={(event) => updateSafetyEventField('description', event.target.value)}
+                  placeholder="Describe what happened, where it occurred, and what hazard or deviation was observed."
+                  disabled={isSavingSafetyEvent}
+                  required
+                />
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                Immediate actions taken
+                <textarea
+                  className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
+                  value={safetyEventFormData.immediateActionsTaken}
+                  onChange={(event) => updateSafetyEventField('immediateActionsTaken', event.target.value)}
+                  placeholder="Document pauses, mitigations, crew briefings, equipment swaps, or decisions made during the mission."
+                  disabled={isSavingSafetyEvent}
+                />
+              </label>
+            </div>
+
+            <label className="mt-4 flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
+              <input
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700"
+                type="checkbox"
+                checked={safetyEventFormData.promoteToHazardLibrary}
+                onChange={(event) => updateSafetyEventField('promoteToHazardLibrary', event.target.checked)}
+                disabled={isSavingSafetyEvent}
+              />
+              <span>
+                <span className="font-medium text-slate-800">Promote to Hazard Library</span>
+                <span className="mt-1 block text-slate-600">Flag this event for a future hazard library review. This does not create a Hazard Library item yet.</span>
+              </span>
+            </label>
+
+            <button
+              type="submit"
+              className="mt-4 min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
+              disabled={isSavingSafetyEvent}
+            >
+              {isSavingSafetyEvent ? 'Saving...' : editingSafetyEventId ? 'Save Safety Event' : 'Add Safety Event'}
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
+            aria-controls="safety-event-form"
+            aria-expanded={isSafetyEventFormOpen}
+            onClick={() => {
+              resetSafetyEventForm();
+              setSafetyEventError(null);
+              setSafetyEventMessage(null);
+              setIsSafetyEventFormOpen(true);
+            }}
+          >
+            + Add Safety Event
+          </button>
+        )}
       </div>
+
 
       <div className="space-y-3">
         {templateChecklist.map((template) => {
