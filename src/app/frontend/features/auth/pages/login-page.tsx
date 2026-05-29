@@ -60,7 +60,7 @@ export function LoginPage() {
       <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
         <label className="block text-sm font-medium text-slate-700">
           Email
-          <input
+          <input 
             className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
             type="email"
             placeholder="pilot@company.com"
