@@ -11,6 +11,7 @@ const initialFormState = {
   phone: '',
   part107CertificateNumber: '',
   part107ExpirationDate: '',
+  trainingExpirationDate: '',
   emergencyContactName: '',
   emergencyContactPhone: '',
   status: statusOptions[0],
@@ -25,6 +26,7 @@ type Personnel = {
   phone: string | null;
   part_107_certificate_number: string | null;
   part_107_expiration_date: string | null;
+  training_expiration_date: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   status: string;
@@ -126,6 +128,7 @@ function toFormState(person: Personnel): PersonnelFormState {
     phone: person.phone ?? '',
     part107CertificateNumber: person.part_107_certificate_number ?? '',
     part107ExpirationDate: person.part_107_expiration_date ?? '',
+    trainingExpirationDate: person.training_expiration_date ?? '',
     emergencyContactName: person.emergency_contact_name ?? '',
     emergencyContactPhone: person.emergency_contact_phone ?? '',
     status: person.status,
@@ -149,6 +152,7 @@ function buildPersonnelPayload(formData: PersonnelFormState) {
     phone: formData.phone.trim() || null,
     part_107_certificate_number: formData.part107CertificateNumber.trim() || null,
     part_107_expiration_date: formData.part107ExpirationDate || null,
+    training_expiration_date: formData.trainingExpirationDate || null,
     emergency_contact_name: formData.emergencyContactName.trim() || null,
     emergency_contact_phone: formData.emergencyContactPhone.trim() || null,
     status: formData.status,
@@ -173,7 +177,7 @@ export function PersonnelPage() {
     try {
       const { data, error: personnelError } = await supabase
         .from('personnel')
-        .select('id, full_name, role, email, phone, part_107_certificate_number, part_107_expiration_date, emergency_contact_name, emergency_contact_phone, status, notes, updated_at')
+        .select('id, full_name, role, email, phone, part_107_certificate_number, part_107_expiration_date, training_expiration_date, emergency_contact_name, emergency_contact_phone, status, notes, updated_at')
         .order('status', { ascending: true })
         .order('full_name', { ascending: true });
 
@@ -411,6 +415,17 @@ export function PersonnelPage() {
           </label>
 
           <label className="block text-sm font-medium text-slate-700">
+            Training expiration date
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+              type="date"
+              value={formData.trainingExpirationDate}
+              onChange={(event) => updateField('trainingExpirationDate', event.target.value)}
+              disabled={isSaving}
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-slate-700">
             Emergency contact name
             <input
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
@@ -522,12 +537,12 @@ export function PersonnelPage() {
                   <dd className="mt-1 text-slate-700">{person.part_107_certificate_number || 'No certificate'} • {formatDate(person.part_107_expiration_date)}</dd>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Emergency Contact</dt>
-                  <dd className="mt-1 text-slate-700">{person.emergency_contact_name || person.emergency_contact_phone ? [person.emergency_contact_name, person.emergency_contact_phone].filter(Boolean).join(' • ') : 'Not provided'}</dd>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Training</dt>
+                  <dd className="mt-1 text-slate-700">{formatDate(person.training_expiration_date)}</dd>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
-                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Status</dt>
-                  <dd className="mt-1 text-slate-700">{person.status}</dd>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Emergency / Status</dt>
+                  <dd className="mt-1 text-slate-700">{person.emergency_contact_name || person.emergency_contact_phone ? [person.emergency_contact_name, person.emergency_contact_phone].filter(Boolean).join(' • ') : 'No emergency contact'} • {person.status}</dd>
                 </div>
               </dl>
 
