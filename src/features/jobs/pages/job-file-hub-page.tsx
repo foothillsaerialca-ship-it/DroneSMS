@@ -143,6 +143,8 @@ export function JobFileHubPage() {
   const [selectedPersonnelId, setSelectedPersonnelId] = useState('');
   const [selectedRole, setSelectedRole] = useState(crewRoleOptions[0]);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
+  const [isCrewFormOpen, setIsCrewFormOpen] = useState(false);
+  const [isEquipmentFormOpen, setIsEquipmentFormOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingAssignment, setIsSavingAssignment] = useState(false);
   const [isSavingEquipmentAssignment, setIsSavingEquipmentAssignment] = useState(false);
@@ -297,6 +299,7 @@ export function JobFileHubPage() {
       if (insertError) throw insertError;
 
       await loadAssignments(job.id);
+      setIsCrewFormOpen(false);
       setCrewMessage('Crew assignment added to this Job File.');
     } catch (assignmentError) {
       setCrewError(getErrorMessage(assignmentError));
@@ -354,6 +357,7 @@ export function JobFileHubPage() {
 
       await loadEquipmentAssignments(job.id);
       setSelectedEquipmentId(equipmentKits.find((equipment) => equipment.id !== selectedEquipmentId && !assignedEquipmentIds.has(equipment.id))?.id ?? selectedEquipmentId);
+      setIsEquipmentFormOpen(false);
       setEquipmentMessage('Equipment assignment added to this Job File.');
     } catch (assignmentError) {
       setEquipmentError(getErrorMessage(assignmentError));
@@ -467,65 +471,10 @@ export function JobFileHubPage() {
           </span>
         </div>
 
-        <form className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem_auto] sm:items-end" onSubmit={handleAddAssignment}>
-          <label className="block text-sm font-medium text-slate-700">
-            Personnel
-            <select
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
-              value={selectedPersonnelId}
-              onChange={(event) => setSelectedPersonnelId(event.target.value)}
-              disabled={isSavingAssignment || personnel.length === 0}
-            >
-              {personnel.length === 0 ? <option value="">No personnel records available</option> : null}
-              {personnel.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.full_name} — {person.role}{assignedPersonnelIds.has(person.id) ? ' (already assigned)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block text-sm font-medium text-slate-700">
-            Assigned role
-            <select
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
-              value={selectedRole}
-              onChange={(event) => setSelectedRole(event.target.value)}
-              disabled={isSavingAssignment || personnel.length === 0}
-            >
-              {crewRoleOptions.map((role) => (
-                <option key={role} value={role}>{role}</option>
-              ))}
-            </select>
-          </label>
-
-          <button
-            type="submit"
-            className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-            disabled={isSavingAssignment || personnel.length === 0}
-          >
-            {isSavingAssignment ? 'Assigning...' : 'Add Crew'}
-          </button>
-        </form>
-
-        {personnel.length === 0 ? (
-          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-            Add personnel records before assigning crew to this job.
-          </p>
-        ) : null}
-
-        {crewError ? (
-          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{crewError}</p>
-        ) : null}
-
-        {crewMessage ? (
-          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{crewMessage}</p>
-        ) : null}
-
         <div className="mt-4 space-y-3">
           {assignments.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-              No crew assigned yet. Select a Personnel Repository record and role to add the first crew member.
+              No crew assigned yet.
             </div>
           ) : null}
 
@@ -579,6 +528,200 @@ export function JobFileHubPage() {
             );
           })}
         </div>
+
+        {crewError ? (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{crewError}</p>
+        ) : null}
+
+        {crewMessage ? (
+          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{crewMessage}</p>
+        ) : null}
+
+        {isCrewFormOpen ? (
+          <form
+            id="crew-assignment-form"
+            className="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_12rem_auto_auto] sm:items-end"
+            onSubmit={handleAddAssignment}
+          >
+            <label className="block text-sm font-medium text-slate-700">
+              Personnel
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+                value={selectedPersonnelId}
+                onChange={(event) => setSelectedPersonnelId(event.target.value)}
+                disabled={isSavingAssignment || personnel.length === 0}
+              >
+                {personnel.length === 0 ? <option value="">No personnel records available</option> : null}
+                {personnel.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.full_name} — {person.role}{assignedPersonnelIds.has(person.id) ? ' (already assigned)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block text-sm font-medium text-slate-700">
+              Assigned role
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+                value={selectedRole}
+                onChange={(event) => setSelectedRole(event.target.value)}
+                disabled={isSavingAssignment || personnel.length === 0}
+              >
+                {crewRoleOptions.map((role) => (
+                  <option key={role} value={role}>{role}</option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="submit"
+              className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
+              disabled={isSavingAssignment || personnel.length === 0}
+            >
+              {isSavingAssignment ? 'Assigning...' : 'Add Crew'}
+            </button>
+            <button
+              type="button"
+              className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 sm:py-2"
+              onClick={() => setIsCrewFormOpen(false)}
+              disabled={isSavingAssignment}
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
+            aria-controls="crew-assignment-form"
+            aria-expanded={isCrewFormOpen}
+            onClick={() => setIsCrewFormOpen(true)}
+          >
+            + Add Personnel
+          </button>
+        )}
+
+        {isCrewFormOpen && personnel.length === 0 ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            Add personnel records before assigning crew to this job.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-brand-900">Equipment Assignment</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Assign aircraft or equipment kits to this operation. Accessories, batteries, controllers, and payloads are not assigned individually.
+            </p>
+          </div>
+          <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            {equipmentAssignments.length} assigned
+          </span>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {equipmentAssignments.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+              No equipment assigned yet.
+            </div>
+          ) : null}
+
+          {equipmentAssignments.map((assignment) => {
+            const equipment = assignment.equipment;
+
+            return (
+              <article key={assignment.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold text-brand-900">{equipment?.name ?? 'Equipment record unavailable'}</h3>
+                      <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getStatusClassName(equipment?.status)}`}>
+                        {equipment?.status ?? 'Missing'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">Equipment type: {equipment?.equipment_type ?? 'Not available'}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
+                    onClick={() => void handleRemoveEquipmentAssignment(assignment.id)}
+                    disabled={removingEquipmentAssignmentId === assignment.id}
+                  >
+                    {removingEquipmentAssignmentId === assignment.id ? 'Removing...' : 'Remove'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        {equipmentError ? (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{equipmentError}</p>
+        ) : null}
+
+        {equipmentMessage ? (
+          <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{equipmentMessage}</p>
+        ) : null}
+
+        {isEquipmentFormOpen ? (
+          <form
+            id="equipment-assignment-form"
+            className="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end"
+            onSubmit={handleAddEquipmentAssignment}
+          >
+            <label className="block text-sm font-medium text-slate-700">
+              Equipment Kit
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+                value={selectedEquipmentId}
+                onChange={(event) => setSelectedEquipmentId(event.target.value)}
+                disabled={isSavingEquipmentAssignment || equipmentKits.length === 0}
+              >
+                {equipmentKits.length === 0 ? <option value="">No active equipment kits available</option> : null}
+                {equipmentKits.map((equipment) => (
+                  <option key={equipment.id} value={equipment.id}>
+                    {equipment.name} — {equipment.equipment_type}{assignedEquipmentIds.has(equipment.id) ? ' (already assigned)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="submit"
+              className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
+              disabled={isSavingEquipmentAssignment || equipmentKits.length === 0 || assignedEquipmentIds.has(selectedEquipmentId)}
+            >
+              {isSavingEquipmentAssignment ? 'Assigning...' : 'Assign Equipment'}
+            </button>
+            <button
+              type="button"
+              className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 sm:py-2"
+              onClick={() => setIsEquipmentFormOpen(false)}
+              disabled={isSavingEquipmentAssignment}
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
+            aria-controls="equipment-assignment-form"
+            aria-expanded={isEquipmentFormOpen}
+            onClick={() => setIsEquipmentFormOpen(true)}
+          >
+            + Add Equipment
+          </button>
+        )}
+
+        {isEquipmentFormOpen && equipmentKits.length === 0 ? (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            Add active equipment kit records before assigning equipment to this job.
+          </p>
+        ) : null}
       </div>
 
 
