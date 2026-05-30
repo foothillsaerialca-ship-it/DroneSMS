@@ -11,7 +11,7 @@ export function AppShell() {
         </div>
       </header>
 
-      <main className="flex-1 px-4 py-4 pb-24">
+      <main className="mobile-bottom-nav-offset flex-1 px-4 py-4">
         <Outlet />
       </main>
 
