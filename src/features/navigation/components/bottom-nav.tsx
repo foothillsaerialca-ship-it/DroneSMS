@@ -10,7 +10,7 @@ const navItems = [
 
 export function BottomNav() {
   return (
-    <nav className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white p-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
       <ul className="mx-auto grid max-w-5xl grid-cols-5 gap-2">
         {navItems.map((item) => (
           <li key={item.to}>
