@@ -3,6 +3,7 @@ import { AppShell } from './shell';
 import { DashboardPage } from '../features/dashboard/pages/dashboard-page';
 import { JobsPage } from '../features/jobs/pages/jobs-page';
 import { NewJobPage } from '../features/jobs/pages/new-job-page';
+import { NewProposalPage } from '../features/jobs/pages/new-proposal-page';
 import { JobDetailPage } from '../features/jobs/pages/job-detail-page';
 import { JobFileHubPage } from '../features/jobs/pages/job-file-hub-page';
 import { JobHazardAnalysisPage } from '../features/jobs/pages/job-hazard-analysis-page';
@@ -28,6 +29,7 @@ export function AppRouter() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/jobs/new" element={<NewJobPage />} />
+          <Route path="/jobs/proposals/new" element={<NewProposalPage />} />
           <Route path="/jobs/:jobId" element={<JobDetailPage />} />
           <Route path="/jobs/:jobId/hub" element={<JobFileHubPage />} />
           <Route path="/jobs/:jobId/templates/jha" element={<JobHazardAnalysisPage />} />
