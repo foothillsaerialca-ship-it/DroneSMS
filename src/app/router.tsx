@@ -12,16 +12,8 @@ import { EquipmentPage } from '../features/equipment/pages/equipment-page';
 import { LoginPage } from '../features/auth/pages/login-page';
 import { RegisterPage } from '../features/auth/pages/register-page';
 import { CompanyOnboardingPage } from '../features/auth/pages/company-onboarding-page';
+import { SettingsPage } from '../features/settings/pages/settings-page';
 import { ProtectedRoute } from '../features/auth/components/protected-route';
-
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h1 className="text-xl font-semibold text-brand-900">{title}</h1>
-      <p className="mt-2 text-sm text-slate-600">Route placeholder.</p>
-    </section>
-  );
-}
 
 export function AppRouter() {
   return (
@@ -42,7 +34,7 @@ export function AppRouter() {
           <Route path="/jobs/:jobId/templates/preflight" element={<PreflightChecklistPage />} />
           <Route path="/personnel" element={<PersonnelPage />} />
           <Route path="/equipment" element={<EquipmentPage />} />
-          <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>
 
