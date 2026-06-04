@@ -1,7 +1,7 @@
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@frontend/lib/supabase';
-import { useAuth } from '@frontend/features/auth/components/use-auth';
+import { supabase } from '../../../app/frontend/lib/supabase';
+import { useAuth } from '../../../app/frontend/features/auth/components/use-auth';
 
 type SettingsForm = {
   companyName: string;
@@ -345,7 +345,7 @@ export function SettingsPage() {
     try {
       const { error: signOutError } = await supabase.auth.signOut();
       if (signOutError) throw signOutError;
-      navigate('/login', { replace: true });
+      navigate('/', { replace: true });
     } catch (signOutError) {
       setError(getErrorMessage(signOutError, 'Unable to log out.'));
       setIsSigningOut(false);
@@ -372,6 +372,23 @@ export function SettingsPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">Loading settings...</div>
       ) : (
         <>
+          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-brand-900">User Profile</h2>
+                <p className="mt-1 text-sm text-slate-600">Manage your personal and professional information.</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-brand-700 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50"
+                onClick={() => navigate('/settings/profile')}
+              >
+                Edit Profile
+              </button>
+            </div>
+            <p className="mt-4 text-sm text-slate-600">Visit your profile page to update your name, company affiliation, and FAA license information.</p>
+          </article>
+
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             <div className="flex items-start justify-between gap-3">
               <div>

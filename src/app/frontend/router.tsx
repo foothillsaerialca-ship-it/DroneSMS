@@ -13,6 +13,8 @@ import { LoginPage } from './features/auth/pages/login-page';
 import { RegisterPage } from './features/auth/pages/register-page';
 import { CompanyOnboardingPage } from './features/auth/pages/company-onboarding-page';
 import { ProtectedRoute } from './features/auth/components/protected-route';
+import { SettingsPage } from '../../features/settings/pages/settings-page';
+import { ProfilePage } from '../../features/settings/pages/profile-page';
 
 function LandingPage() {
   return (
@@ -21,7 +23,10 @@ function LandingPage() {
         <p className="text-sm font-semibold uppercase tracking-[0.24em] text-brand-700">Welcome to</p>
         <h1 className="text-4xl font-bold tracking-tight text-slate-900">DroneSMS</h1>
         <p className="mx-auto max-w-lg text-sm leading-6 text-slate-600">
-          A simple drone operations portal for managing jobs, equipment, preflight checklists, and personnel.
+          A comprehensive drone operations portal designed around the four pillars of Safety Management 
+          Systems (SMS), enabling organizations to manage personnel, equipment, missions, 
+          risk assessments, preflight inspections, compliance, and continuous safety improvement 
+          throughout every stage of flight operations.
         </p>
       </div>
 
@@ -39,15 +44,6 @@ function LandingPage() {
           Register
         </Link>
       </div>
-    </section>
-  );
-}
-
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h1 className="text-xl font-semibold text-brand-900">{title}</h1>
-      <p className="mt-2 text-sm text-slate-600">Route placeholder.</p>
     </section>
   );
 }
@@ -71,7 +67,8 @@ export function AppRouter() {
           <Route path="/jobs/:jobId/templates/preflight" element={<PreflightChecklistPage />} />
           <Route path="/personnel" element={<PersonnelPage />} />
           <Route path="/equipment" element={<EquipmentPage />} />
-          <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/profile" element={<ProfilePage />} />
         </Route>
       </Route>
 

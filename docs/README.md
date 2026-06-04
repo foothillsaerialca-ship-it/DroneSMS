@@ -21,12 +21,14 @@ Server: `https://109b8de1.dronesms-app.pages.dev/`
   - `react-dom` `^18.3.1`
   - `react-router-dom` `^6.30.1`
   - `@supabase/supabase-js` `^2.49.8`
-  - `@vitejs/plugin-react` `^6.0.2`
-  - `rollup-plugin-license` `^3.7.1`
-  - `typescript` `^6.0.0`
-  - `vite` `^8.0.14`
+  - `vite` `^7.0.0`
+  - `@vitejs/plugin-react` `^4.0.0`
+  - `typescript` `^5.5.4`
   - `tailwindcss` `^3.4.17`
+  - `autoprefixer` `^10.4.20`
+  - `postcss` `^8.4.49`
   - `eslint` `^9.15.0`
+  - `rollup-plugin-license` `^3.7.1`
 
 ## Languages Involved
 
