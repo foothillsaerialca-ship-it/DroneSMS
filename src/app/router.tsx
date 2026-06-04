@@ -13,8 +13,8 @@ import { EquipmentPage } from './frontend/features/equipment/pages/equipment-pag
 import { LoginPage } from './frontend/features/auth/pages/login-page';
 import { RegisterPage } from './frontend/features/auth/pages/register-page';
 import { CompanyOnboardingPage } from './frontend/features/auth/pages/company-onboarding-page';
-import { SettingsPage } from '../features/settings/pages/settings-page';
-import { ProfilePage } from '../features/settings/pages/profile-page';
+import { SettingsPage } from './frontend/features/settings/pages/settings-page';
+import { ProfilePage } from './frontend/features/settings/pages/profile-page';
 import { ProtectedRoute } from './frontend/features/auth/components/protected-route';
 
 export function AppRouter() {

@@ -13,8 +13,8 @@ import { LoginPage } from './features/auth/pages/login-page';
 import { RegisterPage } from './features/auth/pages/register-page';
 import { CompanyOnboardingPage } from './features/auth/pages/company-onboarding-page';
 import { ProtectedRoute } from './features/auth/components/protected-route';
-import { SettingsPage } from '../../features/settings/pages/settings-page';
-import { ProfilePage } from '../../features/settings/pages/profile-page';
+import { SettingsPage } from './features/settings/pages/settings-page';
+import { ProfilePage } from './features/settings/pages/profile-page';
 
 function LandingPage() {
   return (
