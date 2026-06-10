@@ -3,6 +3,7 @@ import { AppShell } from './shell';
 import { DashboardPage } from './features/dashboard/pages/dashboard-page';
 import { JobsPage } from './features/jobs/pages/jobs-page';
 import { NewJobPage } from './features/jobs/pages/new-job-page';
+import { NewProposalPage } from './features/jobs/pages/new-proposal-page';
 import { JobDetailPage } from './features/jobs/pages/job-detail-page';
 import { JobFileHubPage } from './features/jobs/pages/job-file-hub-page';
 import { JobHazardAnalysisPage } from './features/jobs/pages/job-hazard-analysis-page';
@@ -15,6 +16,7 @@ import { CompanyOnboardingPage } from './features/auth/pages/company-onboarding-
 import { ProtectedRoute } from './features/auth/components/protected-route';
 import { SettingsPage } from './features/settings/pages/settings-page';
 import { ProfilePage } from './features/settings/pages/profile-page';
+import { ReportsPage } from './features/reports/pages/reports-page';
 
 function LandingPage() {
   return (
@@ -61,12 +63,14 @@ export function AppRouter() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/jobs/new" element={<NewJobPage />} />
+          <Route path="/jobs/proposals/new" element={<NewProposalPage />} />
           <Route path="/jobs/:jobId" element={<JobDetailPage />} />
           <Route path="/jobs/:jobId/hub" element={<JobFileHubPage />} />
           <Route path="/jobs/:jobId/templates/jha" element={<JobHazardAnalysisPage />} />
           <Route path="/jobs/:jobId/templates/preflight" element={<PreflightChecklistPage />} />
           <Route path="/personnel" element={<PersonnelPage />} />
           <Route path="/equipment" element={<EquipmentPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/profile" element={<ProfilePage />} />
         </Route>
