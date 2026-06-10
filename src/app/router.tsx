@@ -15,6 +15,7 @@ import { RegisterPage } from './frontend/features/auth/pages/register-page';
 import { CompanyOnboardingPage } from './frontend/features/auth/pages/company-onboarding-page';
 import { SettingsPage } from './frontend/features/settings/pages/settings-page';
 import { ProfilePage } from './frontend/features/settings/pages/profile-page';
+import { ReportsPage } from './frontend/features/reports/pages/reports-page';
 import { ProtectedRoute } from './frontend/features/auth/components/protected-route';
 
 export function AppRouter() {
@@ -37,6 +38,7 @@ export function AppRouter() {
           <Route path="/jobs/:jobId/templates/preflight" element={<PreflightChecklistPage />} />
           <Route path="/personnel" element={<PersonnelPage />} />
           <Route path="/equipment" element={<EquipmentPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/profile" element={<ProfilePage />} />
         </Route>
