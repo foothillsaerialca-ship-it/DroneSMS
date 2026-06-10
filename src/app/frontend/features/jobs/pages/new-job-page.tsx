@@ -1,6 +1,8 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
+import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
+import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 
 const serviceTypes = [
   'Cleaning Operations',
@@ -65,8 +67,37 @@ async function getCurrentOrganizationId(userId: string) {
 export function NewJobPage() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState(initialFormState);
+  const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
+  const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCompanyIdentity() {
+      setIsLoadingOrganization(true);
+
+      try {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+
+        const userId = userData.user?.id;
+        const settings = userId ? await loadOrganizationSettingsForUser(userId) : null;
+        if (isMounted) setOrganizationSettings(settings);
+      } catch {
+        if (isMounted) setOrganizationSettings(null);
+      } finally {
+        if (isMounted) setIsLoadingOrganization(false);
+      }
+    }
+
+    void loadCompanyIdentity();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   function updateField(field: keyof typeof formData, value: string) {
     setFormData((current) => ({ ...current, [field]: value }));
@@ -134,6 +165,13 @@ export function NewJobPage() {
           <p className="mt-2 text-sm text-slate-600">Capture the first details for an upcoming drone operation.</p>
         </div>
       </div>
+
+      <OrganizationIdentityCard
+        organization={organizationSettings}
+        title="Mission Basics Company Information"
+        description="Company identity is auto-populated from Settings for mission basics and downstream job documents."
+        isLoading={isLoadingOrganization}
+      />
 
       <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" onSubmit={handleSubmit}>
         <div className="space-y-4">

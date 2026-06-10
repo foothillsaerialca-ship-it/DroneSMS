@@ -1,6 +1,8 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
+import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
+import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 
 const templateChecklist = [
   { name: 'Job Hazard Analysis', path: 'templates/jha' },
@@ -163,6 +165,7 @@ export function JobFileHubPage() {
   const [assignments, setAssignments] = useState<JobPersonnelAssignment[]>([]);
   const [equipmentAssignments, setEquipmentAssignments] = useState<JobEquipmentAssignment[]>([]);
   const [safetyEvents, setSafetyEvents] = useState<JobSafetyEvent[]>([]);
+  const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
   const [selectedPersonnelId, setSelectedPersonnelId] = useState('');
   const [selectedRole, setSelectedRole] = useState(crewRoleOptions[0]);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
@@ -306,6 +309,7 @@ export function JobFileHubPage() {
           setAssignments([]);
           setEquipmentAssignments([]);
           setSafetyEvents([]);
+          setOrganizationSettings(null);
           return;
         }
 
@@ -320,6 +324,8 @@ export function JobFileHubPage() {
         setAssignments(loadedAssignments);
         setEquipmentAssignments(loadedEquipmentAssignments);
         setSafetyEvents((safetyEventsResult.data ?? []) as JobSafetyEvent[]);
+        const settings = await loadOrganizationSettingsById((jobResult.data as Job).organization_id);
+        if (isMounted) setOrganizationSettings(settings);
         setSelectedPersonnelId(loadedPersonnel[0]?.id ?? '');
         setSelectedEquipmentId(loadedEquipment.find((equipment) => !loadedAssignedEquipmentIds.has(equipment.id))?.id ?? loadedEquipment[0]?.id ?? '');
       } catch (loadError) {
@@ -634,6 +640,12 @@ export function JobFileHubPage() {
           </button>
         </div>
       </div>
+
+      <OrganizationIdentityCard
+        organization={organizationSettings}
+        title="Job File Company Information"
+        description="Company identity is auto-populated from Settings for packet headers and job file documents."
+      />
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <h2 className="text-base font-semibold text-brand-900">Job summary</h2>
