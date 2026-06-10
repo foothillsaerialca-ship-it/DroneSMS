@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
+import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
+import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
+import type { SelectedPreliminaryHazard } from '@frontend/features/safety/lib/preliminary-hazard-library';
 
 type Job = {
   id: string;
@@ -20,6 +23,7 @@ type Proposal = {
   service_type: string;
   status: ProposalStatus;
   created_at: string;
+  hazard_assessment: SelectedPreliminaryHazard[] | null;
 };
 
 type JobsTab = 'proposals' | 'active' | 'completed';
@@ -64,9 +68,28 @@ export function JobsPage() {
   const [jobsError, setJobsError] = useState<string | null>(null);
   const [proposalsError, setProposalsError] = useState<string | null>(null);
   const [updatingProposalId, setUpdatingProposalId] = useState<string | null>(null);
+  const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
+  const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
 
   useEffect(() => {
     let isMounted = true;
+
+    async function loadCompanyIdentity() {
+      setIsLoadingOrganization(true);
+
+      try {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+
+        const userId = userData.user?.id;
+        const settings = userId ? await loadOrganizationSettingsForUser(userId) : null;
+        if (isMounted) setOrganizationSettings(settings);
+      } catch {
+        if (isMounted) setOrganizationSettings(null);
+      } finally {
+        if (isMounted) setIsLoadingOrganization(false);
+      }
+    }
 
     async function loadJobs() {
       setIsLoadingJobs(true);
@@ -98,7 +121,7 @@ export function JobsPage() {
       try {
         const { data, error: proposalsLoadError } = await supabase
           .from('proposals')
-          .select('id, proposal_name, client_name, service_type, status, created_at')
+          .select('id, proposal_name, client_name, service_type, status, created_at, hazard_assessment')
           .order('created_at', { ascending: false });
 
         if (proposalsLoadError) throw proposalsLoadError;
@@ -113,6 +136,7 @@ export function JobsPage() {
       }
     }
 
+    void loadCompanyIdentity();
     void loadJobs();
     void loadProposals();
 
@@ -218,6 +242,15 @@ export function JobsPage() {
         </div>
       ) : null}
 
+      {activeTab === 'proposals' ? (
+        <OrganizationIdentityCard
+          organization={organizationSettings}
+          title="Proposal Company Information"
+          description="Company identity is auto-populated from Settings for proposal display and future exports."
+          isLoading={isLoadingOrganization}
+        />
+      ) : null}
+
       {activeTab === 'proposals' && !isLoadingProposals && !proposalsError && proposals.length > 0 ? (
         <div className="space-y-3">
           {proposals.map((proposal) => (
@@ -258,6 +291,24 @@ export function JobsPage() {
                   <dd className="mt-1 text-slate-700">{formatDate(proposal.created_at)}</dd>
                 </div>
               </dl>
+
+              {proposal.hazard_assessment?.length ? (
+                <div className="mt-4 space-y-2">
+                  <h3 className="text-sm font-semibold text-brand-900">Preliminary Hazard Assessment</h3>
+                  <div className="grid gap-2 lg:grid-cols-2">
+                    {proposal.hazard_assessment.map((hazard) => (
+                      <div key={hazard.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                          <p className="font-semibold text-brand-900">{hazard.hazard}</p>
+                          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{hazard.category}</span>
+                        </div>
+                        <p className="mt-2 whitespace-pre-wrap text-slate-700">{hazard.mitigation}</p>
+                        {hazard.notes ? <p className="mt-2 whitespace-pre-wrap text-slate-600">Notes: {hazard.notes}</p> : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </article>
           ))}
         </div>
