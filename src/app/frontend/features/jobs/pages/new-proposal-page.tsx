@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
@@ -34,9 +34,7 @@ const initialFormState = {
   serviceType: serviceTypes[0],
   siteAddress: '',
   description: '',
-  proposedRpic: '',
-  proposedCrew: '',
-  proposedAircraft: '',
+  proposedRpicId: '',
   airspaceClass: airspaceClasses[0],
   laancRequired: 'No',
   additionalAuthorizationRequired: 'No',
@@ -44,6 +42,36 @@ const initialFormState = {
   validUntil: '',
   status: proposalStatuses[0]
 };
+
+
+type ProposedRpic = {
+  id: string;
+  full_name: string;
+  role: string;
+  status: string;
+  part_107_certificate_number: string | null;
+  part_107_expiration_date: string | null;
+  certifications_summary: string | null;
+  professional_bio: string | null;
+};
+
+function createProposalNumber() {
+  const now = new Date();
+  const dateStamp = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const timeStamp = now.toISOString().slice(11, 19).replace(/:/g, '');
+  return `PRO-${dateStamp}-${timeStamp}`;
+}
+
+function buildFallbackCredentials(person: ProposedRpic | null) {
+  if (!person) return null;
+  const credentials = person.certifications_summary?.trim();
+  if (credentials) return credentials;
+
+  const part107 = person.part_107_certificate_number?.trim();
+  const expires = person.part_107_expiration_date ? `expires ${person.part_107_expiration_date}` : null;
+  const fallback = [part107 ? `Part 107 ${part107}` : null, expires].filter(Boolean).join(' • ');
+  return fallback || null;
+}
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to save proposal. Please try again.';
@@ -71,7 +99,9 @@ export function NewProposalPage() {
   const [selectedHazards, setSelectedHazards] = useState<SelectedPreliminaryHazard[]>([]);
   const [customHazard, setCustomHazard] = useState('');
   const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
+  const [personnel, setPersonnel] = useState<ProposedRpic[]>([]);
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
+  const [isLoadingPersonnel, setIsLoadingPersonnel] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -100,12 +130,36 @@ export function NewProposalPage() {
       }
     }
 
+    async function loadPersonnel() {
+      setIsLoadingPersonnel(true);
+
+      try {
+        const { data, error: personnelError } = await supabase
+          .from('personnel')
+          .select('id, full_name, role, status, part_107_certificate_number, part_107_expiration_date, certifications_summary, professional_bio')
+          .eq('status', 'Active')
+          .order('full_name', { ascending: true });
+
+        if (personnelError) throw personnelError;
+        if (isMounted) setPersonnel((data ?? []) as ProposedRpic[]);
+      } catch (loadError) {
+        if (isMounted) setError(getErrorMessage(loadError));
+      } finally {
+        if (isMounted) setIsLoadingPersonnel(false);
+      }
+    }
+
     void loadCompanyIdentity();
+    void loadPersonnel();
 
     return () => {
       isMounted = false;
     };
   }, []);
+
+  const selectedRpic = useMemo(() => personnel.find((person) => person.id === formData.proposedRpicId) ?? null, [personnel, formData.proposedRpicId]);
+
+  const rpicCredentials = useMemo(() => buildFallbackCredentials(selectedRpic), [selectedRpic]);
 
   function updateField(field: keyof typeof initialFormState, value: string) {
     setFormData((current) => ({ ...current, [field]: value }));
@@ -176,6 +230,8 @@ export function NewProposalPage() {
       }
 
       const summarizedHazards = summarizeSelectedHazards(selectedHazards);
+      const selectedRpicSnapshot = selectedRpic;
+      const selectedRpicCredentials = buildFallbackCredentials(selectedRpicSnapshot);
 
       const { error: proposalError } = await supabase.from('proposals').insert({
         organization_id: organizationId,
@@ -184,13 +240,16 @@ export function NewProposalPage() {
         contact_name: formData.contactName.trim() || null,
         phone: formData.phone.trim() || null,
         email: formData.email.trim() || null,
+        proposal_number: createProposalNumber(),
         proposal_name: formData.proposalName.trim(),
         service_type: formData.serviceType,
         site_address: formData.siteAddress.trim(),
         description: formData.description.trim() || null,
-        proposed_rpic: formData.proposedRpic.trim() || null,
-        proposed_crew: formData.proposedCrew.trim() || null,
-        proposed_aircraft: formData.proposedAircraft.trim() || null,
+        proposed_rpic_id: selectedRpicSnapshot?.id ?? null,
+        proposed_rpic_name: selectedRpicSnapshot?.full_name ?? null,
+        proposed_rpic_credentials: selectedRpicCredentials,
+        proposed_rpic_bio: selectedRpicSnapshot?.professional_bio?.trim() || null,
+        proposed_rpic: selectedRpicSnapshot?.full_name ?? null,
         airspace_class: formData.airspaceClass === 'Not reviewed' ? null : formData.airspaceClass,
         laanc_required: toBoolean(formData.laancRequired),
         additional_authorization_required: toBoolean(formData.additionalAuthorizationRequired),
@@ -251,10 +310,15 @@ export function NewProposalPage() {
           <TextAreaField label="Description" value={formData.description} onChange={(value) => updateField('description', value)} disabled={isSaving} />
         </FormSection>
 
-        <FormSection title="Operational Planning">
-          <TextField label="Proposed RPIC" value={formData.proposedRpic} onChange={(value) => updateField('proposedRpic', value)} disabled={isSaving} />
-          <TextAreaField label="Proposed Crew" value={formData.proposedCrew} onChange={(value) => updateField('proposedCrew', value)} disabled={isSaving} />
-          <TextField label="Proposed Aircraft" value={formData.proposedAircraft} onChange={(value) => updateField('proposedAircraft', value)} disabled={isSaving} />
+        <FormSection title="Proposed RPIC">
+          <PersonnelSelectField
+            label="Proposed RPIC"
+            value={formData.proposedRpicId}
+            personnel={personnel}
+            onChange={(value) => updateField('proposedRpicId', value)}
+            disabled={isSaving || isLoadingPersonnel}
+          />
+          <RpicSnapshotCard selectedRpic={selectedRpic} credentials={rpicCredentials} isLoading={isLoadingPersonnel} />
         </FormSection>
 
         <FormSection title="Airspace Review">
@@ -421,6 +485,73 @@ function HazardSelection({
         </div>
       </div>
     </fieldset>
+  );
+}
+
+
+function PersonnelSelectField({
+  label,
+  value,
+  personnel,
+  onChange,
+  disabled
+}: {
+  label: string;
+  value: string;
+  personnel: ProposedRpic[];
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <label className="block text-sm font-medium text-slate-700">
+      {label}
+      <select
+        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:py-2 sm:text-sm"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+      >
+        <option value="">Select a proposed RPIC</option>
+        {personnel.map((person) => (
+          <option key={person.id} value={person.id}>
+            {person.full_name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function RpicSnapshotCard({ selectedRpic, credentials, isLoading }: { selectedRpic: ProposedRpic | null; credentials: string | null; isLoading: boolean }) {
+  if (isLoading) {
+    return <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 sm:col-span-2">Loading personnel...</div>;
+  }
+
+  if (!selectedRpic) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600 sm:col-span-2">
+        Select a personnel record to snapshot the proposed RPIC name, certifications, and professional bio into this proposal.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-brand-100 bg-brand-50 p-3 sm:col-span-2">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-brand-700">Selected RPIC</p>
+        <h3 className="mt-1 text-base font-semibold text-brand-900">{selectedRpic.full_name}</h3>
+      </div>
+      <div className="grid gap-3 text-sm lg:grid-cols-2">
+        <div className="rounded-lg bg-white p-3">
+          <h4 className="font-semibold text-brand-900">Certifications Summary</h4>
+          <p className="mt-1 whitespace-pre-wrap text-slate-700">{credentials || 'No certifications summary on file yet.'}</p>
+        </div>
+        <div className="rounded-lg bg-white p-3">
+          <h4 className="font-semibold text-brand-900">Professional Bio</h4>
+          <p className="mt-1 whitespace-pre-wrap text-slate-700">{selectedRpic.professional_bio?.trim() || 'No professional bio on file yet.'}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -15,6 +15,9 @@ const initialFormState = {
   emergencyContactName: '',
   emergencyContactPhone: '',
   status: statusOptions[0],
+  professionalBio: '',
+  certificationsSummary: '',
+  profilePhotoUrl: '',
   notes: ''
 };
 
@@ -30,6 +33,9 @@ type Personnel = {
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   status: string;
+  professional_bio: string | null;
+  certifications_summary: string | null;
+  profile_photo_url: string | null;
   notes: string | null;
   updated_at: string;
 };
@@ -132,6 +138,9 @@ function toFormState(person: Personnel): PersonnelFormState {
     emergencyContactName: person.emergency_contact_name ?? '',
     emergencyContactPhone: person.emergency_contact_phone ?? '',
     status: person.status,
+    professionalBio: person.professional_bio ?? '',
+    certificationsSummary: person.certifications_summary ?? '',
+    profilePhotoUrl: person.profile_photo_url ?? '',
     notes: person.notes ?? ''
   };
 }
@@ -156,6 +165,9 @@ function buildPersonnelPayload(formData: PersonnelFormState) {
     emergency_contact_name: formData.emergencyContactName.trim() || null,
     emergency_contact_phone: formData.emergencyContactPhone.trim() || null,
     status: formData.status,
+    professional_bio: formData.professionalBio.trim() || null,
+    certifications_summary: formData.certificationsSummary.trim() || null,
+    profile_photo_url: formData.profilePhotoUrl.trim() || null,
     notes: formData.notes.trim() || null,
     updated_at: new Date().toISOString()
   };
@@ -177,7 +189,7 @@ export function PersonnelPage() {
     try {
       const { data, error: personnelError } = await supabase
         .from('personnel')
-        .select('id, full_name, role, email, phone, part_107_certificate_number, part_107_expiration_date, training_expiration_date, emergency_contact_name, emergency_contact_phone, status, notes, updated_at')
+        .select('id, full_name, role, email, phone, part_107_certificate_number, part_107_expiration_date, training_expiration_date, emergency_contact_name, emergency_contact_phone, status, professional_bio, certifications_summary, profile_photo_url, notes, updated_at')
         .order('status', { ascending: true })
         .order('full_name', { ascending: true });
 
@@ -464,6 +476,40 @@ export function PersonnelPage() {
           </label>
 
           <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+            Certifications Summary
+            <textarea
+              className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
+              value={formData.certificationsSummary}
+              onChange={(event) => updateField('certificationsSummary', event.target.value)}
+              placeholder="Part 107, night operations, waivers, sensor qualifications, or client-facing credentials."
+              disabled={isSaving}
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+            Professional Bio
+            <textarea
+              className="mt-1 min-h-28 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
+              value={formData.professionalBio}
+              onChange={(event) => updateField('professionalBio', event.target.value)}
+              placeholder="Client-facing pilot experience, specialties, and relevant project background."
+              disabled={isSaving}
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+            Profile Photo URL
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+              type="url"
+              value={formData.profilePhotoUrl}
+              onChange={(event) => updateField('profilePhotoUrl', event.target.value)}
+              placeholder="Future image upload placeholder or hosted profile photo URL"
+              disabled={isSaving}
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
             Notes
             <textarea
               className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
@@ -545,6 +591,27 @@ export function PersonnelPage() {
                   <dd className="mt-1 text-slate-700">{person.emergency_contact_name || person.emergency_contact_phone ? [person.emergency_contact_name, person.emergency_contact_phone].filter(Boolean).join(' • ') : 'No emergency contact'} • {person.status}</dd>
                 </div>
               </dl>
+
+              {person.certifications_summary || person.professional_bio ? (
+                <div className="mt-3 grid gap-3 text-sm lg:grid-cols-2">
+                  {person.certifications_summary ? (
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <h3 className="font-semibold text-brand-900">Certifications Summary</h3>
+                      <p className="mt-1 whitespace-pre-wrap text-slate-600">{person.certifications_summary}</p>
+                    </div>
+                  ) : null}
+                  {person.professional_bio ? (
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <h3 className="font-semibold text-brand-900">Professional Bio</h3>
+                      <p className="mt-1 whitespace-pre-wrap text-slate-600">{person.professional_bio}</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {person.profile_photo_url ? (
+                <p className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">Profile photo: {person.profile_photo_url}</p>
+              ) : null}
 
               {person.notes ? <p className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">{person.notes}</p> : null}
             </article>
