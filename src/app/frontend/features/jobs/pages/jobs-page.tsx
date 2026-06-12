@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
@@ -80,8 +80,54 @@ export function JobsPage() {
   const [proposalsError, setProposalsError] = useState<string | null>(null);
   const [updatingProposalId, setUpdatingProposalId] = useState<string | null>(null);
   const [creatingJobProposalId, setCreatingJobProposalId] = useState<string | null>(null);
+  const [deletingProposalId, setDeletingProposalId] = useState<string | null>(null);
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const [workspaceMessage, setWorkspaceMessage] = useState<string | null>(null);
   const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
+
+  const loadJobs = useCallback(async () => {
+    setIsLoadingJobs(true);
+    setJobsError(null);
+
+    try {
+      const { data, error: jobsLoadError } = await supabase
+        .from('jobs')
+        .select('id, name, service_type, location, planned_date, status')
+        .is('deleted_at', null)
+        .order('planned_date', { ascending: true })
+        .order('created_at', { ascending: false });
+
+      if (jobsLoadError) throw jobsLoadError;
+
+      setJobs((data ?? []) as Job[]);
+    } catch (loadError) {
+      setJobsError(getErrorMessage(loadError));
+    } finally {
+      setIsLoadingJobs(false);
+    }
+  }, []);
+
+  const loadProposals = useCallback(async () => {
+    setIsLoadingProposals(true);
+    setProposalsError(null);
+
+    try {
+      const { data, error: proposalsLoadError } = await supabase
+        .from('proposals')
+        .select('id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
+
+      if (proposalsLoadError) throw proposalsLoadError;
+
+      setProposals((data ?? []) as Proposal[]);
+    } catch (loadError) {
+      setProposalsError(getErrorMessage(loadError));
+    } finally {
+      setIsLoadingProposals(false);
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -103,51 +149,6 @@ export function JobsPage() {
       }
     }
 
-    async function loadJobs() {
-      setIsLoadingJobs(true);
-      setJobsError(null);
-
-      try {
-        const { data, error: jobsLoadError } = await supabase
-          .from('jobs')
-          .select('id, name, service_type, location, planned_date, status')
-          .order('planned_date', { ascending: true })
-          .order('created_at', { ascending: false });
-
-        if (jobsLoadError) throw jobsLoadError;
-        if (!isMounted) return;
-
-        setJobs((data ?? []) as Job[]);
-      } catch (loadError) {
-        if (!isMounted) return;
-        setJobsError(getErrorMessage(loadError));
-      } finally {
-        if (isMounted) setIsLoadingJobs(false);
-      }
-    }
-
-    async function loadProposals() {
-      setIsLoadingProposals(true);
-      setProposalsError(null);
-
-      try {
-        const { data, error: proposalsLoadError } = await supabase
-          .from('proposals')
-          .select('id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio')
-          .order('created_at', { ascending: false });
-
-        if (proposalsLoadError) throw proposalsLoadError;
-        if (!isMounted) return;
-
-        setProposals((data ?? []) as Proposal[]);
-      } catch (loadError) {
-        if (!isMounted) return;
-        setProposalsError(getErrorMessage(loadError));
-      } finally {
-        if (isMounted) setIsLoadingProposals(false);
-      }
-    }
-
     void loadCompanyIdentity();
     void loadJobs();
     void loadProposals();
@@ -155,7 +156,7 @@ export function JobsPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [loadJobs, loadProposals]);
 
   const activeJobs = useMemo(() => jobs.filter((job) => !isCompletedJob(job)), [jobs]);
   const completedJobs = useMemo(() => jobs.filter(isCompletedJob), [jobs]);
@@ -244,6 +245,56 @@ export function JobsPage() {
     }
   }
 
+  async function deleteProposal(proposalId: string) {
+    if (!window.confirm('Are you sure? This will remove the proposal from your active workspace.')) return;
+
+    setDeletingProposalId(proposalId);
+    setProposalsError(null);
+    setWorkspaceMessage(null);
+
+    try {
+      // Soft-delete only. Future Archive and Locked Record workflows can branch from deleted_at.
+      const { error } = await supabase
+        .from('proposals')
+        .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', proposalId);
+
+      if (error) throw error;
+
+      setWorkspaceMessage('Proposal removed from your active workspace.');
+      await loadProposals();
+    } catch (deleteError) {
+      setProposalsError(getErrorMessage(deleteError));
+    } finally {
+      setDeletingProposalId(null);
+    }
+  }
+
+  async function deleteJob(jobId: string) {
+    if (!window.confirm('Are you sure? This will remove the job from your active workspace.')) return;
+
+    setDeletingJobId(jobId);
+    setJobsError(null);
+    setWorkspaceMessage(null);
+
+    try {
+      // Soft-delete only. Future Archive and Locked Record workflows can branch from deleted_at.
+      const { error } = await supabase
+        .from('jobs')
+        .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', jobId);
+
+      if (error) throw error;
+
+      setWorkspaceMessage('Job removed from your active workspace.');
+      await loadJobs();
+    } catch (deleteError) {
+      setJobsError(getErrorMessage(deleteError));
+    } finally {
+      setDeletingJobId(null);
+    }
+  }
+
   return (
     <section className="space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -301,9 +352,15 @@ export function JobsPage() {
       {currentError ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm" role="alert">
           <h2 className="text-base font-semibold text-red-800">
-            Unable to load {activeTab === 'proposals' ? 'proposals' : 'jobs'}
+            Unable to load or update {activeTab === 'proposals' ? 'proposals' : 'jobs'}
           </h2>
           <p className="mt-2 text-sm text-red-700">{currentError}</p>
+        </div>
+      ) : null}
+
+      {workspaceMessage ? (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-800 shadow-sm" role="status">
+          {workspaceMessage}
         </div>
       ) : null}
 
@@ -348,6 +405,14 @@ export function JobsPage() {
                     disabled={creatingJobProposalId === proposal.id}
                   >
                     {creatingJobProposalId === proposal.id ? 'Creating Job...' : 'Create Job'}
+                  </button>
+                  <button
+                    type="button"
+                    className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0 sm:py-2"
+                    onClick={() => void deleteProposal(proposal.id)}
+                    disabled={deletingProposalId === proposal.id || creatingJobProposalId === proposal.id}
+                  >
+                    {deletingProposalId === proposal.id ? 'Removing...' : 'Delete Proposal'}
                   </button>
                 </div>
               </div>
@@ -417,23 +482,35 @@ export function JobsPage() {
       {activeTab !== 'proposals' && !isLoadingJobs && !jobsError && visibleJobs.length > 0 ? (
         <div className="space-y-3">
           {visibleJobs.map((job) => (
-            <Link
-              key={job.id}
-              to={`/jobs/${job.id}`}
-              className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-100"
-            >
-              <article>
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h2 className="text-base font-semibold text-brand-900">{job.name}</h2>
-                    <p className="mt-1 text-sm text-slate-600">{job.service_type}</p>
-                  </div>
+            <article key={job.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <Link
+                  to={`/jobs/${job.id}`}
+                  className="block flex-1 rounded-lg transition hover:text-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                >
+                  <h2 className="text-base font-semibold text-brand-900">{job.name}</h2>
+                  <p className="mt-1 text-sm text-slate-600">{job.service_type}</p>
+                </Link>
+                <div className="flex flex-col gap-2 sm:items-end">
                   <span className="inline-flex w-fit rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-brand-700">
                     {job.status}
                   </span>
+                  <button
+                    type="button"
+                    className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0 sm:py-2"
+                    onClick={() => void deleteJob(job.id)}
+                    disabled={deletingJobId === job.id}
+                  >
+                    {deletingJobId === job.id ? 'Removing...' : 'Delete Job'}
+                  </button>
                 </div>
+              </div>
 
-                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              <Link
+                to={`/jobs/${job.id}`}
+                className="mt-4 block rounded-lg transition hover:text-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-100"
+              >
+                <dl className="grid gap-3 text-sm sm:grid-cols-2">
                   <div>
                     <dt className="font-medium text-slate-500">Location</dt>
                     <dd className="mt-1 text-slate-700">{job.location}</dd>
@@ -443,8 +520,8 @@ export function JobsPage() {
                     <dd className="mt-1 text-slate-700">{formatDate(job.planned_date)}</dd>
                   </div>
                 </dl>
-              </article>
-            </Link>
+              </Link>
+            </article>
           ))}
         </div>
       ) : null}
