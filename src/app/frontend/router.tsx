@@ -64,6 +64,7 @@ export function AppRouter() {
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/jobs/new" element={<NewJobPage />} />
           <Route path="/jobs/proposals/new" element={<NewProposalPage />} />
+          <Route path="/jobs/proposals/:proposalId/edit" element={<NewProposalPage />} />
           <Route path="/jobs/:jobId" element={<JobDetailPage />} />
           <Route path="/jobs/:jobId/hub" element={<JobFileHubPage />} />
           <Route path="/jobs/:jobId/templates/jha" element={<JobHazardAnalysisPage />} />

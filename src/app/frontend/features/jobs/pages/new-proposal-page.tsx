@@ -1,5 +1,5 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import {
@@ -11,6 +11,7 @@ import {
   selectLibraryHazard,
   serviceTypes,
   summarizeSelectedHazards,
+  normalizeSelectedHazards,
   type HazardLibraryEntry,
   type SelectedPreliminaryHazard
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
@@ -19,7 +20,25 @@ import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@fro
 const proposalStatuses = ['Draft', 'Sent', 'Under Review', 'Accepted', 'Declined'];
 const airspaceClasses = ['Not reviewed', 'Class B', 'Class C', 'Class D', 'Class E', 'Class G'];
 
-const initialFormState = {
+type ProposalFormState = {
+  clientName: string;
+  contactName: string;
+  phone: string;
+  email: string;
+  proposalName: string;
+  serviceType: string;
+  siteAddress: string;
+  description: string;
+  proposedRpicId: string;
+  airspaceClass: string;
+  laancRequired: string;
+  additionalAuthorizationRequired: string;
+  proposalAmount: string;
+  validUntil: string;
+  status: string;
+};
+
+const initialFormState: ProposalFormState = {
   clientName: '',
   contactName: '',
   phone: '',
@@ -37,6 +56,38 @@ const initialFormState = {
   status: proposalStatuses[0]
 };
 
+
+type ProposalRecord = {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  client_name: string;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
+  proposal_number: string | null;
+  proposal_name: string;
+  service_type: string;
+  site_address: string | null;
+  description: string | null;
+  proposed_rpic_id: string | null;
+  proposed_rpic_name: string | null;
+  proposed_rpic_credentials: string | null;
+  proposed_rpic_bio: string | null;
+  airspace_class: string | null;
+  laanc_required: boolean | null;
+  additional_authorization_required: boolean | null;
+  hazard_assessment: unknown;
+  proposal_amount: number | string | null;
+  valid_until: string | null;
+  status: string | null;
+};
+
+type RpicSnapshot = {
+  full_name: string;
+  credentials: string | null;
+  professional_bio: string | null;
+};
 
 type ProposedRpic = {
   id: string;
@@ -87,14 +138,46 @@ function toBoolean(value: string) {
   return value === 'Yes';
 }
 
+function fromBoolean(value: boolean | null | undefined) {
+  return value ? 'Yes' : 'No';
+}
+
+function toDateInputValue(value: string | null) {
+  return value ? value.slice(0, 10) : '';
+}
+
+function mapProposalToFormState(proposal: ProposalRecord) {
+  return {
+    clientName: proposal.client_name ?? '',
+    contactName: proposal.contact_name ?? '',
+    phone: proposal.phone ?? '',
+    email: proposal.email ?? '',
+    proposalName: proposal.proposal_name ?? '',
+    serviceType: proposal.service_type || serviceTypes[0],
+    siteAddress: proposal.site_address ?? '',
+    description: proposal.description ?? '',
+    proposedRpicId: proposal.proposed_rpic_id ?? '',
+    airspaceClass: proposal.airspace_class ?? airspaceClasses[0],
+    laancRequired: fromBoolean(proposal.laanc_required),
+    additionalAuthorizationRequired: fromBoolean(proposal.additional_authorization_required),
+    proposalAmount: proposal.proposal_amount === null || proposal.proposal_amount === undefined ? '' : String(proposal.proposal_amount),
+    validUntil: toDateInputValue(proposal.valid_until),
+    status: proposal.status || proposalStatuses[0]
+  };
+}
+
 export function NewProposalPage() {
   const navigate = useNavigate();
+  const { proposalId } = useParams();
+  const isEditMode = Boolean(proposalId);
   const [formData, setFormData] = useState(initialFormState);
   const [hazardLibrary, setHazardLibrary] = useState<HazardLibraryEntry[]>(fallbackHazardLibrary);
   const [selectedHazards, setSelectedHazards] = useState<SelectedPreliminaryHazard[]>([]);
   const [customHazard, setCustomHazard] = useState({ hazardName: '', category: '', mitigation: '' });
   const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
   const [personnel, setPersonnel] = useState<ProposedRpic[]>([]);
+  const [loadedProposal, setLoadedProposal] = useState<ProposalRecord | null>(null);
+  const [isLoadingProposal, setIsLoadingProposal] = useState(Boolean(proposalId));
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
   const [isLoadingPersonnel, setIsLoadingPersonnel] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +227,37 @@ export function NewProposalPage() {
       }
     }
 
+    async function loadProposalForEditing() {
+      if (!proposalId) {
+        if (isMounted) setIsLoadingProposal(false);
+        return;
+      }
+
+      setIsLoadingProposal(true);
+
+      try {
+        const { data, error: proposalLoadError } = await supabase
+          .from('proposals')
+          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard_assessment, proposal_amount, valid_until, status')
+          .eq('id', proposalId)
+          .is('deleted_at', null)
+          .single();
+
+        if (proposalLoadError) throw proposalLoadError;
+
+        if (isMounted) {
+          const proposal = data as ProposalRecord;
+          setLoadedProposal(proposal);
+          setFormData(mapProposalToFormState(proposal));
+          setSelectedHazards(normalizeSelectedHazards(proposal.hazard_assessment));
+        }
+      } catch (loadError) {
+        if (isMounted) setError(getErrorMessage(loadError));
+      } finally {
+        if (isMounted) setIsLoadingProposal(false);
+      }
+    }
+
     async function loadHazardLibrary() {
       try {
         const { data, error: hazardLibraryError } = await supabase
@@ -162,15 +276,38 @@ export function NewProposalPage() {
     void loadCompanyIdentity();
     void loadPersonnel();
     void loadHazardLibrary();
+    void loadProposalForEditing();
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [proposalId]);
 
   const selectedRpic = useMemo(() => personnel.find((person) => person.id === formData.proposedRpicId) ?? null, [personnel, formData.proposedRpicId]);
 
   const rpicCredentials = useMemo(() => buildFallbackCredentials(selectedRpic), [selectedRpic]);
+
+  const displayedRpicSnapshot = useMemo<RpicSnapshot | null>(() => {
+    if (selectedRpic) {
+      return {
+        full_name: selectedRpic.full_name,
+        credentials: rpicCredentials,
+        professional_bio: selectedRpic.professional_bio?.trim() || null
+      };
+    }
+
+    if (isEditMode && loadedProposal?.proposed_rpic_name && formData.proposedRpicId === (loadedProposal.proposed_rpic_id ?? '')) {
+      return {
+        full_name: loadedProposal.proposed_rpic_name,
+        credentials: loadedProposal.proposed_rpic_credentials,
+        professional_bio: loadedProposal.proposed_rpic_bio
+      };
+    }
+
+    return null;
+  }, [formData.proposedRpicId, isEditMode, loadedProposal, rpicCredentials, selectedRpic]);
+
+  const isFormDisabled = isSaving || isLoadingProposal;
 
   function updateField(field: keyof typeof initialFormState, value: string) {
     setFormData((current) => ({ ...current, [field]: value }));
@@ -249,30 +386,44 @@ export function NewProposalPage() {
       const organizationId = await getCurrentOrganizationId(userData.user.id);
 
       if (!organizationId) {
-        throw new Error('Finish company onboarding before creating proposals.');
+        throw new Error('Finish company onboarding before saving proposals.');
       }
 
       const summarizedHazards = summarizeSelectedHazards(selectedHazards);
-      const selectedRpicSnapshot = selectedRpic;
-      const selectedRpicCredentials = buildFallbackCredentials(selectedRpicSnapshot);
+      const unchangedExistingRpic =
+        isEditMode &&
+        loadedProposal &&
+        formData.proposedRpicId &&
+        formData.proposedRpicId === (loadedProposal.proposed_rpic_id ?? '') &&
+        !selectedRpic;
+      const rpicSnapshot = unchangedExistingRpic
+        ? {
+            id: loadedProposal.proposed_rpic_id,
+            full_name: loadedProposal.proposed_rpic_name,
+            credentials: loadedProposal.proposed_rpic_credentials,
+            professional_bio: loadedProposal.proposed_rpic_bio
+          }
+        : {
+            id: selectedRpic?.id ?? null,
+            full_name: selectedRpic?.full_name ?? null,
+            credentials: buildFallbackCredentials(selectedRpic),
+            professional_bio: selectedRpic?.professional_bio?.trim() || null
+          };
 
-      const { error: proposalError } = await supabase.from('proposals').insert({
-        organization_id: organizationId,
-        user_id: userData.user.id,
+      const proposalPayload = {
         client_name: formData.clientName.trim(),
         contact_name: formData.contactName.trim() || null,
         phone: formData.phone.trim() || null,
         email: formData.email.trim() || null,
-        proposal_number: createProposalNumber(),
         proposal_name: formData.proposalName.trim(),
         service_type: formData.serviceType,
         site_address: formData.siteAddress.trim(),
         description: formData.description.trim() || null,
-        proposed_rpic_id: selectedRpicSnapshot?.id ?? null,
-        proposed_rpic_name: selectedRpicSnapshot?.full_name ?? null,
-        proposed_rpic_credentials: selectedRpicCredentials,
-        proposed_rpic_bio: selectedRpicSnapshot?.professional_bio?.trim() || null,
-        proposed_rpic: selectedRpicSnapshot?.full_name ?? null,
+        proposed_rpic_id: rpicSnapshot.id || null,
+        proposed_rpic_name: rpicSnapshot.full_name || null,
+        proposed_rpic_credentials: rpicSnapshot.credentials || null,
+        proposed_rpic_bio: rpicSnapshot.professional_bio || null,
+        proposed_rpic: rpicSnapshot.full_name || null,
         airspace_class: formData.airspaceClass === 'Not reviewed' ? null : formData.airspaceClass,
         laanc_required: toBoolean(formData.laancRequired),
         additional_authorization_required: toBoolean(formData.additionalAuthorizationRequired),
@@ -282,10 +433,29 @@ export function NewProposalPage() {
         hazard_assessment: selectedHazards.map(({ id, hazard_name, category, mitigation, source }) => ({ id, hazard_name, category, mitigation, source })),
         proposal_amount: formData.proposalAmount ? Number(formData.proposalAmount) : null,
         valid_until: formData.validUntil || null,
-        status: formData.status
-      });
+        status: formData.status,
+        updated_at: new Date().toISOString()
+      };
 
-      if (proposalError) throw proposalError;
+      if (isEditMode) {
+        if (!proposalId) throw new Error('Proposal ID is missing.');
+
+        const { error: proposalError } = await supabase
+          .from('proposals')
+          .update(proposalPayload)
+          .eq('id', proposalId);
+
+        if (proposalError) throw proposalError;
+      } else {
+        const { error: proposalError } = await supabase.from('proposals').insert({
+          organization_id: organizationId,
+          user_id: userData.user.id,
+          proposal_number: createProposalNumber(),
+          ...proposalPayload
+        });
+
+        if (proposalError) throw proposalError;
+      }
 
       navigate('/jobs?tab=proposals', { replace: true });
     } catch (saveError) {
@@ -304,9 +474,11 @@ export function NewProposalPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div>
           <p className="text-sm font-medium text-slate-500">Proposals</p>
-          <h1 className="mt-1 text-2xl font-semibold text-brand-900">Create Proposal</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-brand-900">{isEditMode ? 'Edit Proposal' : 'Create Proposal'}</h1>
           <p className="mt-2 text-sm text-slate-600">
-            Capture the first stage of the operational lifecycle before creating a job.
+            {isEditMode
+              ? 'Update this living proposal while preserving its proposal ID and proposal number.'
+              : 'Capture the first stage of the operational lifecycle before creating a job.'}
           </p>
         </div>
       </div>
@@ -319,18 +491,22 @@ export function NewProposalPage() {
       />
 
       <form className="space-y-4" onSubmit={handleSubmit}>
+        {isLoadingProposal ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">Loading proposal details...</div>
+        ) : null}
+
         <FormSection title="Client Information">
-          <TextField label="Client Name" value={formData.clientName} onChange={(value) => updateField('clientName', value)} disabled={isSaving} required />
-          <TextField label="Contact Name" value={formData.contactName} onChange={(value) => updateField('contactName', value)} disabled={isSaving} />
-          <TextField label="Phone" type="tel" value={formData.phone} onChange={(value) => updateField('phone', value)} disabled={isSaving} />
-          <TextField label="Email" type="email" value={formData.email} onChange={(value) => updateField('email', value)} disabled={isSaving} />
+          <TextField label="Client Name" value={formData.clientName} onChange={(value) => updateField('clientName', value)} disabled={isFormDisabled} required />
+          <TextField label="Contact Name" value={formData.contactName} onChange={(value) => updateField('contactName', value)} disabled={isFormDisabled} />
+          <TextField label="Phone" type="tel" value={formData.phone} onChange={(value) => updateField('phone', value)} disabled={isFormDisabled} />
+          <TextField label="Email" type="email" value={formData.email} onChange={(value) => updateField('email', value)} disabled={isFormDisabled} />
         </FormSection>
 
         <FormSection title="Project Information">
-          <TextField label="Proposal Name" value={formData.proposalName} onChange={(value) => updateField('proposalName', value)} disabled={isSaving} required />
-          <SelectField label="Service Type" value={formData.serviceType} options={serviceTypes} onChange={(value) => updateField('serviceType', value)} disabled={isSaving} />
-          <TextField label="Site Address" value={formData.siteAddress} onChange={(value) => updateField('siteAddress', value)} disabled={isSaving} required />
-          <TextAreaField label="Description" value={formData.description} onChange={(value) => updateField('description', value)} disabled={isSaving} />
+          <TextField label="Proposal Name" value={formData.proposalName} onChange={(value) => updateField('proposalName', value)} disabled={isFormDisabled} required />
+          <SelectField label="Service Type" value={formData.serviceType} options={serviceTypes} onChange={(value) => updateField('serviceType', value)} disabled={isFormDisabled} />
+          <TextField label="Site Address" value={formData.siteAddress} onChange={(value) => updateField('siteAddress', value)} disabled={isFormDisabled} required />
+          <TextAreaField label="Description" value={formData.description} onChange={(value) => updateField('description', value)} disabled={isFormDisabled} />
         </FormSection>
 
         <FormSection title="Proposed RPIC">
@@ -339,21 +515,22 @@ export function NewProposalPage() {
             value={formData.proposedRpicId}
             personnel={personnel}
             onChange={(value) => updateField('proposedRpicId', value)}
-            disabled={isSaving || isLoadingPersonnel}
+            disabled={isFormDisabled || isLoadingPersonnel}
+            currentSnapshot={displayedRpicSnapshot}
           />
-          <RpicSnapshotCard selectedRpic={selectedRpic} credentials={rpicCredentials} isLoading={isLoadingPersonnel} />
+          <RpicSnapshotCard snapshot={displayedRpicSnapshot} isLoading={isLoadingPersonnel} />
         </FormSection>
 
         <FormSection title="Airspace Review">
-          <SelectField label="Airspace Class" value={formData.airspaceClass} options={airspaceClasses} onChange={(value) => updateField('airspaceClass', value)} disabled={isSaving} />
-          <SelectField label="LAANC Required" value={formData.laancRequired} options={['No', 'Yes']} onChange={(value) => updateField('laancRequired', value)} disabled={isSaving} />
-          <SelectField label="Additional Authorization Required" value={formData.additionalAuthorizationRequired} options={['No', 'Yes']} onChange={(value) => updateField('additionalAuthorizationRequired', value)} disabled={isSaving} />
+          <SelectField label="Airspace Class" value={formData.airspaceClass} options={airspaceClasses} onChange={(value) => updateField('airspaceClass', value)} disabled={isFormDisabled} />
+          <SelectField label="LAANC Required" value={formData.laancRequired} options={['No', 'Yes']} onChange={(value) => updateField('laancRequired', value)} disabled={isFormDisabled} />
+          <SelectField label="Additional Authorization Required" value={formData.additionalAuthorizationRequired} options={['No', 'Yes']} onChange={(value) => updateField('additionalAuthorizationRequired', value)} disabled={isFormDisabled} />
         </FormSection>
 
         <HazardSelection
           selectedHazards={selectedHazards}
           customHazard={customHazard}
-          disabled={isSaving}
+          disabled={isFormDisabled}
           serviceType={formData.serviceType}
           hazardLibrary={hazardLibrary}
           onAddLibraryHazard={addLibraryHazard}
@@ -364,9 +541,9 @@ export function NewProposalPage() {
         />
 
         <FormSection title="Pricing">
-          <TextField label="Proposal Amount" type="number" value={formData.proposalAmount} onChange={(value) => updateField('proposalAmount', value)} disabled={isSaving} />
-          <TextField label="Proposal Valid Until Date" type="date" value={formData.validUntil} onChange={(value) => updateField('validUntil', value)} disabled={isSaving} />
-          <SelectField label="Status" value={formData.status} options={proposalStatuses} onChange={(value) => updateField('status', value)} disabled={isSaving} />
+          <TextField label="Proposal Amount" type="number" value={formData.proposalAmount} onChange={(value) => updateField('proposalAmount', value)} disabled={isFormDisabled} />
+          <TextField label="Proposal Valid Until Date" type="date" value={formData.validUntil} onChange={(value) => updateField('validUntil', value)} disabled={isFormDisabled} />
+          <SelectField label="Status" value={formData.status} options={proposalStatuses} onChange={(value) => updateField('status', value)} disabled={isFormDisabled} />
         </FormSection>
 
         {error ? (
@@ -379,9 +556,9 @@ export function NewProposalPage() {
           <button
             type="submit"
             className="min-h-11 w-full rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:w-auto sm:py-2"
-            disabled={isSaving}
+            disabled={isFormDisabled}
           >
-            {isSaving ? 'Saving...' : 'Save Proposal'}
+            {isSaving ? 'Saving...' : isEditMode ? 'Update Proposal' : 'Save Proposal'}
           </button>
         </div>
       </form>
@@ -611,14 +788,18 @@ function PersonnelSelectField({
   value,
   personnel,
   onChange,
-  disabled
+  disabled,
+  currentSnapshot
 }: {
   label: string;
   value: string;
   personnel: ProposedRpic[];
   onChange: (value: string) => void;
   disabled: boolean;
+  currentSnapshot: RpicSnapshot | null;
 }) {
+  const hasCurrentPersonnelOption = personnel.some((person) => person.id === value);
+
   return (
     <label className="block text-sm font-medium text-slate-700">
       {label}
@@ -629,6 +810,9 @@ function PersonnelSelectField({
         disabled={disabled}
       >
         <option value="">Select a proposed RPIC</option>
+        {value && currentSnapshot && !hasCurrentPersonnelOption ? (
+          <option value={value}>{currentSnapshot.full_name} (saved snapshot)</option>
+        ) : null}
         {personnel.map((person) => (
           <option key={person.id} value={person.id}>
             {person.full_name}
@@ -639,12 +823,12 @@ function PersonnelSelectField({
   );
 }
 
-function RpicSnapshotCard({ selectedRpic, credentials, isLoading }: { selectedRpic: ProposedRpic | null; credentials: string | null; isLoading: boolean }) {
-  if (isLoading) {
+function RpicSnapshotCard({ snapshot, isLoading }: { snapshot: RpicSnapshot | null; isLoading: boolean }) {
+  if (isLoading && !snapshot) {
     return <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 sm:col-span-2">Loading personnel...</div>;
   }
 
-  if (!selectedRpic) {
+  if (!snapshot) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600 sm:col-span-2">
         Select a personnel record to snapshot the proposed RPIC name, certifications, and professional bio into this proposal.
@@ -655,17 +839,17 @@ function RpicSnapshotCard({ selectedRpic, credentials, isLoading }: { selectedRp
   return (
     <div className="space-y-3 rounded-lg border border-brand-100 bg-brand-50 p-3 sm:col-span-2">
       <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-brand-700">Selected RPIC</p>
-        <h3 className="mt-1 text-base font-semibold text-brand-900">{selectedRpic.full_name}</h3>
+        <p className="text-xs font-medium uppercase tracking-wide text-brand-700">Selected RPIC Snapshot</p>
+        <h3 className="mt-1 text-base font-semibold text-brand-900">{snapshot.full_name}</h3>
       </div>
       <div className="grid gap-3 text-sm lg:grid-cols-2">
         <div className="rounded-lg bg-white p-3">
           <h4 className="font-semibold text-brand-900">Certifications Summary</h4>
-          <p className="mt-1 whitespace-pre-wrap text-slate-700">{credentials || 'No certifications summary on file yet.'}</p>
+          <p className="mt-1 whitespace-pre-wrap text-slate-700">{snapshot.credentials || 'No certifications summary on file yet.'}</p>
         </div>
         <div className="rounded-lg bg-white p-3">
           <h4 className="font-semibold text-brand-900">Professional Bio</h4>
-          <p className="mt-1 whitespace-pre-wrap text-slate-700">{selectedRpic.professional_bio?.trim() || 'No professional bio on file yet.'}</p>
+          <p className="mt-1 whitespace-pre-wrap text-slate-700">{snapshot.professional_bio?.trim() || 'No professional bio on file yet.'}</p>
         </div>
       </div>
     </div>
