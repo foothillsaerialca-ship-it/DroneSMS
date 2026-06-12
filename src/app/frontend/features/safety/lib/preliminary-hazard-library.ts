@@ -153,7 +153,6 @@ export function getSelectedHazardName(hazard: SelectedPreliminaryHazard) {
 export function summarizeSelectedHazards(selectedHazards: SelectedPreliminaryHazard[]) {
   return {
     hazard: selectedHazards.map((entry) => `${entry.category}: ${getSelectedHazardName(entry)}`).join('\n') || null,
-    risk: null,
     proposedMitigation:
       selectedHazards.map((entry) => `${getSelectedHazardName(entry)}:\n${entry.mitigation.trim()}`).join('\n\n') || null
   };
