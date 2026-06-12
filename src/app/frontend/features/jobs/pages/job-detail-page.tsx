@@ -25,6 +25,8 @@ type Job = {
   client_name: string | null;
   site_address: string | null;
   notes: string | null;
+  source_proposal_id: string | null;
+  source_proposal_number: string | null;
 };
 
 type JobFormState = {
@@ -90,7 +92,7 @@ export function JobDetailPage() {
       try {
         const { data, error } = await supabase
           .from('jobs')
-          .select('id, name, service_type, location, planned_date, status, client_name, site_address, notes')
+          .select('id, name, service_type, location, planned_date, status, client_name, site_address, notes, source_proposal_id, source_proposal_number')
           .eq('id', jobId)
           .maybeSingle();
 
@@ -164,7 +166,7 @@ export function JobDetailPage() {
           updated_at: new Date().toISOString()
         })
         .eq('id', job.id)
-        .select('id, name, service_type, location, planned_date, status, client_name, site_address, notes')
+        .select('id, name, service_type, location, planned_date, status, client_name, site_address, notes, source_proposal_id, source_proposal_number')
         .single();
 
       if (error) throw error;
@@ -395,6 +397,22 @@ export function JobDetailPage() {
                 </span>
               </dd>
             </div>
+            {job.source_proposal_id ? (
+              <div className="sm:col-span-2">
+                <dt className="font-medium text-slate-500">Source Proposal</dt>
+                <dd className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <span className="font-semibold text-slate-800">
+                    {job.source_proposal_number ?? job.source_proposal_id.slice(0, 8).toUpperCase()}
+                  </span>
+                  <Link
+                    to={`/jobs/proposals/${job.source_proposal_id}/edit`}
+                    className="inline-flex min-h-11 w-fit items-center justify-center rounded-lg border border-brand-700 bg-white px-3 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 sm:min-h-0 sm:py-2"
+                  >
+                    View Proposal
+                  </Link>
+                </dd>
+              </div>
+            ) : null}
             <div className="sm:col-span-2">
               <dt className="font-medium text-slate-500">Notes</dt>
               <dd className="mt-1 whitespace-pre-wrap text-slate-800">{job.notes || 'No notes yet.'}</dd>
