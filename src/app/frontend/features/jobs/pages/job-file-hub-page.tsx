@@ -33,6 +33,8 @@ type Job = {
   location: string;
   planned_date: string;
   status: string;
+  source_proposal_id: string | null;
+  source_proposal_number: string | null;
 };
 
 type PersonnelOption = {
@@ -256,7 +258,7 @@ export function JobFileHubPage() {
       try {
         const jobQuery = supabase
           .from('jobs')
-          .select('id, organization_id, name, service_type, location, planned_date, status')
+          .select('id, organization_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number')
           .eq('id', jobId)
           .maybeSingle();
         const personnelQuery = supabase
@@ -670,6 +672,22 @@ export function JobFileHubPage() {
               </span>
             </dd>
           </div>
+          {job.source_proposal_id ? (
+            <div className="sm:col-span-2">
+              <dt className="font-medium text-slate-500">Source Proposal</dt>
+              <dd className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <span className="font-semibold text-slate-800">
+                  {job.source_proposal_number ?? job.source_proposal_id.slice(0, 8).toUpperCase()}
+                </span>
+                <Link
+                  to={`/jobs/proposals/${job.source_proposal_id}/edit`}
+                  className="inline-flex min-h-11 w-fit items-center justify-center rounded-lg border border-brand-700 bg-white px-3 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 sm:min-h-0 sm:py-2"
+                >
+                  View Proposal
+                </Link>
+              </dd>
+            </div>
+          ) : null}
         </dl>
       </div>
 
