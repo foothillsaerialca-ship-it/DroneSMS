@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
-import type { SelectedPreliminaryHazard } from '@frontend/features/safety/lib/preliminary-hazard-library';
+import { getSelectedHazardName, normalizeSelectedHazards, type SelectedPreliminaryHazard } from '@frontend/features/safety/lib/preliminary-hazard-library';
 
 type Job = {
   id: string;
@@ -121,7 +121,10 @@ export function JobsPage() {
 
       if (proposalsLoadError) throw proposalsLoadError;
 
-      setProposals((data ?? []) as Proposal[]);
+      setProposals(((data ?? []) as Proposal[]).map((proposal) => ({
+        ...proposal,
+        hazard_assessment: normalizeSelectedHazards(proposal.hazard_assessment)
+      })));
     } catch (loadError) {
       setProposalsError(getErrorMessage(loadError));
     } finally {
@@ -464,11 +467,10 @@ export function JobsPage() {
                     {proposal.hazard_assessment.map((hazard) => (
                       <div key={hazard.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                          <p className="font-semibold text-brand-900">{hazard.hazard}</p>
+                          <p className="font-semibold text-brand-900">{getSelectedHazardName(hazard)}</p>
                           <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{hazard.category}</span>
                         </div>
                         <p className="mt-2 whitespace-pre-wrap text-slate-700">{hazard.mitigation}</p>
-                        {hazard.notes ? <p className="mt-2 whitespace-pre-wrap text-slate-600">Notes: {hazard.notes}</p> : null}
                       </div>
                     ))}
                   </div>
