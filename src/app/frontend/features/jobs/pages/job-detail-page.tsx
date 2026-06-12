@@ -22,6 +22,8 @@ type Job = {
   location: string;
   planned_date: string;
   status: string;
+  client_name: string | null;
+  site_address: string | null;
   notes: string | null;
 };
 
@@ -31,6 +33,8 @@ type JobFormState = {
   location: string;
   plannedDate: string;
   status: string;
+  clientName: string;
+  siteAddress: string;
   notes: string;
 };
 
@@ -54,6 +58,8 @@ function toFormState(job: Job): JobFormState {
     location: job.location,
     plannedDate: job.planned_date,
     status: job.status,
+    clientName: job.client_name ?? '',
+    siteAddress: job.site_address ?? '',
     notes: job.notes ?? ''
   };
 }
@@ -84,7 +90,7 @@ export function JobDetailPage() {
       try {
         const { data, error } = await supabase
           .from('jobs')
-          .select('id, name, service_type, location, planned_date, status, notes')
+          .select('id, name, service_type, location, planned_date, status, client_name, site_address, notes')
           .eq('id', jobId)
           .maybeSingle();
 
@@ -152,11 +158,13 @@ export function JobDetailPage() {
           location: formData.location.trim(),
           planned_date: formData.plannedDate,
           status: formData.status,
+          client_name: formData.clientName.trim() || null,
+          site_address: formData.siteAddress.trim() || null,
           notes: formData.notes.trim() || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', job.id)
-        .select('id, name, service_type, location, planned_date, status, notes')
+        .select('id, name, service_type, location, planned_date, status, client_name, site_address, notes')
         .single();
 
       if (error) throw error;
@@ -258,12 +266,34 @@ export function JobDetailPage() {
             </label>
 
             <label className="block text-sm font-medium text-slate-700">
+              Client / Property Owner
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+                type="text"
+                value={formData.clientName}
+                onChange={(event) => updateField('clientName', event.target.value)}
+                disabled={isSaving}
+              />
+            </label>
+
+            <label className="block text-sm font-medium text-slate-700">
               Location
               <input
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
                 type="text"
                 value={formData.location}
                 onChange={(event) => updateField('location', event.target.value)}
+                disabled={isSaving}
+              />
+            </label>
+
+            <label className="block text-sm font-medium text-slate-700">
+              Site Address
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+                type="text"
+                value={formData.siteAddress}
+                onChange={(event) => updateField('siteAddress', event.target.value)}
                 disabled={isSaving}
               />
             </label>
@@ -338,12 +368,20 @@ export function JobDetailPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <dl className="grid gap-4 text-sm sm:grid-cols-2">
             <div>
+              <dt className="font-medium text-slate-500">Client / Property Owner</dt>
+              <dd className="mt-1 text-slate-800">{job.client_name || 'Not provided'}</dd>
+            </div>
+            <div>
               <dt className="font-medium text-slate-500">Service type</dt>
               <dd className="mt-1 text-slate-800">{job.service_type}</dd>
             </div>
             <div>
               <dt className="font-medium text-slate-500">Location</dt>
               <dd className="mt-1 text-slate-800">{job.location}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-500">Site Address</dt>
+              <dd className="mt-1 text-slate-800">{job.site_address || job.location}</dd>
             </div>
             <div>
               <dt className="font-medium text-slate-500">Planned date</dt>
