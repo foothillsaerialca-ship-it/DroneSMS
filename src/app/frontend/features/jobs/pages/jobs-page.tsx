@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
@@ -18,12 +18,22 @@ type ProposalStatus = 'Draft' | 'Sent' | 'Under Review' | 'Accepted' | 'Declined
 
 type Proposal = {
   id: string;
+  organization_id: string;
+  proposal_number: string | null;
   proposal_name: string;
   client_name: string;
+  contact_name: string | null;
+  phone: string | null;
+  email: string | null;
   service_type: string;
+  site_address: string | null;
   status: ProposalStatus;
   created_at: string;
   hazard_assessment: SelectedPreliminaryHazard[] | null;
+  proposed_rpic_id: string | null;
+  proposed_rpic_name: string | null;
+  proposed_rpic_credentials: string | null;
+  proposed_rpic_bio: string | null;
 };
 
 type JobsTab = 'proposals' | 'active' | 'completed';
@@ -59,6 +69,7 @@ function getInitialTab(tab: string | null): JobsTab {
 }
 
 export function JobsPage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<JobsTab>(() => getInitialTab(searchParams.get('tab')));
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -68,6 +79,7 @@ export function JobsPage() {
   const [jobsError, setJobsError] = useState<string | null>(null);
   const [proposalsError, setProposalsError] = useState<string | null>(null);
   const [updatingProposalId, setUpdatingProposalId] = useState<string | null>(null);
+  const [creatingJobProposalId, setCreatingJobProposalId] = useState<string | null>(null);
   const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
 
@@ -121,7 +133,7 @@ export function JobsPage() {
       try {
         const { data, error: proposalsLoadError } = await supabase
           .from('proposals')
-          .select('id, proposal_name, client_name, service_type, status, created_at, hazard_assessment')
+          .select('id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio')
           .order('created_at', { ascending: false });
 
         if (proposalsLoadError) throw proposalsLoadError;
@@ -154,6 +166,59 @@ export function JobsPage() {
   function selectTab(tab: JobsTab) {
     setActiveTab(tab);
     setSearchParams(tab === 'active' ? {} : { tab });
+  }
+
+  function getTodayDate() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  async function createJobFromProposal(proposal: Proposal) {
+    setCreatingJobProposalId(proposal.id);
+    setProposalsError(null);
+
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) throw new Error('You must be signed in to create a job.');
+
+      const proposalNumber = proposal.proposal_number ?? proposal.id.slice(0, 8).toUpperCase();
+      const { data, error } = await supabase
+        .from('jobs')
+        .insert({
+          organization_id: proposal.organization_id,
+          user_id: userData.user.id,
+          name: proposal.proposal_name,
+          service_type: proposal.service_type,
+          location: proposal.site_address || proposal.client_name,
+          planned_date: getTodayDate(),
+          notes: `Created from proposal ${proposalNumber}. Confirm planned date during Mission Planning / JHA.`,
+          status: 'Planned',
+          source_proposal_id: proposal.id,
+          source_proposal_number: proposalNumber,
+          client_name: proposal.client_name,
+          contact_name: proposal.contact_name,
+          client_phone: proposal.phone,
+          client_email: proposal.email,
+          site_address: proposal.site_address,
+          preliminary_hazards: proposal.hazard_assessment ?? [],
+          proposed_rpic_id: proposal.proposed_rpic_id,
+          proposed_rpic_name: proposal.proposed_rpic_name,
+          proposed_rpic_credentials: proposal.proposed_rpic_credentials,
+          proposed_rpic_bio: proposal.proposed_rpic_bio
+        })
+        .select('id, name, service_type, location, planned_date, status')
+        .single();
+
+      if (error) throw error;
+
+      setJobs((current) => [data as Job, ...current]);
+      await updateProposalStatus(proposal.id, 'Accepted');
+      navigate(`/jobs/${(data as Job).id}`);
+    } catch (createError) {
+      setProposalsError(getErrorMessage(createError));
+    } finally {
+      setCreatingJobProposalId(null);
+    }
   }
 
   async function updateProposalStatus(proposalId: string, status: ProposalStatus) {
@@ -260,24 +325,38 @@ export function JobsPage() {
                   <h2 className="text-base font-semibold text-brand-900">{proposal.proposal_name}</h2>
                   <p className="mt-1 text-sm text-slate-600">{proposal.client_name}</p>
                 </div>
-                <label className="block text-sm font-medium text-slate-700 sm:min-w-44">
-                  <span className="sr-only">Proposal status</span>
-                  <select
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 sm:py-2 sm:text-sm"
-                    value={proposal.status}
-                    onChange={(event) => void updateProposalStatus(proposal.id, event.target.value as ProposalStatus)}
-                    disabled={updatingProposalId === proposal.id}
+                <div className="flex flex-col gap-2 sm:min-w-44">
+                  <label className="block text-sm font-medium text-slate-700">
+                    <span className="sr-only">Proposal status</span>
+                    <select
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 sm:py-2 sm:text-sm"
+                      value={proposal.status}
+                      onChange={(event) => void updateProposalStatus(proposal.id, event.target.value as ProposalStatus)}
+                      disabled={updatingProposalId === proposal.id || creatingJobProposalId === proposal.id}
+                    >
+                      {proposalStatuses.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="min-h-11 rounded-lg bg-brand-700 px-3 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:min-h-0 sm:py-2"
+                    onClick={() => void createJobFromProposal(proposal)}
+                    disabled={creatingJobProposalId === proposal.id}
                   >
-                    {proposalStatuses.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    {creatingJobProposalId === proposal.id ? 'Creating Job...' : 'Create Job'}
+                  </button>
+                </div>
               </div>
 
-              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <dt className="font-medium text-slate-500">Proposal number</dt>
+                  <dd className="mt-1 text-slate-700">{proposal.proposal_number ?? proposal.id.slice(0, 8).toUpperCase()}</dd>
+                </div>
                 <div>
                   <dt className="font-medium text-slate-500">Service type</dt>
                   <dd className="mt-1 text-slate-700">{proposal.service_type}</dd>
@@ -290,7 +369,28 @@ export function JobsPage() {
                   <dt className="font-medium text-slate-500">Date created</dt>
                   <dd className="mt-1 text-slate-700">{formatDate(proposal.created_at)}</dd>
                 </div>
+                <div>
+                  <dt className="font-medium text-slate-500">Proposed RPIC</dt>
+                  <dd className="mt-1 text-slate-700">{proposal.proposed_rpic_name ?? 'Not selected'}</dd>
+                </div>
               </dl>
+
+              {proposal.proposed_rpic_credentials || proposal.proposed_rpic_bio ? (
+                <div className="mt-4 grid gap-3 text-sm lg:grid-cols-2">
+                  {proposal.proposed_rpic_credentials ? (
+                    <div className="rounded-lg border border-brand-100 bg-brand-50 p-3">
+                      <h3 className="font-semibold text-brand-900">RPIC Credentials Snapshot</h3>
+                      <p className="mt-1 whitespace-pre-wrap text-slate-700">{proposal.proposed_rpic_credentials}</p>
+                    </div>
+                  ) : null}
+                  {proposal.proposed_rpic_bio ? (
+                    <div className="rounded-lg border border-brand-100 bg-brand-50 p-3">
+                      <h3 className="font-semibold text-brand-900">RPIC Bio Snapshot</h3>
+                      <p className="mt-1 whitespace-pre-wrap text-slate-700">{proposal.proposed_rpic_bio}</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {proposal.hazard_assessment?.length ? (
                 <div className="mt-4 space-y-2">
