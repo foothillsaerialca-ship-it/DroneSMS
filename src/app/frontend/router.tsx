@@ -25,10 +25,7 @@ function LandingPage() {
         <p className="text-sm font-semibold uppercase tracking-[0.24em] text-brand-700">Welcome to</p>
         <h1 className="text-4xl font-bold tracking-tight text-slate-900">DroneSMS</h1>
         <p className="mx-auto max-w-lg text-sm leading-6 text-slate-600">
-          A comprehensive drone operations portal designed around the four pillars of Safety Management 
-          Systems (SMS), enabling organizations to manage personnel, equipment, missions, 
-          risk assessments, preflight inspections, compliance, and continuous safety improvement 
-          throughout every stage of flight operations.
+          A practical operational safety system for drone operators, helping teams identify hazards, document mitigations, capture evidence, generate operational records, and demonstrate due diligence throughout every stage of flight operations.
         </p>
       </div>
 

@@ -7,16 +7,10 @@ type JobMetric = {
   status: string | null;
 };
 
-type HazardEntryMetric = {
-  likelihood?: number | string | null;
-  severity?: number | string | null;
-  riskScore?: number | string | null;
-};
 
 type JhaMetric = {
   status: string | null;
   hazard_entries: unknown;
-  overall_risk_rating: string | null;
   remote_pilot_in_command: string | null;
   crew_briefed: boolean | null;
   controls_in_place: boolean | null;
@@ -27,7 +21,10 @@ type JhaMetric = {
 type DashboardMetrics = {
   companyName: string | null;
   openJobs: number;
-  highRiskJhas: number;
+  completedJhas: number;
+  hazardsIdentified: number;
+  hazardsMitigated: number;
+  evidencePhotosCaptured: number;
   draftJhas: number;
   incompleteCertifications: number;
   missingCrewBriefings: number;
@@ -54,23 +51,6 @@ function normalizeStatus(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? '';
 }
 
-function getHazardScore(entry: HazardEntryMetric) {
-  const explicitScore = Number(entry.riskScore);
-  if (Number.isFinite(explicitScore) && explicitScore > 0) return explicitScore;
-
-  const likelihood = Number(entry.likelihood);
-  const severity = Number(entry.severity);
-  if (!Number.isFinite(likelihood) || !Number.isFinite(severity)) return 0;
-
-  return likelihood * severity;
-}
-
-function hasHighRiskHazard(assessment: JhaMetric) {
-  if (normalizeStatus(assessment.overall_risk_rating) === 'high') return true;
-  if (!Array.isArray(assessment.hazard_entries)) return false;
-
-  return assessment.hazard_entries.some((entry) => getHazardScore(entry as HazardEntryMetric) >= 15);
-}
 
 function isCertificationIncomplete(assessment: JhaMetric) {
   return !assessment.crew_briefed || !assessment.controls_in_place || !assessment.stop_work_authority_acknowledged;
@@ -78,6 +58,20 @@ function isCertificationIncomplete(assessment: JhaMetric) {
 
 function hasRpicName(assessment: JhaMetric) {
   return Boolean(assessment.rpic_printed_name?.trim() || assessment.remote_pilot_in_command?.trim());
+}
+
+function countHazardEntries(assessment: JhaMetric) {
+  return Array.isArray(assessment.hazard_entries) ? assessment.hazard_entries.length : 0;
+}
+
+function countMitigatedHazards(assessment: JhaMetric) {
+  if (!Array.isArray(assessment.hazard_entries)) return 0;
+
+  return assessment.hazard_entries.filter((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    const mitigation = 'mitigation' in entry ? String((entry as { mitigation?: unknown }).mitigation ?? '').trim() : '';
+    return mitigation.length > 0;
+  }).length;
 }
 
 function calculateReadiness(assessments: JhaMetric[]) {
@@ -109,17 +103,25 @@ async function loadDashboardMetrics(userId: string): Promise<DashboardMetrics> {
   const jobsQuery = supabase.from('jobs').select('status').is('deleted_at', null);
   const jhaQuery = supabase
     .from('jha_assessments')
-    .select('status, hazard_entries, overall_risk_rating, remote_pilot_in_command, crew_briefed, controls_in_place, stop_work_authority_acknowledged, rpic_printed_name');
+    .select('status, hazard_entries, remote_pilot_in_command, crew_briefed, controls_in_place, stop_work_authority_acknowledged, rpic_printed_name');
+  const hazardPhotosQuery = supabase
+    .from('job_hazard_photos')
+    .select('id')
+    .is('deleted_at', null);
 
-  const [profileResult, jobsResult, jhaResult] = await Promise.all([profileQuery, jobsQuery, jhaQuery]);
+  const [profileResult, jobsResult, jhaResult, hazardPhotosResult] = await Promise.all([profileQuery, jobsQuery, jhaQuery, hazardPhotosQuery]);
 
   if (profileResult.error) throw profileResult.error;
   if (jobsResult.error) throw jobsResult.error;
   if (jhaResult.error) throw jhaResult.error;
+  if (hazardPhotosResult.error) throw hazardPhotosResult.error;
 
   const jobs = (jobsResult.data ?? []) as JobMetric[];
   const assessments = (jhaResult.data ?? []) as JhaMetric[];
-  const highRiskJhas = assessments.filter(hasHighRiskHazard).length;
+  const completedJhas = assessments.filter((assessment) => normalizeStatus(assessment.status) === 'complete').length;
+  const hazardsIdentified = assessments.reduce((total, assessment) => total + countHazardEntries(assessment), 0);
+  const hazardsMitigated = assessments.reduce((total, assessment) => total + countMitigatedHazards(assessment), 0);
+  const evidencePhotosCaptured = (hazardPhotosResult.data ?? []).length;
   const draftJhas = assessments.filter((assessment) => normalizeStatus(assessment.status) === 'draft').length;
   const incompleteCertifications = assessments.filter(isCertificationIncomplete).length;
   const missingCrewBriefings = assessments.filter((assessment) => !assessment.crew_briefed).length;
@@ -128,7 +130,10 @@ async function loadDashboardMetrics(userId: string): Promise<DashboardMetrics> {
   return {
     companyName: profileResult.data?.company_name ?? null,
     openJobs: jobs.filter((job) => openJobStatuses.has(normalizeStatus(job.status))).length,
-    highRiskJhas,
+    completedJhas,
+    hazardsIdentified,
+    hazardsMitigated,
+    evidencePhotosCaptured,
     draftJhas,
     incompleteCertifications,
     missingCrewBriefings,
@@ -137,16 +142,11 @@ async function loadDashboardMetrics(userId: string): Promise<DashboardMetrics> {
 }
 
 function getSafetyStatus(metrics: DashboardMetrics) {
-  if (metrics.highRiskJhas > 0) return 'High Risk Attention Required';
   if (metrics.incompleteCertifications > 0 || metrics.missingCrewBriefings > 0 || metrics.draftJhas > 0) return 'Needs Review';
   return 'Ready';
 }
 
 function getSafetyDetail(metrics: DashboardMetrics) {
-  if (metrics.highRiskJhas > 0) {
-    return `${metrics.highRiskJhas} high-risk JHA${metrics.highRiskJhas === 1 ? '' : 's'} require review before work proceeds.`;
-  }
-
   if (metrics.incompleteCertifications > 0 || metrics.missingCrewBriefings > 0) {
     return `${metrics.incompleteCertifications} JHA${metrics.incompleteCertifications === 1 ? '' : 's'} have incomplete certification or crew briefing acknowledgements.`;
   }
@@ -155,29 +155,16 @@ function getSafetyDetail(metrics: DashboardMetrics) {
     return `${metrics.draftJhas} draft JHA${metrics.draftJhas === 1 ? '' : 's'} should be completed before operations.`;
   }
 
-  return 'No active safety blockers found in current JHAs.';
+  return 'No active documentation blockers found in current JHAs.';
 }
 
-function getHazardReportMessage(metrics: DashboardMetrics) {
-  if (metrics.highRiskJhas > 0) {
-    return `${metrics.highRiskJhas} High Risk JHA${metrics.highRiskJhas === 1 ? ' Requires' : 's Require'} Review`;
-  }
-
-  if (metrics.incompleteCertifications > 0) {
-    return `${metrics.incompleteCertifications} JHA${metrics.incompleteCertifications === 1 ? '' : 's'} Need Crew Certification`;
-  }
-
-  if (metrics.draftJhas > 0) {
-    return `${metrics.draftJhas} Draft JHA${metrics.draftJhas === 1 ? '' : 's'} Pending`;
-  }
-
-  return 'No active hazard alerts';
+function getHazardDocumentationMessage(metrics: DashboardMetrics) {
+  if (metrics.hazardsIdentified === 0) return 'No hazards documented yet.';
+  return `${metrics.hazardsMitigated} of ${metrics.hazardsIdentified} documented hazard${metrics.hazardsIdentified === 1 ? '' : 's'} include mitigation notes.`;
 }
 
 function buildDashboardCards(metrics: DashboardMetrics): DashboardCard[] {
   const safetyStatus = getSafetyStatus(metrics);
-  const hazardAlertCount = metrics.highRiskJhas + metrics.draftJhas + metrics.incompleteCertifications;
-
   return [
     {
       title: 'Safety Status',
@@ -188,7 +175,7 @@ function buildDashboardCards(metrics: DashboardMetrics): DashboardCard[] {
           ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
           : safetyStatus === 'Needs Review'
             ? 'bg-amber-50 text-amber-700 border-amber-200'
-            : 'bg-red-50 text-red-700 border-red-200',
+            : 'bg-amber-50 text-amber-700 border-amber-200',
       to: '/jobs',
       actionLabel: 'Review jobs'
     },
@@ -201,12 +188,28 @@ function buildDashboardCards(metrics: DashboardMetrics): DashboardCard[] {
       actionLabel: 'Open jobs'
     },
     {
-      title: 'Recent Hazard Reports',
-      value: String(hazardAlertCount),
-      detail: getHazardReportMessage(metrics),
-      accent: hazardAlertCount === 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200',
+      title: 'JHAs Completed',
+      value: String(metrics.completedJhas),
+      detail: 'Completed job hazard analyses available for operational records.',
+      accent: metrics.completedJhas === 0 ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      to: '/jobs',
+      actionLabel: 'View JHAs'
+    },
+    {
+      title: 'Hazards Documented',
+      value: String(metrics.hazardsIdentified),
+      detail: getHazardDocumentationMessage(metrics),
+      accent: metrics.hazardsIdentified === 0 ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-blue-50 text-brand-700 border-blue-200',
       to: '/jobs',
       actionLabel: 'View job safety'
+    },
+    {
+      title: 'Evidence Photos',
+      value: String(metrics.evidencePhotosCaptured),
+      detail: 'Hazard evidence photos captured for operational records.',
+      accent: metrics.evidencePhotosCaptured === 0 ? 'bg-slate-100 text-slate-700 border-slate-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      to: '/jobs',
+      actionLabel: 'Review evidence'
     },
     {
       title: 'Aircraft/Pilot Readiness',
@@ -266,7 +269,7 @@ export function DashboardPage() {
           <div>
             <p className="text-sm font-medium text-slate-500">Dashboard</p>
             <h1 className="mt-1 text-2xl font-semibold text-brand-900">{displayName}</h1>
-            <p className="mt-2 text-sm text-slate-600">Today's safety, job, and readiness snapshot.</p>
+            <p className="mt-2 text-sm text-slate-600">Today's operational safety, job, and readiness snapshot.</p>
           </div>
           <Link
             to="/jobs/new"

@@ -428,7 +428,6 @@ export function NewProposalPage() {
         laanc_required: toBoolean(formData.laancRequired),
         additional_authorization_required: toBoolean(formData.additionalAuthorizationRequired),
         hazard: summarizedHazards.hazard,
-        risk: summarizedHazards.risk,
         proposed_mitigation: summarizedHazards.proposedMitigation,
         hazard_assessment: selectedHazards.map(({ id, hazard_name, category, mitigation, source }) => ({ id, hazard_name, category, mitigation, source })),
         proposal_amount: formData.proposalAmount ? Number(formData.proposalAmount) : null,
