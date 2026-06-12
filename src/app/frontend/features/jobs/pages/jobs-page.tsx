@@ -409,6 +409,12 @@ export function JobsPage() {
                   >
                     {creatingJobProposalId === proposal.id ? 'Creating Job...' : 'Create Job'}
                   </button>
+                  <Link
+                    to={`/jobs/proposals/${proposal.id}/edit`}
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-700 bg-white px-3 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 sm:min-h-0 sm:py-2"
+                  >
+                    Edit Proposal
+                  </Link>
                   <button
                     type="button"
                     className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0 sm:py-2"
