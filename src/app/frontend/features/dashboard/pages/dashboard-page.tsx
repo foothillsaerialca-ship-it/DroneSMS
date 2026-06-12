@@ -106,7 +106,7 @@ function calculateReadiness(assessments: JhaMetric[]) {
 
 async function loadDashboardMetrics(userId: string): Promise<DashboardMetrics> {
   const profileQuery = supabase.from('profiles').select('company_name').eq('id', userId).maybeSingle();
-  const jobsQuery = supabase.from('jobs').select('status');
+  const jobsQuery = supabase.from('jobs').select('status').is('deleted_at', null);
   const jhaQuery = supabase
     .from('jha_assessments')
     .select('status, hazard_entries, overall_risk_rating, remote_pilot_in_command, crew_briefed, controls_in_place, stop_work_authority_acknowledged, rpic_printed_name');
