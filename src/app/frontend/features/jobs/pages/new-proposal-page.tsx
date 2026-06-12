@@ -4,23 +4,17 @@ import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import {
   createCustomPreliminaryHazard,
-  preliminaryHazardCategories,
-  preliminaryHazardLibrary,
+  fallbackHazardLibrary,
+  getSelectedHazardName,
+  getSuggestedHazards,
+  searchHazards,
+  selectLibraryHazard,
+  serviceTypes,
   summarizeSelectedHazards,
+  type HazardLibraryEntry,
   type SelectedPreliminaryHazard
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
-
-const serviceTypes = [
-  'Cleaning Operations',
-  'Thermal Inspection',
-  'Roof Inspection',
-  'Agricultural',
-  'Mapping / Surveying',
-  'Construction Progress',
-  'Real Estate / Property Media',
-  'Custom Operation'
-];
 
 const proposalStatuses = ['Draft', 'Sent', 'Under Review', 'Accepted', 'Declined'];
 const airspaceClasses = ['Not reviewed', 'Class B', 'Class C', 'Class D', 'Class E', 'Class G'];
@@ -96,8 +90,9 @@ function toBoolean(value: string) {
 export function NewProposalPage() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState(initialFormState);
+  const [hazardLibrary, setHazardLibrary] = useState<HazardLibraryEntry[]>(fallbackHazardLibrary);
   const [selectedHazards, setSelectedHazards] = useState<SelectedPreliminaryHazard[]>([]);
-  const [customHazard, setCustomHazard] = useState('');
+  const [customHazard, setCustomHazard] = useState({ hazardName: '', category: '', mitigation: '' });
   const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
   const [personnel, setPersonnel] = useState<ProposedRpic[]>([]);
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
@@ -149,8 +144,24 @@ export function NewProposalPage() {
       }
     }
 
+    async function loadHazardLibrary() {
+      try {
+        const { data, error: hazardLibraryError } = await supabase
+          .from('hazard_library')
+          .select('id, hazard_name, category, default_mitigation, service_types, is_universal, is_system_hazard')
+          .order('category', { ascending: true })
+          .order('hazard_name', { ascending: true });
+
+        if (hazardLibraryError) throw hazardLibraryError;
+        if (isMounted && data?.length) setHazardLibrary(data as HazardLibraryEntry[]);
+      } catch {
+        if (isMounted) setHazardLibrary(fallbackHazardLibrary);
+      }
+    }
+
     void loadCompanyIdentity();
     void loadPersonnel();
+    void loadHazardLibrary();
 
     return () => {
       isMounted = false;
@@ -165,14 +176,16 @@ export function NewProposalPage() {
     setFormData((current) => ({ ...current, [field]: value }));
   }
 
-  function toggleHazard(hazardId: string) {
-    const libraryHazard = preliminaryHazardLibrary.find((hazard) => hazard.id === hazardId);
+  function addLibraryHazard(hazardId: string) {
+    const libraryHazard = hazardLibrary.find((hazard) => hazard.id === hazardId);
     if (!libraryHazard) return;
 
     setSelectedHazards((current) =>
-      current.some((hazard) => hazard.id === hazardId)
-        ? current.filter((hazard) => hazard.id !== hazardId)
-        : [...current, { ...libraryHazard, notes: '' }]
+      current.some(
+        (hazard) => hazard.id === hazardId || getSelectedHazardName(hazard).toLowerCase() === libraryHazard.hazard_name.toLowerCase()
+      )
+        ? current
+        : [...current, selectLibraryHazard(libraryHazard)]
     );
   }
 
@@ -180,18 +193,28 @@ export function NewProposalPage() {
     setSelectedHazards((current) => current.filter((hazard) => hazard.id !== hazardId));
   }
 
-  function updateSelectedHazard(hazardId: string, field: 'mitigation' | 'notes', value: string) {
+  function updateSelectedHazard(hazardId: string, value: string) {
     setSelectedHazards((current) =>
-      current.map((hazard) => (hazard.id === hazardId ? { ...hazard, [field]: value } : hazard))
+      current.map((hazard) => (hazard.id === hazardId ? { ...hazard, mitigation: value } : hazard))
     );
   }
 
-  function addCustomHazard() {
-    const trimmedHazard = customHazard.trim();
-    if (!trimmedHazard) return;
+  function updateCustomHazard(field: keyof typeof customHazard, value: string) {
+    setCustomHazard((current) => ({ ...current, [field]: value }));
+  }
 
-    setSelectedHazards((current) => [...current, createCustomPreliminaryHazard(trimmedHazard)]);
-    setCustomHazard('');
+  function addCustomHazard() {
+    const hazardName = customHazard.hazardName.trim();
+    const category = customHazard.category.trim();
+    const mitigation = customHazard.mitigation.trim();
+    if (!hazardName || !category || !mitigation) return;
+
+    setSelectedHazards((current) =>
+      current.some((hazard) => getSelectedHazardName(hazard).toLowerCase() === hazardName.toLowerCase())
+        ? current
+        : [...current, createCustomPreliminaryHazard(hazardName, category, mitigation)]
+    );
+    setCustomHazard({ hazardName: '', category: '', mitigation: '' });
   }
 
   function validateForm() {
@@ -256,7 +279,7 @@ export function NewProposalPage() {
         hazard: summarizedHazards.hazard,
         risk: summarizedHazards.risk,
         proposed_mitigation: summarizedHazards.proposedMitigation,
-        hazard_assessment: selectedHazards,
+        hazard_assessment: selectedHazards.map(({ id, hazard_name, category, mitigation, source }) => ({ id, hazard_name, category, mitigation, source })),
         proposal_amount: formData.proposalAmount ? Number(formData.proposalAmount) : null,
         valid_until: formData.validUntil || null,
         status: formData.status
@@ -331,10 +354,12 @@ export function NewProposalPage() {
           selectedHazards={selectedHazards}
           customHazard={customHazard}
           disabled={isSaving}
-          onToggleHazard={toggleHazard}
+          serviceType={formData.serviceType}
+          hazardLibrary={hazardLibrary}
+          onAddLibraryHazard={addLibraryHazard}
           onRemoveHazard={removeHazard}
           onUpdateHazard={updateSelectedHazard}
-          onCustomHazardChange={setCustomHazard}
+          onCustomHazardChange={updateCustomHazard}
           onAddCustomHazard={addCustomHazard}
         />
 
@@ -366,122 +391,214 @@ export function NewProposalPage() {
 
 
 function HazardSelection({
+  serviceType,
+  hazardLibrary,
   selectedHazards,
   customHazard,
   disabled,
-  onToggleHazard,
+  onAddLibraryHazard,
   onRemoveHazard,
   onUpdateHazard,
   onCustomHazardChange,
   onAddCustomHazard
 }: {
+  serviceType: string;
+  hazardLibrary: HazardLibraryEntry[];
   selectedHazards: SelectedPreliminaryHazard[];
-  customHazard: string;
+  customHazard: { hazardName: string; category: string; mitigation: string };
   disabled: boolean;
-  onToggleHazard: (hazardId: string) => void;
+  onAddLibraryHazard: (hazardId: string) => void;
   onRemoveHazard: (hazardId: string) => void;
-  onUpdateHazard: (hazardId: string, field: 'mitigation' | 'notes', value: string) => void;
-  onCustomHazardChange: (value: string) => void;
+  onUpdateHazard: (hazardId: string, value: string) => void;
+  onCustomHazardChange: (field: keyof typeof customHazard, value: string) => void;
   onAddCustomHazard: () => void;
 }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const suggestedHazards = useMemo(() => getSuggestedHazards(hazardLibrary, serviceType), [hazardLibrary, serviceType]);
+  const searchResults = useMemo(() => searchHazards(hazardLibrary, searchQuery), [hazardLibrary, searchQuery]);
+  const selectedHazardIds = useMemo(() => new Set(selectedHazards.map((hazard) => hazard.id)), [selectedHazards]);
+  const selectedHazardNames = useMemo(
+    () => new Set(selectedHazards.map((hazard) => getSelectedHazardName(hazard).toLowerCase())),
+    [selectedHazards]
+  );
+  const canAddCustomHazard = customHazard.hazardName.trim() && customHazard.category.trim() && customHazard.mitigation.trim();
+
   return (
     <fieldset className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-      <legend className="px-1 text-base font-semibold text-brand-900">Preliminary Hazard Assessment</legend>
+      <legend className="px-1 text-base font-semibold text-brand-900">Proposal Hazard Identification</legend>
       <p className="mt-2 text-sm text-slate-600">
-        Select common hazards to auto-populate preliminary mitigations. Mitigation text and notes can be adjusted for this proposal.
+        Review suggested hazards for the selected service type, add any applicable library hazards, and document proposal-specific mitigations. Suggested hazards are not added unless selected.
       </p>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="space-y-4">
-          {preliminaryHazardCategories.map((category) => (
-            <div key={category} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <h3 className="text-sm font-semibold text-brand-900">{category}</h3>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="text-sm font-semibold text-brand-900">Suggested Hazards</h3>
+              <span className="text-xs font-medium text-slate-500">{serviceType}</span>
+            </div>
+            <p className="mt-1 text-xs text-slate-600">
+              {serviceType === 'Custom Operation'
+                ? 'Custom Operation does not auto-suggest mission-type hazards. Search the library or add custom hazards below.'
+                : 'Universal hazards and hazards matching this service type are shown here for optional selection.'}
+            </p>
+
+            {suggestedHazards.length ? (
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {preliminaryHazardLibrary
-                  .filter((hazard) => hazard.category === category)
-                  .map((hazard) => (
-                    <label key={hazard.id} className="flex items-start gap-2 rounded-lg bg-white p-2 text-sm text-slate-700">
+                {suggestedHazards.map((hazard) => {
+                  const selectedHazard = selectedHazards.find(
+                    (entry) => entry.id === hazard.id || getSelectedHazardName(entry).toLowerCase() === hazard.hazard_name.toLowerCase()
+                  );
+
+                  return (
+                    <label key={hazard.id} className="flex min-h-12 items-start gap-2 rounded-lg bg-white p-3 text-sm text-slate-700">
                       <input
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-100"
+                        className="mt-1 h-5 w-5 rounded border-slate-300 text-brand-700 focus:ring-brand-100"
                         type="checkbox"
-                        checked={selectedHazards.some((selectedHazard) => selectedHazard.id === hazard.id)}
-                        onChange={() => onToggleHazard(hazard.id)}
+                        checked={Boolean(selectedHazard)}
+                        onChange={() => (selectedHazard ? onRemoveHazard(selectedHazard.id) : onAddLibraryHazard(hazard.id))}
                         disabled={disabled}
                       />
-                      {hazard.hazard}
+                      <span>
+                        <span className="font-medium text-slate-800">{hazard.hazard_name}</span>
+                        <span className="mt-1 block text-xs uppercase tracking-wide text-slate-500">{hazard.category}</span>
+                      </span>
                     </label>
-                  ))}
+                  );
+                })}
               </div>
-            </div>
-          ))}
+            ) : (
+              <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">
+                No service-type suggestions are shown for Custom Operation.
+              </div>
+            )}
+          </div>
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <h3 className="text-sm font-semibold text-brand-900">Optional Custom Hazard</h3>
-            <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <h3 className="text-sm font-semibold text-brand-900">Search Hazard Library</h3>
+            <input
+              className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:text-sm"
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search hazards…"
+              disabled={disabled}
+            />
+            {searchQuery.trim() ? (
+              <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
+                {searchResults.length ? searchResults.map((hazard) => {
+                  const isSelected = selectedHazardIds.has(hazard.id) || selectedHazardNames.has(hazard.hazard_name.toLowerCase());
+
+                  return (
+                    <div key={hazard.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="font-semibold text-brand-900">{hazard.hazard_name}</p>
+                          <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{hazard.category}</p>
+                          <p className="mt-2 line-clamp-3 text-slate-600">{hazard.default_mitigation}</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="min-h-11 rounded-lg border border-brand-700 bg-white px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
+                          onClick={() => onAddLibraryHazard(hazard.id)}
+                          disabled={disabled || isSelected}
+                        >
+                          {isSelected ? 'Added' : 'Add'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }) : (
+                  <p className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-600">No hazards match your search.</p>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <h3 className="text-sm font-semibold text-brand-900">Custom Hazard</h3>
+            <p className="mt-1 text-xs text-slate-600">Custom hazards attach only to this proposal and are not added to the master library.</p>
+            <div className="mt-3 grid gap-3">
               <input
-                className="w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:py-2 sm:text-sm"
+                className="w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:text-sm"
                 type="text"
-                value={customHazard}
-                onChange={(event) => onCustomHazardChange(event.target.value)}
-                placeholder="Add site-specific hazard"
+                value={customHazard.hazardName}
+                onChange={(event) => onCustomHazardChange('hazardName', event.target.value)}
+                placeholder="Hazard Name"
+                disabled={disabled}
+              />
+              <input
+                className="w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:text-sm"
+                type="text"
+                value={customHazard.category}
+                onChange={(event) => onCustomHazardChange('category', event.target.value)}
+                placeholder="Category"
+                disabled={disabled}
+              />
+              <textarea
+                className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:text-sm"
+                value={customHazard.mitigation}
+                onChange={(event) => onCustomHazardChange('mitigation', event.target.value)}
+                placeholder="Mitigation"
                 disabled={disabled}
               />
               <button
                 type="button"
-                className="min-h-11 rounded-lg border border-brand-700 bg-white px-4 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 sm:py-2"
+                className="min-h-11 rounded-lg border border-brand-700 bg-white px-4 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 sm:w-fit"
                 onClick={onAddCustomHazard}
-                disabled={disabled || !customHazard.trim()}
+                disabled={disabled || !canAddCustomHazard}
               >
-                Add Hazard
+                Add Custom Hazard
               </button>
             </div>
           </div>
         </div>
 
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-brand-900">Selected Hazards</h3>
+          <h3 className="text-sm font-semibold text-brand-900">Selected Proposal Hazards</h3>
           {selectedHazards.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-              No hazards selected yet. Choose one or more hazards from the library.
+              No hazards selected yet. Select suggested hazards, search the library, or add a custom hazard.
             </div>
           ) : null}
 
-          {selectedHazards.map((hazard) => (
-            <article key={hazard.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          {selectedHazards.map((hazard) => {
+            const defaultMitigation = hazardLibrary.find((libraryHazard) => libraryHazard.id === hazard.id)?.default_mitigation ?? hazard.mitigation;
+
+            return (
+              <article key={hazard.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h4 className="text-sm font-semibold text-brand-900">{hazard.hazard}</h4>
-                  <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{hazard.category}</p>
+                  <h4 className="text-sm font-semibold text-brand-900">{getSelectedHazardName(hazard)}</h4>
+                  <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+                    {hazard.category} • {hazard.source === 'custom' ? 'Custom' : 'Library'}
+                  </p>
                 </div>
                 <button
                   type="button"
-                  className="text-left text-sm font-medium text-red-700 disabled:text-slate-400 sm:text-right"
+                  className="min-h-11 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:text-slate-400 sm:text-right"
                   onClick={() => onRemoveHazard(hazard.id)}
                   disabled={disabled}
                 >
                   Remove
                 </button>
               </div>
+              <div className="mt-3 rounded-lg bg-white p-3 text-sm text-slate-700">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Default mitigation</p>
+                <p className="mt-1 whitespace-pre-wrap">{defaultMitigation}</p>
+              </div>
               <label className="mt-3 block text-sm font-medium text-slate-700">
-                Preliminary Mitigation
+                Editable Mitigation
                 <textarea
                   className="mt-1 min-h-28 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:text-sm"
                   value={hazard.mitigation}
-                  onChange={(event) => onUpdateHazard(hazard.id, 'mitigation', event.target.value)}
+                  onChange={(event) => onUpdateHazard(hazard.id, event.target.value)}
                   disabled={disabled}
                 />
               </label>
-              <label className="mt-3 block text-sm font-medium text-slate-700">
-                Optional Notes
-                <textarea
-                  className="mt-1 min-h-20 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:text-sm"
-                  value={hazard.notes}
-                  onChange={(event) => onUpdateHazard(hazard.id, 'notes', event.target.value)}
-                  disabled={disabled}
-                />
-              </label>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       </div>
     </fieldset>
@@ -628,7 +745,7 @@ function SelectField({
 }: {
   label: string;
   value: string;
-  options: string[];
+  options: readonly string[];
   onChange: (value: string) => void;
   disabled: boolean;
 }) {
