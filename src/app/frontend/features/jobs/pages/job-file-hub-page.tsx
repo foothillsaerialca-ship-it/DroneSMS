@@ -803,15 +803,8 @@ export function JobFileHubPage() {
           <div>
             <p className="text-sm font-medium text-slate-500">Job File</p>
             <h1 className="mt-1 text-2xl font-semibold text-brand-900">{job.name}</h1>
-            <p className="mt-2 text-sm text-slate-600">Template packet workspace for this operation.</p>
+            <p className="mt-2 text-sm text-slate-600">Work this job packet from top to bottom: plan, verify, execute, close out, then export.</p>
           </div>
-          <button
-            type="button"
-            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
-            onClick={handleExportPacket}
-          >
-            Export Packet
-          </button>
         </div>
       </div>
 
@@ -864,16 +857,29 @@ export function JobFileHubPage() {
       </div>
 
       <div id="crew-assignment" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-brand-900">Crew Assignment</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Assign personnel to this operation for future JHA, Preflight, briefing, sign-off, and packet export workflows.
-            </p>
+        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">1</span>
+            <div>
+              <h2 className="text-base font-semibold text-brand-900">Crew Assignment</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Assign personnel to this operation for JHA, pre-flight coordination, mission signoff, and packet export.
+              </p>
+              <span className="mt-3 inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                {assignments.length} assigned / {activePersonnelCount} active
+              </span>
+            </div>
           </div>
-          <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {assignments.length} assigned / {activePersonnelCount} active
-          </span>
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
+            aria-controls="crew-assignment-form"
+            aria-expanded={isCrewFormOpen}
+            onClick={() => setIsCrewFormOpen(true)}
+            disabled={isCrewFormOpen}
+          >
+            {isCrewFormOpen ? 'Adding Crew' : 'Add Crew'}
+          </button>
         </div>
 
         <div className="mt-4 space-y-3">
@@ -1044,17 +1050,7 @@ export function JobFileHubPage() {
               Cancel
             </button>
           </form>
-        ) : (
-          <button
-            type="button"
-            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
-            aria-controls="crew-assignment-form"
-            aria-expanded={isCrewFormOpen}
-            onClick={() => setIsCrewFormOpen(true)}
-          >
-            + Add Personnel
-          </button>
-        )}
+        ) : null}
 
         {isCrewFormOpen && personnel.length === 0 ? (
           <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
@@ -1064,16 +1060,29 @@ export function JobFileHubPage() {
       </div>
 
       <div id="equipment-assignment" className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-brand-900">Equipment Assignment</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Assign aircraft or equipment kits to this operation. Accessories, batteries, controllers, and payloads are not assigned individually.
-            </p>
+        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">2</span>
+            <div>
+              <h2 className="text-base font-semibold text-brand-900">Equipment Assignment</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Assign aircraft or equipment kits to this operation. Accessories, batteries, controllers, and payloads are not assigned individually.
+              </p>
+              <span className="mt-3 inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                {equipmentAssignments.length} assigned
+              </span>
+            </div>
           </div>
-          <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {equipmentAssignments.length} assigned
-          </span>
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
+            aria-controls="equipment-assignment-form"
+            aria-expanded={isEquipmentFormOpen}
+            onClick={() => setIsEquipmentFormOpen(true)}
+            disabled={isEquipmentFormOpen}
+          >
+            {isEquipmentFormOpen ? 'Adding Equipment' : 'Add Equipment'}
+          </button>
         </div>
 
         <div className="mt-4 space-y-3">
@@ -1159,17 +1168,7 @@ export function JobFileHubPage() {
               Cancel
             </button>
           </form>
-        ) : (
-          <button
-            type="button"
-            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
-            aria-controls="equipment-assignment-form"
-            aria-expanded={isEquipmentFormOpen}
-            onClick={() => setIsEquipmentFormOpen(true)}
-          >
-            + Add Equipment
-          </button>
-        )}
+        ) : null}
 
         {isEquipmentFormOpen && equipmentKits.length === 0 ? (
           <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
@@ -1178,50 +1177,74 @@ export function JobFileHubPage() {
         ) : null}
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Link
-          to={`/jobs/${job.id}/templates/jha`}
-          className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-200 hover:bg-brand-50"
-        >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">3</span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Workflow Step 3</p>
-              <h2 className="mt-1 text-base font-semibold text-brand-900">Job Hazard Analysis (JHA)</h2>
-              <p className="mt-1 text-sm text-slate-600">Airspace review and crew briefing status are completed inside the JHA.</p>
+              <h2 className="text-lg font-semibold text-brand-900">Job Hazard Analysis (JHA)</h2>
+              <p className="mt-1 text-sm text-slate-600">Core operational control for mission hazards, airspace review, communications, crew briefing, and RPIC certification.</p>
+              <span className={`mt-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(jhaComplete)}`}>
+                {jhaComplete ? 'Complete' : jhaSummary ? 'In progress' : 'Not started'}
+              </span>
             </div>
-            <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(jhaComplete)}`}>
-              {jhaComplete ? 'Complete' : jhaSummary ? 'In progress' : 'Not started'}
-            </span>
           </div>
-        </Link>
+          <Link
+            to={`/jobs/${job.id}/templates/jha`}
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
+          >
+            Open JHA
+          </Link>
+        </div>
+      </section>
 
-        <Link
-          to={`/jobs/${job.id}/templates/preflight`}
-          className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-200 hover:bg-brand-50"
-        >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">4</span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Workflow Step 4</p>
-              <h2 className="mt-1 text-base font-semibold text-brand-900">Pre-Flight Checklist</h2>
-              <p className="mt-1 text-sm text-slate-600">Final aircraft, weather, airspace, crew communications, and RPIC approval checks.</p>
+              <h2 className="text-lg font-semibold text-brand-900">Pre-Flight Checklist</h2>
+              <p className="mt-1 text-sm text-slate-600">Final aircraft, equipment, weather, airspace, crew communications, and RPIC approval check before launch.</p>
+              <span className={`mt-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(preflightComplete)}`}>
+                {preflightComplete ? 'Complete' : preflightSummary ? 'In progress' : 'Not started'}
+              </span>
             </div>
-            <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(preflightComplete)}`}>
-              {preflightComplete ? 'Complete' : preflightSummary ? 'In progress' : 'Not started'}
-            </span>
           </div>
-        </Link>
-      </div>
+          <Link
+            to={`/jobs/${job.id}/templates/preflight`}
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
+          >
+            Open Pre-Flight
+          </Link>
+        </div>
+      </section>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <h2 className="text-base font-semibold text-brand-900">Operation Execution</h2>
-        <p className="mt-1 text-sm text-slate-600">Conduct the operation under the approved JHA and pre-flight controls. Safety Events can be captured at any point during execution.</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">5</span>
+            <div>
+              <h2 className="text-base font-semibold text-brand-900">Operation Execution</h2>
+              <p className="mt-1 text-sm text-slate-600">Conduct the operation under the approved JHA and pre-flight controls. This section is informational only and does not duplicate data entry.</p>
+              <span className="mt-3 inline-flex w-fit rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-brand-700">
+                Mission controls summary
+              </span>
+            </div>
+          </div>
+          <Link
+            to={`/jobs/${job.id}/templates/jha`}
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100 sm:min-h-0"
+          >
+            Review Controls
+          </Link>
+        </div>
+        <div className="mt-4 space-y-3">
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
             <p className="text-sm font-semibold text-brand-900">Crew Briefing Status</p>
             <p className="mt-1 text-sm text-slate-600">{crewBriefingComplete ? 'Completed via JHA' : 'Pending JHA crew briefing completion'}</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="text-sm font-semibold text-brand-900">Airspace Review</p>
+            <p className="text-sm font-semibold text-brand-900">Airspace Review Status</p>
             <p className="mt-1 text-sm text-slate-600">{airspaceReviewComplete ? 'Completed via JHA' : 'Pending JHA airspace review'}</p>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -1229,19 +1252,37 @@ export function JobFileHubPage() {
             <p className="mt-1 text-sm text-slate-600">{personnelReadinessSummary}</p>
           </div>
         </div>
-      </div>
+      </section>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-brand-900">Safety Events</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Document unexpected hazards, near misses, lessons learned, and operational deviations encountered during this mission.
-            </p>
+        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">6</span>
+            <div>
+              <h2 className="text-base font-semibold text-brand-900">Safety Events</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Document unexpected hazards, near misses, lessons learned, and operational deviations encountered during this mission.
+              </p>
+              <span className="mt-3 inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                {safetyEvents.length} recorded
+              </span>
+            </div>
           </div>
-          <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {safetyEvents.length} recorded
-          </span>
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
+            aria-controls="safety-event-form"
+            aria-expanded={isSafetyEventFormOpen}
+            onClick={() => {
+              resetSafetyEventForm();
+              setSafetyEventError(null);
+              setSafetyEventMessage(null);
+              setIsSafetyEventFormOpen(true);
+            }}
+            disabled={isSafetyEventFormOpen}
+          >
+            {isSafetyEventFormOpen ? 'Adding Event' : 'Add Safety Event'}
+          </button>
         </div>
 
         <div className="mt-4 space-y-3">
@@ -1403,33 +1444,24 @@ export function JobFileHubPage() {
               {isSavingSafetyEvent ? 'Saving...' : editingSafetyEventId ? 'Save Safety Event' : 'Add Safety Event'}
             </button>
           </form>
-        ) : (
-          <button
-            type="button"
-            className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-100"
-            aria-controls="safety-event-form"
-            aria-expanded={isSafetyEventFormOpen}
-            onClick={() => {
-              resetSafetyEventForm();
-              setSafetyEventError(null);
-              setSafetyEventMessage(null);
-              setIsSafetyEventFormOpen(true);
-            }}
-          >
-            + Add Safety Event
-          </button>
-        )}
+        ) : null}
       </div>
 
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-brand-900">Operation Closeout</h2>
-            <p className="mt-1 text-sm text-slate-600">Final operational outcome for the mission. Safety Events remain separate so in-mission hazards and lessons learned can be captured independently.</p>
+        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">7</span>
+            <div>
+              <h2 className="text-base font-semibold text-brand-900">Operation Closeout</h2>
+              <p className="mt-1 text-sm text-slate-600">Final required operational step before packet export. Capture the mission result and document any changes, delays, deviations, abort reasons, or incidents.</p>
+              <span className={`mt-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(closeoutComplete)}`}>
+                {closeoutComplete ? 'Complete' : 'Not started'}
+              </span>
+            </div>
           </div>
-          <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(closeoutComplete)}`}>
-            {closeoutComplete ? 'Complete' : 'Not started'}
+          <span className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-600 sm:min-h-0">
+            Save Closeout Below
           </span>
         </div>
 
@@ -1480,15 +1512,22 @@ export function JobFileHubPage() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-brand-900">Export Packet</h2>
-            <p className="mt-1 text-sm text-slate-600">Packet pulls from existing operational records only; no standalone Airspace, Crew Briefing, or Training Summary forms are created.</p>
+        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">8</span>
+            <div>
+              <h2 className="text-base font-semibold text-brand-900">Export Packet</h2>
+              <p className="mt-1 text-sm text-slate-600">Packet pulls from existing operational records only; no standalone Airspace, Crew Briefing, or Training Summary forms are created.</p>
+              <span className={`mt-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(closeoutComplete)}`}>
+                {closeoutComplete ? 'Ready to export' : 'Closeout required'}
+              </span>
+            </div>
           </div>
           <button
             type="button"
-            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 sm:min-h-0 sm:py-2"
             onClick={handleExportPacket}
+            disabled={!closeoutComplete}
           >
             Export Packet
           </button>
