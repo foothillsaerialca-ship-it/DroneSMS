@@ -24,6 +24,7 @@ const PLACEHOLDER = 'To be confirmed during planning.';
 const PANEL_OPACITY = 0.72;
 const TABLE_ROW_OPACITY = 0.34;
 const TOTAL_ROW_OPACITY = 0.48;
+const WATERMARK_OPACITY = 0.03;
 
 export type ProposalDocumentKind = 'proposal' | 'operational-packet';
 
@@ -87,7 +88,7 @@ class PdfBuilder {
     this.fontRegularId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
     this.fontBoldId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
     this.fontObliqueId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>');
-    this.watermarkStateId = this.addObject('<< /Type /ExtGState /ca 0.06 /CA 0.06 >>');
+    this.watermarkStateId = this.addObject(`<< /Type /ExtGState /ca ${WATERMARK_OPACITY} /CA ${WATERMARK_OPACITY} >>`);
     this.panelStateId = this.addObject(`<< /Type /ExtGState /ca ${PANEL_OPACITY} /CA ${PANEL_OPACITY} >>`);
 
     if (logo) {
@@ -367,7 +368,7 @@ class ProposalPdfRenderer {
   private watermark(page: PageState) {
     const logo = this.pdf.getLogo();
     if (logo) {
-      this.pdf.drawCircularImage(page, PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 389, 0.06);
+      this.pdf.drawCircularImage(page, PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 389, WATERMARK_OPACITY);
       return;
     }
     this.pdf.drawText(page, companyNameFor(this.organization), PAGE_WIDTH / 2, PAGE_HEIGHT / 2, { size: 36, font: 'bold', color: LIGHT_GRAY, align: 'center' });
