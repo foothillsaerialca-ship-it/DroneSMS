@@ -24,6 +24,7 @@ const PLACEHOLDER = 'To be confirmed during planning.';
 const PANEL_OPACITY = 0.72;
 const TABLE_ROW_OPACITY = 0.34;
 const TOTAL_ROW_OPACITY = 0.48;
+const WATERMARK_OPACITY = 0.03;
 
 export type ProposalDocumentKind = 'proposal' | 'operational-packet';
 
@@ -87,7 +88,7 @@ class PdfBuilder {
     this.fontRegularId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
     this.fontBoldId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
     this.fontObliqueId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>');
-    this.watermarkStateId = this.addObject('<< /Type /ExtGState /ca 0.06 /CA 0.06 >>');
+    this.watermarkStateId = this.addObject(`<< /Type /ExtGState /ca ${WATERMARK_OPACITY} /CA ${WATERMARK_OPACITY} >>`);
     this.panelStateId = this.addObject(`<< /Type /ExtGState /ca ${PANEL_OPACITY} /CA ${PANEL_OPACITY} >>`);
 
     if (logo) {
@@ -244,9 +245,9 @@ class ProposalPdfRenderer {
     this.renderCover();
 
     this.startContentPage();
-    this.section('EXECUTIVE SUMMARY', 'A concise overview of the requested service, client objective, and expected deliverables.');
+    this.section('EXECUTIVE SUMMARY');
     this.paragraph(buildExecutiveSummary(this.proposal), 12);
-    this.section('SCOPE OF WORK', 'Scope reflects the currently accepted proposal details and may be refined by written client authorization.');
+    this.section('SCOPE OF WORK');
     this.keyValueTable([
       ['Project / Proposal', clean(this.proposal.proposal_name) || proposalSubtitle(this.proposal)],
       ['Services', buildServiceDescription(this.proposal)],
@@ -256,7 +257,7 @@ class ProposalPdfRenderer {
     ]);
 
     this.startContentPage();
-    this.section('PERSONNEL', 'Final crew assignments are confirmed before scheduling and tailored to the service requirements.');
+    this.section('PERSONNEL', 'Crew assignments are confirmed before scheduling and matched to the site requirements.');
     this.table(
       [
         ['Role', 'Assigned Individual', 'Credentials / Notes'],
@@ -265,7 +266,7 @@ class ProposalPdfRenderer {
       ],
       [130, 170, 187],
     );
-    this.section('EQUIPMENT', 'Equipment assignments may be adjusted before deployment based on site conditions and service requirements.');
+    this.section('EQUIPMENT', 'Equipment may be adjusted before deployment to match site conditions and deliverable requirements.');
     this.table(
       [
         ['Equipment', 'Purpose'],
@@ -273,7 +274,7 @@ class ProposalPdfRenderer {
       ],
       [250, 237],
     );
-    this.section('PRELIMINARY HAZARD ASSESSMENT', 'Concise proposal-stage hazards and mitigations. Final site conditions are confirmed before work begins.');
+    this.section('PRELIMINARY HAZARD ASSESSMENT', 'Final site-specific hazards are verified before flight.');
     this.table(
       [
         ['Hazard', 'Category', 'Mitigation'],
@@ -283,20 +284,20 @@ class ProposalPdfRenderer {
     );
 
     this.startContentPage();
-    this.section('AIRSPACE REVIEW', 'Brief planning summary. Airspace conditions are confirmed again before operation.');
+    this.section('AIRSPACE REVIEW', 'Airspace conditions are rechecked before flight.');
     this.keyValueTable([
       ['Airspace Classification', clean(this.proposal.airspace_class) || PLACEHOLDER],
       ['Nearby Airport', PLACEHOLDER],
       ['LAANC Requirement', booleanDisplay(this.proposal.laanc_required)],
       ['Preliminary Operational Finding', buildAirspaceFindings(this.proposal)],
     ]);
-    this.section('SAFETY COMMITMENT', 'A professional operating culture built on planning, coordination, and disciplined field execution.');
+    this.section('SAFETY COMMITMENT');
     this.bullets([
       'Work is planned around site access, weather, airspace, people, property, and mission constraints.',
       'The crew verifies current conditions before flight and coordinates with the client when conditions change.',
       'Operations may be delayed, modified, or stopped when safety or quality conditions require it.',
     ]);
-    this.section('PRICING', 'Pricing is based on the stated scope and proposal conditions.');
+    this.section('PRICING');
     const amount = currency(this.proposal.proposal_amount);
     this.table(
       [
@@ -307,13 +308,13 @@ class ProposalPdfRenderer {
       [237, 50, 100, 100],
       { totalRowIndex: 2 },
     );
-    this.section('ASSUMPTIONS', 'Standard proposal conditions for scheduling and performance.');
+    this.section('ASSUMPTIONS');
     this.bullets([
       'Weather, safe site access, and client coordination are required.',
       'Airspace authorization availability is assumed when applicable.',
       'Scope changes or additional site requirements may require written authorization.',
     ]);
-    this.section('ACCEPTANCE', 'Acceptance authorizes scheduling coordination and preparation for service delivery.');
+    this.section('ACCEPTANCE');
     this.paragraph('Signature constitutes acceptance of the scope, pricing, and conditions in this proposal.', 8);
     this.signatureBlock();
   }
@@ -323,18 +324,21 @@ class ProposalPdfRenderer {
     this.watermark(this.currentPage);
     const companyName = companyNameFor(this.organization);
     const logo = this.pdf.getLogo();
+    const centerX = PAGE_WIDTH / 2;
+    const coverTextWidth = PAGE_WIDTH - (MARGIN + 36) * 2;
+    const coverTextX = centerX - coverTextWidth / 2;
 
     if (logo) {
-      this.pdf.drawCircularImage(this.currentPage, PAGE_WIDTH / 2, PAGE_HEIGHT - 156, 108);
+      this.pdf.drawCircularImage(this.currentPage, centerX, PAGE_HEIGHT - 156, 108);
     } else {
-      this.pdf.drawWrappedText(this.currentPage, companyName, MARGIN + 40, PAGE_HEIGHT - 148, PAGE_WIDTH - (MARGIN + 40) * 2, { size: 24, font: 'bold', color: NAVY, align: 'center', lineHeight: 28 });
+      this.pdf.drawWrappedText(this.currentPage, companyName, coverTextX, PAGE_HEIGHT - 148, coverTextWidth, { size: 24, font: 'bold', color: NAVY, align: 'center', lineHeight: 28 });
     }
 
-    this.pdf.drawText(this.currentPage, 'AERIAL SERVICES PROPOSAL', PAGE_WIDTH / 2, PAGE_HEIGHT - 270, { size: 29, font: 'bold', color: NAVY, align: 'center' });
-    this.pdf.drawWrappedText(this.currentPage, proposalSubtitle(this.proposal), MARGIN + 36, PAGE_HEIGHT - 302, PAGE_WIDTH - (MARGIN + 36) * 2, { size: 13.5, color: GRAY, align: 'center', lineHeight: 16 });
+    this.pdf.drawText(this.currentPage, 'AERIAL SERVICES PROPOSAL', centerX, PAGE_HEIGHT - 270, { size: 29, font: 'bold', color: NAVY, align: 'center' });
+    this.pdf.drawWrappedText(this.currentPage, proposalSubtitle(this.proposal), coverTextX, PAGE_HEIGHT - 302, coverTextWidth, { size: 13.5, color: GRAY, align: 'center', lineHeight: 16 });
     this.pdf.drawLine(this.currentPage, MARGIN + 96, PAGE_HEIGHT - 332, PAGE_WIDTH - MARGIN - 96, PAGE_HEIGHT - 332, BLUE, 1.1);
 
-    this.coverInfoBlock(PAGE_HEIGHT - 386);
+    this.coverInfoBlock(PAGE_HEIGHT - 412);
     this.footer(this.currentPage, this.pageNumber);
   }
 
@@ -344,17 +348,17 @@ class ProposalPdfRenderer {
     this.watermark(this.currentPage);
     this.header(this.currentPage);
     this.footer(this.currentPage, this.pageNumber);
-    this.y = PAGE_HEIGHT - 92;
+    this.y = PAGE_HEIGHT - 78;
   }
 
   private header(page: PageState) {
     const companyName = companyNameFor(this.organization);
-    this.pdf.drawText(page, companyName, MARGIN, PAGE_HEIGHT - 36, { size: 10.8, font: 'bold', color: NAVY });
-    this.pdf.drawWrappedText(page, organizationAddress(this.organization), MARGIN, PAGE_HEIGHT - 49, 330, { size: 7, color: GRAY, lineHeight: 8.5 });
-    this.pdf.drawText(page, organizationContact(this.organization), MARGIN, PAGE_HEIGHT - 64, { size: 7, color: GRAY });
+    this.pdf.drawText(page, companyName, MARGIN, PAGE_HEIGHT - 30, { size: 10.5, font: 'bold', color: NAVY });
+    this.pdf.drawWrappedText(page, organizationAddress(this.organization), MARGIN, PAGE_HEIGHT - 41, 330, { size: 6, color: GRAY, lineHeight: 7.4 });
+    this.pdf.drawText(page, organizationContact(this.organization), MARGIN, PAGE_HEIGHT - 53, { size: 6, color: GRAY });
     const logo = this.pdf.getLogo();
-    if (logo) this.pdf.drawImage(page, PAGE_WIDTH - 94, PAGE_HEIGHT - 62, 38, (38 * logo.height) / logo.width);
-    this.pdf.drawLine(page, MARGIN, PAGE_HEIGHT - 74, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 74, BLUE, 0.9);
+    if (logo) this.pdf.drawImage(page, PAGE_WIDTH - 88, PAGE_HEIGHT - 54, 31, (31 * logo.height) / logo.width);
+    this.pdf.drawLine(page, MARGIN, PAGE_HEIGHT - 64, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 64, BLUE, 0.9);
   }
 
   private footer(page: PageState, pageNumber: number) {
@@ -367,7 +371,7 @@ class ProposalPdfRenderer {
   private watermark(page: PageState) {
     const logo = this.pdf.getLogo();
     if (logo) {
-      this.pdf.drawCircularImage(page, PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 389, 0.06);
+      this.pdf.drawCircularImage(page, PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 389, WATERMARK_OPACITY);
       return;
     }
     this.pdf.drawText(page, companyNameFor(this.organization), PAGE_WIDTH / 2, PAGE_HEIGHT / 2, { size: 36, font: 'bold', color: LIGHT_GRAY, align: 'center' });
@@ -451,17 +455,17 @@ class ProposalPdfRenderer {
       ['Property', clean(this.proposal.site_address) || 'Property or operating area to be confirmed'],
       ['Prepared By', preparedByDisplay(this.proposal, this.organization)],
     ];
-    const blockX = MARGIN + 36;
-    const blockWidth = PAGE_WIDTH - (MARGIN + 36) * 2;
-    const rowHeight = 36;
-    const blockHeight = rows.length * rowHeight + 30;
+    const blockX = MARGIN + 18;
+    const blockWidth = PAGE_WIDTH - (MARGIN + 18) * 2;
+    const rowHeight = 42;
+    const blockHeight = rows.length * rowHeight + 42;
     this.pdf.drawRect(this.currentPage, blockX, startY - blockHeight, blockWidth, blockHeight, { fill: SOFT_PANEL, stroke: LIGHT_GRAY, strokeWidth: 0.45, opacity: 0.5 });
-    this.pdf.drawText(this.currentPage, 'PROPOSAL INFORMATION', blockX + 22, startY - 25, { size: 8.5, font: 'bold', color: BLUE });
+    this.pdf.drawText(this.currentPage, 'PROPOSAL INFORMATION', blockX + 28, startY - 29, { size: 8.8, font: 'bold', color: BLUE });
 
-    let y = startY - 50;
+    let y = startY - 60;
     rows.forEach((row) => {
-      this.pdf.drawText(this.currentPage, row[0].toUpperCase(), blockX + 22, y, { size: 7.5, font: 'bold', color: GRAY });
-      this.pdf.drawWrappedText(this.currentPage, row[1], blockX + 150, y, blockWidth - 174, { size: 9.2, color: NAVY, lineHeight: 11 });
+      this.pdf.drawText(this.currentPage, row[0].toUpperCase(), blockX + 28, y, { size: 7.8, font: 'bold', color: GRAY });
+      this.pdf.drawWrappedText(this.currentPage, row[1], blockX + 164, y, blockWidth - 198, { size: 9.5, color: NAVY, lineHeight: 11.8 });
       y -= rowHeight;
     });
   }
