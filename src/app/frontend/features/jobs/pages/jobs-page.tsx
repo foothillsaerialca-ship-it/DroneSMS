@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@frontend/lib/supabase";
 import { OrganizationIdentityCard } from "@frontend/features/settings/components/organization-identity-card";
+import { generateProposalPdf } from "@frontend/features/jobs/lib/proposal-pdf";
 import {
   loadOrganizationSettingsForUser,
   type OrganizationSettings,
@@ -115,6 +116,7 @@ export function JobsPage() {
   const [deletingProposalId, setDeletingProposalId] = useState<string | null>(
     null,
   );
+  const [generatingProposalPdfId, setGeneratingProposalPdfId] = useState<string | null>(null);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [workspaceMessage, setWorkspaceMessage] = useState<string | null>(null);
   const [organizationSettings, setOrganizationSettings] =
@@ -363,6 +365,22 @@ export function JobsPage() {
     }
   }
 
+
+  async function handleGenerateProposalPdf(proposalId: string) {
+    setGeneratingProposalPdfId(proposalId);
+    setProposalsError(null);
+    setWorkspaceMessage(null);
+
+    try {
+      await generateProposalPdf(proposalId);
+      setWorkspaceMessage("Proposal PDF generated.");
+    } catch (pdfError) {
+      setProposalsError(getErrorMessage(pdfError));
+    } finally {
+      setGeneratingProposalPdfId(null);
+    }
+  }
+
   async function deleteProposal(proposalId: string) {
     if (
       !window.confirm(
@@ -433,6 +451,7 @@ export function JobsPage() {
     const proposalNumber =
       proposal.proposal_number ?? proposal.id.slice(0, 8).toUpperCase();
     const isBusy = creatingJobProposalId === proposal.id;
+    const isGeneratingPdf = generatingProposalPdfId === proposal.id;
 
     return (
       <article
@@ -516,6 +535,15 @@ export function JobsPage() {
                 </button>
               </>
             )}
+
+            <button
+              type="button"
+              className="min-h-11 rounded-lg border border-brand-700 bg-white px-3 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0 sm:py-2"
+              onClick={() => void handleGenerateProposalPdf(proposal.id)}
+              disabled={isGeneratingPdf}
+            >
+              {isGeneratingPdf ? "Generating PDF..." : "Generate Proposal PDF"}
+            </button>
             <Link
               to={`/jobs/proposals/${proposal.id}/edit`}
               className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-700 bg-white px-3 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 sm:min-h-0 sm:py-2"
