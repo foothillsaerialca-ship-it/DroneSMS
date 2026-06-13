@@ -84,9 +84,9 @@ class PdfBuilder {
   constructor(logo: PdfImage | null) {
     this.catalogId = this.addObject('');
     this.pagesId = this.addObject('');
-    this.fontRegularId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-    this.fontBoldId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
-    this.fontObliqueId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>');
+    this.fontRegularId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+    this.fontBoldId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+    this.fontObliqueId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>');
     this.watermarkStateId = this.addObject('<< /Type /ExtGState /ca 0.06 /CA 0.06 >>');
     this.panelStateId = this.addObject(`<< /Type /ExtGState /ca ${PANEL_OPACITY} /CA ${PANEL_OPACITY} >>`);
 
@@ -118,7 +118,7 @@ class PdfBuilder {
     const cleanText = toPdfText(text);
     const textWidth = measureText(cleanText, size);
     const drawX = options.align === 'right' ? x - textWidth : options.align === 'center' ? x - textWidth / 2 : x;
-    page.commands.push(`BT /${fontName} ${formatNumber(size)} Tf ${formatNumber(color.r)} ${formatNumber(color.g)} ${formatNumber(color.b)} rg ${formatNumber(drawX)} ${formatNumber(y)} Td (${escapePdfString(cleanText)}) Tj ET`);
+    page.commands.push(`BT /${fontName} ${formatNumber(size)} Tf ${formatNumber(color.r)} ${formatNumber(color.g)} ${formatNumber(color.b)} rg ${formatNumber(drawX)} ${formatNumber(y)} Td <${pdfTextHex(cleanText)}> Tj ET`);
   }
 
   drawWrappedText(page: PageState, text: string, x: number, y: number, maxWidth: number, options: { size?: number; color?: string; font?: 'regular' | 'bold' | 'oblique'; lineHeight?: number; align?: 'left' | 'right' | 'center' } = {}) {
@@ -251,7 +251,7 @@ class ProposalPdfRenderer {
       ['Project / Proposal', clean(this.proposal.proposal_name) || proposalSubtitle(this.proposal)],
       ['Services', buildServiceDescription(this.proposal)],
       ['Property / Site', clean(this.proposal.site_address) || 'Property or operating area to be confirmed with client.'],
-      ['Deliverables', buildDeliverables(this.proposal)],
+      ['Deliverables', buildDeliverables()],
       ['Exclusions', 'Work not expressly included above is excluded unless added by written change authorization.'],
     ]);
 
@@ -419,7 +419,7 @@ class ProposalPdfRenderer {
     this.y -= headerHeight;
 
     rows.forEach((row, rowIndex) => {
-      const cellLines = row.map((cell, cellIndex) => wrapText(String(cell ?? ''), columns[cellIndex].width - 12, 8));
+      const cellLines = row.map((cell, cellIndex) => wrapText(normalizeTableCellText(cell), columns[cellIndex].width - 12, 8));
       const rowHeight = Math.max(options.minRowHeight ?? 21, ...cellLines.map((lines) => lines.length * 10 + 10));
       this.ensureSpace(rowHeight + 10);
       const rowY = this.y - rowHeight + 6;
@@ -555,12 +555,11 @@ function buildExecutiveSummary(proposal: ProposalPdfRecord) {
   const client = clientDisplay(proposal);
   const property = clean(proposal.site_address) || 'the identified property or operating area';
   const serviceDescription = buildServiceDescription(proposal);
-  const objective = lowerFirst(serviceDescription.replace(/\.$/, ''));
-  const deliverables = buildDeliverables(proposal);
+  const objective = withLeadingArticle(lowerFirst(serviceDescription.replace(/\.$/, '')));
 
   return [
     `This proposal presents a professional ${serviceType} engagement prepared for ${client}. The objective is ${objective} for the property at ${property}, completed through a planned, coordinated aerial services approach that protects people, property, and schedule quality.`,
-    `The work will be performed by assigned UAS personnel using equipment suited to the site and service requirements. Deliverables include ${deliverables.toLowerCase().replace(/\.$/, '')}, with final scheduling and field coordination completed after proposal acceptance.`,
+    'The work will be performed by assigned UAS personnel using equipment suited to the site and service requirements. Deliverables for this engagement will be prepared according to the accepted scope, property conditions, and client coordination requirements, with final scheduling and field coordination completed after proposal acceptance.',
   ].join('\n\n');
 }
 
@@ -578,10 +577,13 @@ function lowerFirst(value: string) {
   return value.charAt(0).toLowerCase() + value.slice(1);
 }
 
-function buildDeliverables(proposal: ProposalPdfRecord) {
-  const base = buildServiceDescription(proposal) || clean(proposal.proposal_name);
-  if (!base) return 'deliverables to be confirmed with the client before scheduling.';
-  return `${base} deliverables prepared according to the accepted scope, property conditions, and client coordination requirements.`;
+function withLeadingArticle(value: string) {
+  if (!value || /^(the|a|an)\s+/i.test(value)) return value;
+  return `the ${value}`;
+}
+
+function buildDeliverables() {
+  return 'Prepared according to the accepted scope, property conditions, and client coordination requirements.';
 }
 
 function buildHazardRows(proposal: ProposalPdfRecord): TableCell[][] {
@@ -687,8 +689,18 @@ function toPdfText(value: string) {
     .replace(/[^\x09\x0A\x0D\x20-\x7E•]/g, '');
 }
 
-function escapePdfString(value: string) {
-  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)').replace(/\n/g, '\\n');
+function normalizeTableCellText(value: TableCell) {
+  return String(value ?? '').replace(/(?:\u00e2\u00a2|\u00e2\u20ac\u00a2|•)/g, '-');
+}
+
+function pdfTextHex(value: string) {
+  let hex = '';
+  for (const character of value) {
+    const code = character === '•' ? 0x95 : character.charCodeAt(0);
+    const byte = code >= 0x20 && code <= 0x7e ? code : code === 0x95 ? code : 0x3f;
+    hex += byte.toString(16).padStart(2, '0');
+  }
+  return hex;
 }
 
 function measureText(value: string, size: number) {
