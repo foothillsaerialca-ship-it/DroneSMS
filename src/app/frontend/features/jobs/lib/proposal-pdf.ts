@@ -21,7 +21,9 @@ const GRAY = '#5B6470';
 const LIGHT_GRAY = '#D9DEE5';
 const ZEBRA = '#F4F7FB';
 const WHITE = '#FFFFFF';
-const PLACEHOLDER = 'To be verified during mission planning.';
+const PLACEHOLDER = 'To be confirmed during planning.';
+const PANEL_OPACITY = 0.82;
+const MAX_PROPOSAL_HAZARDS = 6;
 
 export type ProposalDocumentKind = 'proposal' | 'operational-packet';
 
@@ -86,7 +88,7 @@ class PdfBuilder {
     this.fontBoldId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
     this.fontObliqueId = this.addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique >>');
     this.watermarkStateId = this.addObject('<< /Type /ExtGState /ca 0.1 /CA 0.1 >>');
-    this.panelStateId = this.addObject('<< /Type /ExtGState /ca 0.88 /CA 0.88 >>');
+    this.panelStateId = this.addObject(`<< /Type /ExtGState /ca ${PANEL_OPACITY} /CA ${PANEL_OPACITY} >>`);
 
     if (logo) {
       this.logo = logo;
@@ -240,69 +242,59 @@ class ProposalPdfRenderer {
 
   render() {
     this.renderCover();
+
     this.startContentPage();
-    this.section('EXECUTIVE SUMMARY', 'A concise overview of the requested service, operating approach, and expected client deliverables.');
-    this.paragraph(buildExecutiveSummary(this.proposal));
-    this.section('SCOPE OF WORK', 'Scope is based on proposal information available at issuance and is refined during mission planning.');
+    this.section('EXECUTIVE SUMMARY', 'A concise overview of the requested service, client objective, and expected deliverables.');
+    this.paragraph(buildExecutiveSummary(this.proposal), 12);
+    this.section('SCOPE OF WORK', 'Scope reflects the currently accepted proposal details and may be refined by written client authorization.');
     this.keyValueTable([
       ['Project / Proposal', clean(this.proposal.proposal_name) || proposalSubtitle(this.proposal)],
-      ['Services to Be Performed', buildServiceDescription(this.proposal)],
+      ['Services', buildServiceDescription(this.proposal)],
       ['Property / Site', clean(this.proposal.site_address) || 'Property or operating area to be confirmed with client.'],
-      ['Areas Excluded', 'Areas not expressly included above are excluded unless added by written change authorization.'],
       ['Deliverables', buildDeliverables(this.proposal)],
+      ['Exclusions', 'Work not expressly included above is excluded unless added by written change authorization.'],
     ]);
 
     this.startContentPage();
-    this.section('PLANNED PERSONNEL', 'Final crew assignments are confirmed during mission planning and documented in the operational record.');
+    this.section('PERSONNEL', 'Final crew assignments are confirmed before scheduling and tailored to the service requirements.');
     this.table(
       [
-        ['Role', 'Assigned Individual', 'Credentials'],
-        ['Proposed RPIC', clean(this.proposal.proposed_rpic_name) || clean(this.proposal.proposed_rpic) || 'To be assigned', clean(this.proposal.proposed_rpic_credentials) || 'Credentials to be verified'],
-        ...(clean(this.proposal.proposed_crew) ? [['Crew / Support', clean(this.proposal.proposed_crew), 'As assigned for operation']] : []),
+        ['Role', 'Assigned Individual', 'Credentials / Notes'],
+        ['Remote Pilot in Command', clean(this.proposal.proposed_rpic_name) || clean(this.proposal.proposed_rpic) || 'To be assigned', clean(this.proposal.proposed_rpic_credentials) || 'Credentials verified before operation'],
+        ...(clean(this.proposal.proposed_crew) ? [['Crew / Support', clean(this.proposal.proposed_crew), 'Assigned for site support as required']] : []),
       ],
-      [120, 170, 197],
+      [130, 170, 187],
     );
-    if (clean(this.proposal.proposed_rpic_bio)) this.paragraph(this.proposal.proposed_rpic_bio ?? '', 10);
-    this.section('PLANNED EQUIPMENT', 'Equipment assignments may be adjusted prior to deployment based on mission requirements.');
+    this.section('EQUIPMENT', 'Equipment assignments may be adjusted before deployment based on site conditions and service requirements.');
     this.table(
       [
         ['Equipment', 'Purpose'],
-        [clean(this.proposal.proposed_aircraft) || 'Aircraft/equipment to be assigned during mission planning', clean(this.proposal.service_type) || 'Commercial UAS operation'],
+        [clean(this.proposal.proposed_aircraft) || 'Aircraft/equipment to be assigned before deployment', clean(this.proposal.service_type) || 'Commercial UAS operation'],
       ],
       [250, 237],
     );
-
-    this.startContentPage();
-    this.section('PRELIMINARY HAZARD ASSESSMENT', 'Preliminary hazards identified during proposal development. Final site-specific hazard assessment completed prior to operations.');
-    const hazards = normalizeSelectedHazards(this.proposal.hazard_assessment);
+    this.section('PRELIMINARY HAZARD ASSESSMENT', 'Concise proposal-stage hazards and mitigations. Final site conditions are confirmed before work begins.');
     this.table(
       [
-        ['Hazard', 'Category', 'Preliminary Mitigation'],
-        ...(hazards.length
-          ? hazards.map((hazard) => [getSelectedHazardName(hazard), hazard.category || 'General', hazard.mitigation || PLACEHOLDER])
-          : [['Preliminary hazards', 'General', clean(this.proposal.proposed_mitigation) || 'No proposal hazards selected. Final hazards verified before flight.']]),
+        ['Hazard', 'Category', 'Mitigation'],
+        ...buildHazardRows(this.proposal),
       ],
       [150, 95, 242],
     );
-    this.section('AIRSPACE REVIEW', 'Preliminary review only. Airspace conditions are revalidated during mission planning and on the day of operation.');
-    this.keyValueTable([
-      ['Airspace Classification', clean(this.proposal.airspace_class) || PLACEHOLDER],
-      ['Nearest Airport', PLACEHOLDER],
-      ['LAANC Required', booleanDisplay(this.proposal.laanc_required)],
-      ['Additional Authorization Required', booleanDisplay(this.proposal.additional_authorization_required)],
-      ['Preliminary Airspace Findings', buildAirspaceFindings(this.proposal)],
-    ]);
 
     this.startContentPage();
-    this.section('OPERATIONAL CONTROLS SUMMARY', 'Controls summarize the DroneSMS safety process and are verified before flight.');
-    this.bullets(buildOperationalControls(this.proposal));
-    this.section('SAFETY PROCESS', 'Safety activities transition from proposal-level planning into site-specific operational controls after acceptance.');
+    this.section('AIRSPACE REVIEW', 'Brief planning summary. Airspace conditions are confirmed again before operation.');
+    this.keyValueTable([
+      ['Airspace Classification', clean(this.proposal.airspace_class) || PLACEHOLDER],
+      ['Nearby Airport', PLACEHOLDER],
+      ['LAANC Requirement', booleanDisplay(this.proposal.laanc_required)],
+      ['Preliminary Operational Finding', buildAirspaceFindings(this.proposal)],
+    ]);
+    this.section('SAFETY COMMITMENT', 'A professional operating culture built on planning, coordination, and disciplined field execution.');
     this.bullets([
-      'Preliminary hazard review completed during proposal development.',
-      'Final site-specific assessment completed before flight.',
-      'Crew briefing completed before operation.',
-      'Controls verified prior to flight.',
-      'Stop-work authority applies when conditions change.',
+      'Work is planned around site access, weather, airspace, people, property, and mission constraints.',
+      'The crew verifies current conditions before flight and coordinates with the client when conditions change.',
+      'Operations may be delayed, modified, or stopped when safety or quality conditions require it.',
     ]);
     this.section('PRICING', 'Pricing is based on the stated scope and proposal conditions.');
     const amount = currency(this.proposal.proposal_amount);
@@ -315,17 +307,14 @@ class ProposalPdfRenderer {
       [237, 50, 100, 100],
       { totalRowIndex: 2 },
     );
-    this.section('ASSUMPTIONS AND CONDITIONS', 'Operational planning verifies access, weather, authorizations, and site conditions before deployment.');
+    this.section('ASSUMPTIONS', 'Standard proposal conditions for scheduling and performance.');
     this.bullets([
-      'Weather permitting.',
-      'Safe site access required.',
-      'Client coordination required.',
-      'Airspace authorization availability assumed when applicable.',
+      'Weather, safe site access, and client coordination are required.',
+      'Airspace authorization availability is assumed when applicable.',
+      'Scope changes or additional site requirements may require written authorization.',
     ]);
-
-    this.startContentPage();
-    this.section('ACCEPTANCE', 'Acceptance authorizes transition from proposal development into operational planning.');
-    this.paragraph('Signature constitutes acceptance of the scope, pricing, and conditions. Upon acceptance, the proposal may be converted into an active job in DroneSMS and final mission planning begins.');
+    this.section('ACCEPTANCE', 'Acceptance authorizes scheduling coordination and preparation for service delivery.');
+    this.paragraph('Signature constitutes acceptance of the scope, pricing, and conditions in this proposal.', 8);
     this.signatureBlock();
   }
 
@@ -378,7 +367,7 @@ class ProposalPdfRenderer {
     const y = 36;
     const logo = this.pdf.getLogo();
     if (logo) this.pdf.drawImage(page, MARGIN, y - 8, 20, (20 * logo.height) / logo.width);
-    this.pdf.drawText(page, 'Prepared Using DroneSMS', logo ? MARGIN + 28 : MARGIN, y, { size: 8, color: GRAY });
+    this.pdf.drawText(page, `Prepared by ${companyNameFor(this.organization)}`, logo ? MARGIN + 28 : MARGIN, y, { size: 8, color: GRAY });
     this.pdf.drawText(page, `Proposal ${proposalNumber(this.proposal)} | Confidential`, PAGE_WIDTH / 2, y, { size: 8, color: GRAY, align: 'center' });
     if (pageNumber > 1) this.pdf.drawText(page, `Page ${pageNumber}`, PAGE_WIDTH - MARGIN, y, { size: 8, color: GRAY, align: 'right' });
   }
@@ -393,25 +382,25 @@ class ProposalPdfRenderer {
   }
 
   private section(title: string, subtitle?: string) {
-    this.ensureSpace(subtitle ? 58 : 42);
-    this.pdf.drawText(this.currentPage, title, MARGIN, this.y, { size: 13, font: 'bold', color: NAVY });
-    this.pdf.drawLine(this.currentPage, MARGIN, this.y - 8, PAGE_WIDTH - MARGIN, this.y - 8, BLUE, 1.2);
-    this.y -= 24;
-    if (subtitle) this.y = this.pdf.drawWrappedText(this.currentPage, subtitle, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 9, font: 'oblique', color: GRAY, lineHeight: 12 }) - 4;
+    this.ensureSpace(subtitle ? 48 : 34);
+    this.pdf.drawText(this.currentPage, title, MARGIN, this.y, { size: 12.5, font: 'bold', color: NAVY });
+    this.pdf.drawLine(this.currentPage, MARGIN, this.y - 7, PAGE_WIDTH - MARGIN, this.y - 7, BLUE, 1.05);
+    this.y -= 20;
+    if (subtitle) this.y = this.pdf.drawWrappedText(this.currentPage, subtitle, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 8.6, font: 'oblique', color: GRAY, lineHeight: 11 }) - 3;
   }
 
   private paragraph(text: string, spacing = 16) {
     this.ensureSpace(80);
-    this.y = this.pdf.drawWrappedText(this.currentPage, text, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 10, color: NAVY, lineHeight: 14 }) - spacing;
+    this.y = this.pdf.drawWrappedText(this.currentPage, text, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 9.6, color: NAVY, lineHeight: 12.8 }) - spacing;
   }
 
   private bullets(items: string[]) {
     for (const item of items) {
-      this.ensureSpace(24);
-      this.pdf.drawText(this.currentPage, '-', MARGIN + 5, this.y, { size: 10, color: BLUE, font: 'bold' });
-      this.y = this.pdf.drawWrappedText(this.currentPage, item, MARGIN + 18, this.y, PAGE_WIDTH - MARGIN * 2 - 18, { size: 10, color: NAVY, lineHeight: 14 }) - 5;
+      this.ensureSpace(21);
+      this.pdf.drawText(this.currentPage, '-', MARGIN + 5, this.y, { size: 9.5, color: BLUE, font: 'bold' });
+      this.y = this.pdf.drawWrappedText(this.currentPage, item, MARGIN + 18, this.y, PAGE_WIDTH - MARGIN * 2 - 18, { size: 9.4, color: NAVY, lineHeight: 12.4 }) - 3;
     }
-    this.y -= 8;
+    this.y -= 6;
   }
 
   private keyValueTable(rows: Array<[string, string]>) {
@@ -426,38 +415,38 @@ class ProposalPdfRenderer {
   private drawTable(columns: TableColumn[], rows: TableCell[][], options: TableOptions) {
     const x = MARGIN;
     const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
-    const headerHeight = 24;
-    this.ensureSpace(headerHeight + 35);
+    const headerHeight = 20;
+    this.ensureSpace(headerHeight + 28);
     this.pdf.drawRect(this.currentPage, x, this.y - headerHeight + 6, tableWidth, headerHeight, { fill: NAVY });
     let currentX = x;
     columns.forEach((column) => {
-      this.pdf.drawText(this.currentPage, column.header, currentX + 6, this.y - 9, { size: 8.5, font: 'bold', color: WHITE });
+      this.pdf.drawText(this.currentPage, column.header, currentX + 6, this.y - 8, { size: 8, font: 'bold', color: WHITE });
       currentX += column.width;
     });
     this.pdf.drawLine(this.currentPage, x, this.y - headerHeight + 6, x + tableWidth, this.y - headerHeight + 6, BLUE, 1.1);
     this.y -= headerHeight;
 
     rows.forEach((row, rowIndex) => {
-      const cellLines = row.map((cell, cellIndex) => wrapText(String(cell ?? ''), columns[cellIndex].width - 12, 8.5));
-      const rowHeight = Math.max(options.minRowHeight ?? 24, ...cellLines.map((lines) => lines.length * 11 + 12));
+      const cellLines = row.map((cell, cellIndex) => wrapText(String(cell ?? ''), columns[cellIndex].width - 12, 8));
+      const rowHeight = Math.max(options.minRowHeight ?? 21, ...cellLines.map((lines) => lines.length * 10 + 10));
       this.ensureSpace(rowHeight + 10);
       const rowY = this.y - rowHeight + 6;
       const isTotal = options.totalRowIndex === rowIndex + 1;
       const fill = isTotal ? LIGHT_BLUE : rowIndex % 2 === 1 ? ZEBRA : WHITE;
-      this.pdf.drawRect(this.currentPage, x, rowY, tableWidth, rowHeight, { fill, stroke: LIGHT_GRAY, strokeWidth: 0.5, opacity: 0.88 });
+      this.pdf.drawRect(this.currentPage, x, rowY, tableWidth, rowHeight, { fill, stroke: LIGHT_GRAY, strokeWidth: 0.5, opacity: PANEL_OPACITY });
       currentX = x;
       columns.forEach((column, cellIndex) => {
         if (cellIndex > 0) this.pdf.drawLine(this.currentPage, currentX, rowY, currentX, rowY + rowHeight, LIGHT_GRAY, 0.5);
         const lines = cellLines[cellIndex];
         lines.forEach((line, lineIndex) => {
           const textX = column.align === 'right' ? currentX + column.width - 6 : currentX + 6;
-          this.pdf.drawText(this.currentPage, line, textX, this.y - 9 - lineIndex * 11, { size: 8.5, font: isTotal ? 'bold' : 'regular', color: NAVY, align: column.align });
+          this.pdf.drawText(this.currentPage, line, textX, this.y - 8 - lineIndex * 10, { size: 8, font: isTotal ? 'bold' : 'regular', color: NAVY, align: column.align });
         });
         currentX += column.width;
       });
       this.y -= rowHeight;
     });
-    this.y -= 18;
+    this.y -= 12;
   }
 
   private coverInfoBlock(startY: number) {
@@ -473,7 +462,7 @@ class ProposalPdfRenderer {
     const blockWidth = PAGE_WIDTH - (MARGIN + 22) * 2;
     const rowHeight = 34;
     const blockHeight = rows.length * rowHeight + 24;
-    this.pdf.drawRect(this.currentPage, blockX, startY - blockHeight, blockWidth, blockHeight, { fill: SOFT_PANEL, stroke: LIGHT_GRAY, strokeWidth: 0.8, opacity: 0.88 });
+    this.pdf.drawRect(this.currentPage, blockX, startY - blockHeight, blockWidth, blockHeight, { fill: SOFT_PANEL, stroke: LIGHT_GRAY, strokeWidth: 0.8, opacity: PANEL_OPACITY });
     this.pdf.drawText(this.currentPage, 'PROPOSAL INFORMATION', blockX + 18, startY - 24, { size: 9, font: 'bold', color: BLUE });
 
     let y = startY - 42;
@@ -486,17 +475,28 @@ class ProposalPdfRenderer {
   }
 
   private signatureBlock() {
-    const labels = ['Authorized Client Name', 'Title', 'Signature', 'Date'];
-    this.y -= 2;
-    this.pdf.drawRect(this.currentPage, MARGIN, this.y - 230, PAGE_WIDTH - MARGIN * 2, 250, { fill: SOFT_PANEL, stroke: LIGHT_GRAY, strokeWidth: 0.6, opacity: 0.88 });
-    this.pdf.drawText(this.currentPage, 'Client Authorization', MARGIN + 18, this.y - 18, { size: 12, font: 'bold', color: NAVY });
-    this.y -= 58;
-    labels.forEach((label) => {
-      this.ensureSpace(48);
-      this.pdf.drawLine(this.currentPage, MARGIN + 165, this.y, PAGE_WIDTH - MARGIN - 18, this.y, LIGHT_GRAY, 1);
-      this.pdf.drawText(this.currentPage, label, MARGIN + 18, this.y + 2, { size: 9.5, font: 'bold', color: GRAY });
-      this.y -= 43;
-    });
+    this.ensureSpace(152);
+    const panelHeight = 138;
+    const panelY = this.y - panelHeight;
+    const panelWidth = PAGE_WIDTH - MARGIN * 2;
+    this.pdf.drawRect(this.currentPage, MARGIN, panelY, panelWidth, panelHeight, { fill: SOFT_PANEL, stroke: LIGHT_GRAY, strokeWidth: 0.6, opacity: PANEL_OPACITY });
+    this.pdf.drawText(this.currentPage, 'Client Authorization', MARGIN + 18, this.y - 20, { size: 11.5, font: 'bold', color: NAVY });
+
+    const leftX = MARGIN + 18;
+    const rightX = PAGE_WIDTH / 2 + 14;
+    const lineWidth = 190;
+    const firstRowY = this.y - 64;
+    const secondRowY = this.y - 108;
+    this.signatureField('Authorized Name', leftX, firstRowY, lineWidth);
+    this.signatureField('Title', rightX, firstRowY, lineWidth);
+    this.signatureField('Signature', leftX, secondRowY, lineWidth);
+    this.signatureField('Date', rightX, secondRowY, lineWidth);
+    this.y = panelY - 10;
+  }
+
+  private signatureField(label: string, x: number, y: number, width: number) {
+    this.pdf.drawLine(this.currentPage, x, y, x + width, y, LIGHT_GRAY, 1);
+    this.pdf.drawText(this.currentPage, label, x, y + 8, { size: 8.5, font: 'bold', color: GRAY });
   }
 
   private ensureSpace(required: number) {
@@ -562,13 +562,12 @@ function buildExecutiveSummary(proposal: ProposalPdfRecord) {
   const serviceType = clean(proposal.service_type) || 'commercial UAS services';
   const client = clientDisplay(proposal);
   const property = clean(proposal.site_address) || 'the identified property or operating area';
-  const scope = clean(proposal.description) || `perform ${serviceType.toLowerCase()} in accordance with the accepted scope of work`;
+  const scope = clean(proposal.description) || `provide ${serviceType.toLowerCase()} in accordance with the accepted scope of work`;
   const deliverables = buildDeliverables(proposal);
 
   return [
-    `This proposal presents a professional ${serviceType} engagement prepared for ${client} at ${property}. The mission objective is to ${scope.replace(/\.$/, '')} while maintaining a structured planning process for site access, airspace review, preliminary hazard identification, crew coordination, and client communication.`,
-    `The planned work will be conducted using assigned UAS personnel and equipment appropriate for the service type and site conditions. Prior to deployment, DroneSMS supports confirmation of personnel qualifications, equipment assignment, airspace conditions, operational controls, and a site-specific job hazard assessment so the field team can operate from a clear and documented plan.`,
-    `Expected deliverables include ${deliverables.toLowerCase().replace(/\.$/, '')}. Acceptance of this proposal authorizes transition into operational planning, where final scheduling, crew briefing, authorization checks, and site-specific controls are completed before flight operations begin.`,
+    `This proposal presents a professional ${serviceType} engagement prepared for ${client} at ${property}. The objective is to ${scope.replace(/\.$/, '')} through a planned, coordinated aerial services approach that protects people, property, and schedule quality.`,
+    `The work will be performed by assigned UAS personnel using equipment suited to the site and service requirements. Deliverables include ${deliverables.toLowerCase().replace(/\.$/, '')}, with final scheduling and field coordination completed after proposal acceptance.`,
   ].join('\n\n');
 }
 
@@ -584,23 +583,34 @@ function buildDeliverables(proposal: ProposalPdfRecord) {
   return `${base} deliverables prepared according to the accepted scope, property conditions, and client coordination requirements.`;
 }
 
-function buildOperationalControls(proposal: ProposalPdfRecord) {
-  return [
-    clean(proposal.proposed_crew) ? 'Visual Observer / crew support identified for planning review.' : 'Visual Observer assignment reviewed during mission planning.',
-    'Airspace review completed at proposal level and revalidated before flight.',
-    'Preliminary hazard review completed from selected proposal hazards.',
-    clean(proposal.proposed_aircraft) ? `Equipment assigned: ${clean(proposal.proposed_aircraft)}.` : 'Equipment assignment required before deployment.',
-    'Personnel qualification verification required prior to flight.',
-    'Crew briefing required prior to flight.',
-    'Site-specific JHA required prior to operation.',
-  ];
+function buildHazardRows(proposal: ProposalPdfRecord): TableCell[][] {
+  const hazards = normalizeSelectedHazards(proposal.hazard_assessment);
+  if (!hazards.length) {
+    return [['Preliminary hazards', 'General', clean(proposal.proposed_mitigation) || 'Final hazards verified before flight.']];
+  }
+
+  const displayedHazards = hazards.slice(0, MAX_PROPOSAL_HAZARDS).map((hazard) => [
+    getSelectedHazardName(hazard),
+    hazard.category || 'General',
+    hazard.mitigation || PLACEHOLDER,
+  ]);
+
+  if (hazards.length > MAX_PROPOSAL_HAZARDS) {
+    displayedHazards.push([
+      'Additional preliminary hazards',
+      'Multiple',
+      `${hazards.length - MAX_PROPOSAL_HAZARDS} additional item(s) identified for confirmation before service.`,
+    ]);
+  }
+
+  return displayedHazards;
 }
 
 function buildAirspaceFindings(proposal: ProposalPdfRecord) {
   const parts = [
     clean(proposal.airspace_class) ? `Preliminary airspace classification: ${clean(proposal.airspace_class)}.` : null,
-    proposal.laanc_required === true ? 'LAANC authorization appears applicable.' : proposal.laanc_required === false ? 'LAANC authorization is not currently marked as required.' : null,
-    proposal.additional_authorization_required === true ? 'Additional authorization is marked as required.' : null,
+    proposal.laanc_required === true ? 'LAANC authorization is expected to be required.' : proposal.laanc_required === false ? 'LAANC authorization is not currently expected.' : null,
+    proposal.additional_authorization_required === true ? 'Additional authorization may be required before work begins.' : null,
   ].filter(Boolean);
   return parts.join(' ') || PLACEHOLDER;
 }
