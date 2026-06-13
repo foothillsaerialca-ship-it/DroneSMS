@@ -4,14 +4,8 @@ import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 
-const templateChecklist = [
-  { name: 'Job Hazard Analysis', path: 'templates/jha' },
-  { name: 'Pre-Flight Checklist', path: 'templates/preflight' },
-  { name: 'Crew Briefing' },
-  { name: 'LAANC / Airspace Log' },
-  { name: 'Incident / No-Incident Closeout' },
-  { name: 'Training Summary' }
-];
+const operationResultOptions = ['Completed as Planned', 'Completed with Changes', 'Delayed', 'Aborted', 'Incident Occurred'];
+const resultsRequiringNarrative = new Set(operationResultOptions.filter((result) => result !== 'Completed as Planned'));
 
 const crewRoleOptions = ['RPIC', 'Pilot', 'Visual Observer', 'Payload Operator', 'Ground Crew'];
 const safetyEventCategories = ['Operational', 'Environmental', 'Equipment', 'Personnel', 'Public'];
@@ -72,6 +66,33 @@ type JobSafetyEvent = {
   outcome: string;
   promote_to_hazard_library: boolean;
   created_at: string;
+};
+
+type JhaSummary = {
+  status: string;
+  faa_airspace_class: string | null;
+  laanc_required: string | null;
+  crew_briefed: boolean;
+  controls_in_place: boolean;
+  stop_work_authority_acknowledged: boolean;
+  certified_at: string | null;
+};
+
+type PreflightSummary = {
+  status: string;
+  final_rpic_approval: boolean;
+};
+
+type OperationCloseout = {
+  id: string;
+  operation_result: string;
+  deviation_narrative: string | null;
+  updated_at: string;
+};
+
+type CloseoutFormState = {
+  operationResult: string;
+  deviationNarrative: string;
 };
 
 type SafetyEventFormState = typeof initialSafetyEventFormState;
@@ -138,6 +159,29 @@ function getStatusClassName(status: string | undefined) {
   return status === 'Active' || status === 'Available' ? currentClassName : missingClassName;
 }
 
+function getWorkflowStatusClassName(isComplete: boolean) {
+  return isComplete ? currentClassName : missingClassName;
+}
+
+function getPersonnelReadinessSummary(assignments: JobPersonnelAssignment[]) {
+  if (assignments.length === 0) return 'No assigned crew members yet.';
+
+  const currentAndQualified = assignments.filter((assignment) => {
+    const person = assignment.personnel;
+    if (!person || person.status !== 'Active') return false;
+
+    return getReadinessIndicator(person.part_107_expiration_date).label === 'Current'
+      && getReadinessIndicator(person.training_expiration_date).label === 'Current';
+  }).length;
+
+  const crewLabel = assignments.length === 1 ? 'crew member' : 'crew members';
+  return `${currentAndQualified} assigned ${crewLabel} current and qualified`;
+}
+
+function formatNullable(value: string | null | undefined, fallback = 'Not documented') {
+  return value?.trim() || fallback;
+}
+
 function normalizeAssignment(row: unknown): JobPersonnelAssignment {
   const assignment = row as JobPersonnelAssignment & { personnel: PersonnelOption | PersonnelOption[] | null };
   const personnel = Array.isArray(assignment.personnel) ? assignment.personnel[0] ?? null : assignment.personnel;
@@ -167,11 +211,15 @@ export function JobFileHubPage() {
   const [assignments, setAssignments] = useState<JobPersonnelAssignment[]>([]);
   const [equipmentAssignments, setEquipmentAssignments] = useState<JobEquipmentAssignment[]>([]);
   const [safetyEvents, setSafetyEvents] = useState<JobSafetyEvent[]>([]);
+  const [jhaSummary, setJhaSummary] = useState<JhaSummary | null>(null);
+  const [preflightSummary, setPreflightSummary] = useState<PreflightSummary | null>(null);
+  const [operationCloseout, setOperationCloseout] = useState<OperationCloseout | null>(null);
   const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
   const [selectedPersonnelId, setSelectedPersonnelId] = useState('');
   const [selectedRole, setSelectedRole] = useState(crewRoleOptions[0]);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
   const [safetyEventFormData, setSafetyEventFormData] = useState<SafetyEventFormState>(initialSafetyEventFormState);
+  const [closeoutFormData, setCloseoutFormData] = useState<CloseoutFormState>({ operationResult: operationResultOptions[0], deviationNarrative: '' });
   const [editingSafetyEventId, setEditingSafetyEventId] = useState<string | null>(null);
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
   const [editedAssignmentRole, setEditedAssignmentRole] = useState(crewRoleOptions[0]);
@@ -182,6 +230,7 @@ export function JobFileHubPage() {
   const [isSavingAssignment, setIsSavingAssignment] = useState(false);
   const [isSavingEquipmentAssignment, setIsSavingEquipmentAssignment] = useState(false);
   const [isSavingSafetyEvent, setIsSavingSafetyEvent] = useState(false);
+  const [isSavingCloseout, setIsSavingCloseout] = useState(false);
   const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null);
   const [savingRoleAssignmentId, setSavingRoleAssignmentId] = useState<string | null>(null);
   const [removingEquipmentAssignmentId, setRemovingEquipmentAssignmentId] = useState<string | null>(null);
@@ -193,6 +242,8 @@ export function JobFileHubPage() {
   const [equipmentMessage, setEquipmentMessage] = useState<string | null>(null);
   const [safetyEventError, setSafetyEventError] = useState<string | null>(null);
   const [safetyEventMessage, setSafetyEventMessage] = useState<string | null>(null);
+  const [closeoutError, setCloseoutError] = useState<string | null>(null);
+  const [closeoutMessage, setCloseoutMessage] = useState<string | null>(null);
 
   async function loadAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
@@ -237,6 +288,12 @@ export function JobFileHubPage() {
 
   function updateSafetyEventField<Key extends keyof SafetyEventFormState>(field: Key, value: SafetyEventFormState[Key]) {
     setSafetyEventFormData((currentFormData) => ({ ...currentFormData, [field]: value }));
+  }
+
+  function updateCloseoutField<Key extends keyof CloseoutFormState>(field: Key, value: CloseoutFormState[Key]) {
+    setCloseoutFormData((currentFormData) => ({ ...currentFormData, [field]: value }));
+    setCloseoutError(null);
+    setCloseoutMessage(null);
   }
 
   useEffect(() => {
@@ -285,14 +342,32 @@ export function JobFileHubPage() {
           .select('id, category, description, immediate_actions_taken, outcome, promote_to_hazard_library, created_at')
           .eq('job_id', jobId)
           .order('created_at', { ascending: false });
+        const jhaSummaryQuery = supabase
+          .from('jha_assessments')
+          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, stop_work_authority_acknowledged, certified_at')
+          .eq('job_id', jobId)
+          .maybeSingle();
+        const preflightSummaryQuery = supabase
+          .from('preflight_checklists')
+          .select('status, final_rpic_approval')
+          .eq('job_id', jobId)
+          .maybeSingle();
+        const closeoutQuery = supabase
+          .from('job_operation_closeouts')
+          .select('id, operation_result, deviation_narrative, updated_at')
+          .eq('job_id', jobId)
+          .maybeSingle();
 
-        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult] = await Promise.all([
+        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult, jhaSummaryResult, preflightSummaryResult, closeoutResult] = await Promise.all([
           jobQuery,
           personnelQuery,
           assignmentsQuery,
           equipmentQuery,
           equipmentAssignmentsQuery,
-          safetyEventsQuery
+          safetyEventsQuery,
+          jhaSummaryQuery,
+          preflightSummaryQuery,
+          closeoutQuery
         ]);
 
         if (jobResult.error) throw jobResult.error;
@@ -301,6 +376,9 @@ export function JobFileHubPage() {
         if (equipmentResult.error) throw equipmentResult.error;
         if (equipmentAssignmentsResult.error) throw equipmentAssignmentsResult.error;
         if (safetyEventsResult.error) throw safetyEventsResult.error;
+        if (jhaSummaryResult.error) throw jhaSummaryResult.error;
+        if (preflightSummaryResult.error) throw preflightSummaryResult.error;
+        if (closeoutResult.error) throw closeoutResult.error;
         if (!isMounted) return;
 
         if (!jobResult.data) {
@@ -311,6 +389,9 @@ export function JobFileHubPage() {
           setAssignments([]);
           setEquipmentAssignments([]);
           setSafetyEvents([]);
+          setJhaSummary(null);
+          setPreflightSummary(null);
+          setOperationCloseout(null);
           setOrganizationSettings(null);
           return;
         }
@@ -326,6 +407,14 @@ export function JobFileHubPage() {
         setAssignments(loadedAssignments);
         setEquipmentAssignments(loadedEquipmentAssignments);
         setSafetyEvents((safetyEventsResult.data ?? []) as JobSafetyEvent[]);
+        setJhaSummary(jhaSummaryResult.data as JhaSummary | null);
+        setPreflightSummary(preflightSummaryResult.data as PreflightSummary | null);
+        const loadedCloseout = closeoutResult.data as OperationCloseout | null;
+        setOperationCloseout(loadedCloseout);
+        setCloseoutFormData({
+          operationResult: loadedCloseout?.operation_result ?? operationResultOptions[0],
+          deviationNarrative: loadedCloseout?.deviation_narrative ?? ''
+        });
         const settings = await loadOrganizationSettingsById((jobResult.data as Job).organization_id);
         if (isMounted) setOrganizationSettings(settings);
         setSelectedPersonnelId(loadedPersonnel[0]?.id ?? '');
@@ -348,6 +437,13 @@ export function JobFileHubPage() {
   const assignedPersonnelIds = useMemo(() => new Set(assignments.map((assignment) => assignment.personnel?.id).filter(Boolean)), [assignments]);
   const assignedEquipmentIds = useMemo(() => new Set(equipmentAssignments.map((assignment) => assignment.equipment?.id).filter(Boolean)), [equipmentAssignments]);
   const activePersonnelCount = personnel.filter((person) => person.status === 'Active').length;
+  const jhaComplete = jhaSummary?.status === 'Complete';
+  const crewBriefingComplete = Boolean(jhaSummary?.crew_briefed && jhaComplete);
+  const airspaceReviewComplete = Boolean(jhaSummary && (jhaSummary.faa_airspace_class || jhaSummary.laanc_required));
+  const preflightComplete = preflightSummary?.status === 'Complete' || Boolean(preflightSummary?.final_rpic_approval);
+  const closeoutComplete = Boolean(operationCloseout);
+  const personnelReadinessSummary = getPersonnelReadinessSummary(assignments);
+  const closeoutNarrativeRequired = resultsRequiringNarrative.has(closeoutFormData.operationResult);
 
   async function handleAddAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -598,6 +694,82 @@ export function JobFileHubPage() {
     }
   }
 
+  async function handleSaveCloseout(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!job) return;
+
+    if (resultsRequiringNarrative.has(closeoutFormData.operationResult) && !closeoutFormData.deviationNarrative.trim()) {
+      setCloseoutError('Describe changes, delays, deviations, operational issues, or reasons for aborting the mission.');
+      return;
+    }
+
+    setCloseoutError(null);
+    setCloseoutMessage(null);
+    setIsSavingCloseout(true);
+
+    try {
+      const { data: userResult, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+
+      const userId = userResult.user?.id;
+      if (!userId) throw new Error('Sign in again before saving operation closeout.');
+
+      const { data, error: upsertError } = await supabase
+        .from('job_operation_closeouts')
+        .upsert({
+          job_id: job.id,
+          organization_id: job.organization_id,
+          user_id: userId,
+          operation_result: closeoutFormData.operationResult,
+          deviation_narrative: closeoutFormData.deviationNarrative.trim() || null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'job_id' })
+        .select('id, operation_result, deviation_narrative, updated_at')
+        .single();
+
+      if (upsertError) throw upsertError;
+
+      setOperationCloseout(data as OperationCloseout);
+      setCloseoutMessage('Operation closeout saved.');
+    } catch (saveError) {
+      setCloseoutError(getErrorMessage(saveError));
+    } finally {
+      setIsSavingCloseout(false);
+    }
+  }
+
+  function handleExportPacket() {
+    if (!job) return;
+
+    const crewLines = assignments.map((assignment) => `${assignment.assigned_role}: ${assignment.personnel?.full_name ?? 'Personnel record unavailable'}`);
+    const equipmentLines = equipmentAssignments.map((assignment) => `${assignment.equipment?.name ?? 'Equipment record unavailable'} (${assignment.equipment?.equipment_type ?? 'Unknown type'})`);
+    const safetyEventLines = safetyEvents.map((event) => `${event.category} - ${event.outcome}: ${event.description}`);
+    const qualificationLines = assignments.map((assignment) => `${assignment.personnel?.full_name ?? 'Personnel record unavailable'} - Part 107: ${formatExpirationDate(assignment.personnel?.part_107_expiration_date ?? null)}, Training: ${formatExpirationDate(assignment.personnel?.training_expiration_date ?? null)}, Status: ${assignment.personnel?.status ?? 'Missing'}`);
+    const packetSections = [
+      `Job Information\n${job.name}\nService Type: ${job.service_type}\nLocation: ${job.location}\nPlanned Date: ${formatPlannedDate(job.planned_date)}\nStatus: ${job.status}`,
+      `Crew Assignment\n${crewLines.join('\n') || 'No crew assigned.'}`,
+      `Equipment Assignment\n${equipmentLines.join('\n') || 'No equipment assigned.'}`,
+      `JHA\nStatus: ${jhaSummary?.status ?? 'Not started'}`,
+      `Airspace Review (from JHA)\nAirspace Class: ${formatNullable(jhaSummary?.faa_airspace_class)}\nLAANC Required: ${formatNullable(jhaSummary?.laanc_required)}`,
+      `Crew Briefing (from JHA)\n${crewBriefingComplete ? 'Completed via JHA' : 'Not completed in JHA'}`,
+      `Preflight Checklist\nStatus: ${preflightSummary?.status ?? 'Not started'}`,
+      `Safety Events\n${safetyEventLines.join('\n') || 'No safety events recorded.'}`,
+      `Closeout Summary\nResult: ${operationCloseout?.operation_result ?? 'Not completed'}\nNarrative: ${formatNullable(operationCloseout?.deviation_narrative, 'No narrative provided')}`,
+      `Personnel Qualification Summary (from Personnel records)\n${personnelReadinessSummary}\n${qualificationLines.join('\n')}`
+    ];
+
+    const packet = packetSections.join('\n\n---\n\n');
+    const blob = new Blob([packet], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${job.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'job'}-export-packet.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+
   if (isLoading) {
     return (
       <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
@@ -635,8 +807,8 @@ export function JobFileHubPage() {
           </div>
           <button
             type="button"
-            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-slate-300 px-4 py-3 text-sm font-medium text-slate-600 sm:min-h-0 sm:py-2"
-            disabled
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
+            onClick={handleExportPacket}
           >
             Export Packet
           </button>
@@ -1006,6 +1178,59 @@ export function JobFileHubPage() {
         ) : null}
       </div>
 
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Link
+          to={`/jobs/${job.id}/templates/jha`}
+          className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-200 hover:bg-brand-50"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Workflow Step 3</p>
+              <h2 className="mt-1 text-base font-semibold text-brand-900">Job Hazard Analysis (JHA)</h2>
+              <p className="mt-1 text-sm text-slate-600">Airspace review and crew briefing status are completed inside the JHA.</p>
+            </div>
+            <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(jhaComplete)}`}>
+              {jhaComplete ? 'Complete' : jhaSummary ? 'In progress' : 'Not started'}
+            </span>
+          </div>
+        </Link>
+
+        <Link
+          to={`/jobs/${job.id}/templates/preflight`}
+          className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-200 hover:bg-brand-50"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Workflow Step 4</p>
+              <h2 className="mt-1 text-base font-semibold text-brand-900">Pre-Flight Checklist</h2>
+              <p className="mt-1 text-sm text-slate-600">Final aircraft, weather, airspace, crew communications, and RPIC approval checks.</p>
+            </div>
+            <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(preflightComplete)}`}>
+              {preflightComplete ? 'Complete' : preflightSummary ? 'In progress' : 'Not started'}
+            </span>
+          </div>
+        </Link>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <h2 className="text-base font-semibold text-brand-900">Operation Execution</h2>
+        <p className="mt-1 text-sm text-slate-600">Conduct the operation under the approved JHA and pre-flight controls. Safety Events can be captured at any point during execution.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="text-sm font-semibold text-brand-900">Crew Briefing Status</p>
+            <p className="mt-1 text-sm text-slate-600">{crewBriefingComplete ? 'Completed via JHA' : 'Pending JHA crew briefing completion'}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="text-sm font-semibold text-brand-900">Airspace Review</p>
+            <p className="mt-1 text-sm text-slate-600">{airspaceReviewComplete ? 'Completed via JHA' : 'Pending JHA airspace review'}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="text-sm font-semibold text-brand-900">Personnel Readiness</p>
+            <p className="mt-1 text-sm text-slate-600">{personnelReadinessSummary}</p>
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -1197,36 +1422,91 @@ export function JobFileHubPage() {
       </div>
 
 
-      <div className="space-y-3">
-        {templateChecklist.map((template) => {
-          const content = (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base font-semibold text-brand-900">{template.name}</h2>
-              <span className="inline-flex w-fit rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                Not started
-              </span>
-            </div>
-          );
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-brand-900">Operation Closeout</h2>
+            <p className="mt-1 text-sm text-slate-600">Final operational outcome for the mission. Safety Events remain separate so in-mission hazards and lessons learned can be captured independently.</p>
+          </div>
+          <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(closeoutComplete)}`}>
+            {closeoutComplete ? 'Complete' : 'Not started'}
+          </span>
+        </div>
 
-          if (template.path) {
-            return (
-              <Link
-                key={template.name}
-                to={`/jobs/${job.id}/${template.path}`}
-                className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-brand-200 hover:bg-brand-50"
-              >
-                {content}
-              </Link>
-            );
-          }
+        <form className="mt-4 space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-3" onSubmit={handleSaveCloseout}>
+          <label className="block text-sm font-medium text-slate-700">
+            Operation Result
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
+              value={closeoutFormData.operationResult}
+              onChange={(event) => updateCloseoutField('operationResult', event.target.value)}
+              disabled={isSavingCloseout}
+            >
+              {operationResultOptions.map((result) => (
+                <option key={result} value={result}>{result}</option>
+              ))}
+            </select>
+          </label>
 
-          return (
-            <article key={template.name} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              {content}
-            </article>
-          );
-        })}
+          <label className="block text-sm font-medium text-slate-700">
+            Describe changes, delays, deviations, operational issues, or reasons for aborting the mission.
+            {closeoutNarrativeRequired ? <span className="text-red-600"> *</span> : null}
+            <textarea
+              className="mt-1 min-h-28 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
+              value={closeoutFormData.deviationNarrative}
+              onChange={(event) => updateCloseoutField('deviationNarrative', event.target.value)}
+              placeholder={closeoutNarrativeRequired ? 'Required for this operation result.' : 'Optional when completed as planned.'}
+              disabled={isSavingCloseout}
+              required={closeoutNarrativeRequired}
+            />
+          </label>
+
+          {closeoutError ? (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{closeoutError}</p>
+          ) : null}
+
+          {closeoutMessage ? (
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{closeoutMessage}</p>
+          ) : null}
+
+          <button
+            type="submit"
+            className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
+            disabled={isSavingCloseout}
+          >
+            {isSavingCloseout ? 'Saving...' : 'Save Operation Closeout'}
+          </button>
+        </form>
       </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-brand-900">Export Packet</h2>
+            <p className="mt-1 text-sm text-slate-600">Packet pulls from existing operational records only; no standalone Airspace, Crew Briefing, or Training Summary forms are created.</p>
+          </div>
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
+            onClick={handleExportPacket}
+          >
+            Export Packet
+          </button>
+        </div>
+        <ul className="mt-4 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+          <li>• Job Information</li>
+          <li>• Crew Assignment</li>
+          <li>• Equipment Assignment</li>
+          <li>• JHA</li>
+          <li>• Airspace Review (from JHA)</li>
+          <li>• Crew Briefing (from JHA)</li>
+          <li>• Preflight Checklist</li>
+          <li>• Safety Events</li>
+          <li>• Closeout Summary</li>
+          <li>• Personnel Qualification Summary (from Personnel records)</li>
+        </ul>
+      </div>
+
     </section>
   );
 }
