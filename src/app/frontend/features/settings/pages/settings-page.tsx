@@ -7,6 +7,7 @@ type SettingsForm = {
   companyName: string;
   phoneNumber: string;
   emailAddress: string;
+  websiteUrl: string;
   physicalAddress: string;
   primaryContact: string;
   emergencyContact: string;
@@ -24,6 +25,7 @@ const emptySettingsForm: SettingsForm = {
   companyName: '',
   phoneNumber: '',
   emailAddress: '',
+  websiteUrl: '',
   physicalAddress: '',
   primaryContact: '',
   emergencyContact: '',
@@ -39,6 +41,7 @@ const organizationFields = [
   { key: 'companyName', label: 'Company Name', type: 'text', autoComplete: 'organization' },
   { key: 'phoneNumber', label: 'Phone Number', type: 'tel', autoComplete: 'tel' },
   { key: 'emailAddress', label: 'Email Address', type: 'email', autoComplete: 'email' },
+  { key: 'websiteUrl', label: 'Website', type: 'url', autoComplete: 'url' },
   { key: 'physicalAddress', label: 'Physical Address', type: 'textarea', autoComplete: 'street-address' },
   { key: 'primaryContact', label: 'Primary Contact', type: 'text', autoComplete: 'name' },
   { key: 'emergencyContact', label: 'Emergency Contact', type: 'text', autoComplete: 'name' }
@@ -60,6 +63,7 @@ function normalizeSettings(data: Record<string, unknown> | null | undefined): Se
     companyName: String(data?.name ?? ''),
     phoneNumber: String(data?.phone_number ?? ''),
     emailAddress: String(data?.email_address ?? ''),
+    websiteUrl: String(data?.website_url ?? ''),
     physicalAddress: String(data?.physical_address ?? ''),
     primaryContact: String(data?.primary_contact ?? ''),
     emergencyContact: String(data?.emergency_contact ?? ''),
@@ -106,7 +110,7 @@ function SettingsInput({
   label: string;
   name: keyof SettingsForm;
   value: string;
-  type: 'text' | 'email' | 'tel' | 'textarea';
+  type: 'text' | 'email' | 'tel' | 'url' | 'textarea';
   autoComplete?: string;
   disabled: boolean;
   onChange: (name: keyof SettingsForm, value: string) => void;
@@ -180,7 +184,7 @@ export function SettingsPage() {
         const { data: organization, error: organizationError } = await supabase
           .from('organizations')
           .select(
-            'id, name, phone_number, email_address, physical_address, primary_contact, emergency_contact, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, emergency_contact, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
           )
           .eq('id', profile.organization_id)
           .maybeSingle();
@@ -248,6 +252,7 @@ export function SettingsPage() {
               name: companyName,
               phone_number: draft.phoneNumber.trim() || null,
               email_address: draft.emailAddress.trim() || null,
+              website_url: draft.websiteUrl.trim() || null,
               physical_address: draft.physicalAddress.trim() || null,
               primary_contact: draft.primaryContact.trim() || null,
               emergency_contact: draft.emergencyContact.trim() || null,
@@ -266,7 +271,7 @@ export function SettingsPage() {
         .update(changes)
         .eq('id', organizationId)
         .select(
-          'id, name, phone_number, email_address, physical_address, primary_contact, emergency_contact, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, emergency_contact, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
         )
         .single();
 
@@ -316,7 +321,7 @@ export function SettingsPage() {
         .update({ logo_path: logoPath, logo_url: logoUrl, updated_at: new Date().toISOString() })
         .eq('id', organizationId)
         .select(
-          'id, name, phone_number, email_address, physical_address, primary_contact, emergency_contact, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, emergency_contact, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
         )
         .single();
 
