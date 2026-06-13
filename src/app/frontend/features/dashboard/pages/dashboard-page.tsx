@@ -510,7 +510,7 @@ export function DashboardPage() {
                 type="button"
                 className="inline-flex min-h-11 cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-medium text-slate-400 sm:min-h-0 sm:py-2"
                 disabled
-                title="Packet export will be available from the closeout workflow in a future update."
+                title="Open a Job File to export its packet after operational records are ready."
               >
                 Export Packet
               </button>
