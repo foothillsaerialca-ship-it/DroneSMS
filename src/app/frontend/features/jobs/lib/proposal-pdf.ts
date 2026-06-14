@@ -471,18 +471,18 @@ class ProposalPdfRenderer {
   }
 
   private signatureBlock() {
-    this.ensureSpace(152);
-    const panelHeight = 138;
+    this.ensureSpace(128);
+    const panelHeight = 116;
     const panelY = this.y - panelHeight;
     const panelWidth = PAGE_WIDTH - MARGIN * 2;
     this.pdf.drawRect(this.currentPage, MARGIN, panelY, panelWidth, panelHeight, { fill: SOFT_PANEL, stroke: LIGHT_GRAY, strokeWidth: 0.6, opacity: PANEL_OPACITY });
-    this.pdf.drawText(this.currentPage, 'Client Authorization', MARGIN + 18, this.y - 20, { size: 11.5, font: 'bold', color: NAVY });
+    this.pdf.drawText(this.currentPage, 'Client Authorization', MARGIN + 18, this.y - 17, { size: 11.5, font: 'bold', color: NAVY });
 
     const leftX = MARGIN + 18;
     const rightX = PAGE_WIDTH / 2 + 14;
     const lineWidth = 190;
-    const firstRowY = this.y - 64;
-    const secondRowY = this.y - 108;
+    const firstRowY = this.y - 49;
+    const secondRowY = this.y - 88;
     this.signatureField('Authorized Name', leftX, firstRowY, lineWidth);
     this.signatureField('Title', rightX, firstRowY, lineWidth);
     this.signatureField('Signature', leftX, secondRowY, lineWidth);
@@ -492,7 +492,7 @@ class ProposalPdfRenderer {
 
   private signatureField(label: string, x: number, y: number, width: number) {
     this.pdf.drawLine(this.currentPage, x, y, x + width, y, LIGHT_GRAY, 1);
-    this.pdf.drawText(this.currentPage, label, x, y + 8, { size: 8.5, font: 'bold', color: GRAY });
+    this.pdf.drawText(this.currentPage, label, x, y - 11, { size: 7.6, font: 'regular', color: GRAY });
   }
 
   private ensureSpace(required: number) {
