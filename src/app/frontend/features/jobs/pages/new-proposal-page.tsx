@@ -19,6 +19,7 @@ import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@fro
 
 const proposalStatuses = ['Draft', 'Sent', 'Under Review', 'Accepted', 'Declined'];
 const airspaceClasses = ['Not reviewed', 'Class B', 'Class C', 'Class D', 'Class E', 'Class G'];
+const blockedEquipmentStatuses = new Set(['Archived', 'Retired', 'Out-of-Service', 'Out of Service', 'Maintenance']);
 
 type ProposalFormState = {
   clientName: string;
@@ -78,9 +79,29 @@ type ProposalRecord = {
   laanc_required: boolean | null;
   additional_authorization_required: boolean | null;
   hazard_assessment: unknown;
+  proposal_equipment: unknown;
   proposal_amount: number | string | null;
   valid_until: string | null;
   status: string | null;
+};
+
+type ProposalEquipmentAssignment = {
+  equipment_id: string;
+  equipment_name: string;
+  equipment_type: string;
+  make: string | null;
+  model: string | null;
+  status: string;
+  purpose: string;
+};
+
+type RepositoryEquipment = {
+  id: string;
+  name: string;
+  equipment_type: string;
+  make: string | null;
+  model: string | null;
+  status: string;
 };
 
 type RpicSnapshot = {
@@ -146,6 +167,49 @@ function toDateInputValue(value: string | null) {
   return value ? value.slice(0, 10) : '';
 }
 
+
+function getDefaultEquipmentPurpose(equipmentType: string, serviceType: string) {
+  const normalizedType = equipmentType.trim().toLowerCase();
+  if (normalizedType === 'drone') return `Primary aircraft supporting ${serviceType || '[service type]'}`;
+  if (normalizedType === 'payload') return 'Payload delivery and application system';
+  if (normalizedType === 'ground support') return 'Ground support and site control';
+  if (normalizedType === 'filtration / water system' || normalizedType === 'filtration' || normalizedType === 'water system') return 'Purified water production on site';
+  if (normalizedType === 'camera / sensor' || normalizedType === 'camera' || normalizedType === 'sensor') return 'Visual documentation and inspection';
+  return '';
+}
+
+function normalizeProposalEquipment(value: unknown): ProposalEquipmentAssignment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const record = item as Partial<ProposalEquipmentAssignment>;
+      const equipmentId = typeof record.equipment_id === 'string' ? record.equipment_id : '';
+      const equipmentName = typeof record.equipment_name === 'string' ? record.equipment_name : '';
+      if (!equipmentId || !equipmentName) return null;
+
+      return {
+        equipment_id: equipmentId,
+        equipment_name: equipmentName,
+        equipment_type: typeof record.equipment_type === 'string' ? record.equipment_type : '',
+        make: typeof record.make === 'string' ? record.make : null,
+        model: typeof record.model === 'string' ? record.model : null,
+        status: typeof record.status === 'string' ? record.status : '',
+        purpose: typeof record.purpose === 'string' ? record.purpose : ''
+      } satisfies ProposalEquipmentAssignment;
+    })
+    .filter((item): item is ProposalEquipmentAssignment => Boolean(item));
+}
+
+function formatEquipmentName(equipment: Pick<ProposalEquipmentAssignment, 'equipment_name' | 'make' | 'model'>) {
+  const makeModel = [equipment.make, equipment.model].filter(Boolean).join(' ').trim();
+  return makeModel ? `${equipment.equipment_name} — ${makeModel}` : equipment.equipment_name;
+}
+
+function isEquipmentSelectable(equipment: RepositoryEquipment) {
+  return !blockedEquipmentStatuses.has(equipment.status);
+}
+
 function mapProposalToFormState(proposal: ProposalRecord) {
   return {
     clientName: proposal.client_name ?? '',
@@ -176,10 +240,13 @@ export function NewProposalPage() {
   const [customHazard, setCustomHazard] = useState({ hazardName: '', category: '', mitigation: '' });
   const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
   const [personnel, setPersonnel] = useState<ProposedRpic[]>([]);
+  const [equipment, setEquipment] = useState<RepositoryEquipment[]>([]);
+  const [selectedEquipment, setSelectedEquipment] = useState<ProposalEquipmentAssignment[]>([]);
   const [loadedProposal, setLoadedProposal] = useState<ProposalRecord | null>(null);
   const [isLoadingProposal, setIsLoadingProposal] = useState(Boolean(proposalId));
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
   const [isLoadingPersonnel, setIsLoadingPersonnel] = useState(true);
+  const [isLoadingEquipment, setIsLoadingEquipment] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -227,6 +294,25 @@ export function NewProposalPage() {
       }
     }
 
+    async function loadEquipment() {
+      setIsLoadingEquipment(true);
+
+      try {
+        const { data, error: equipmentError } = await supabase
+          .from('equipment')
+          .select('id, name, equipment_type, make, model, status')
+          .not('status', 'in', '(Archived,Retired,Out-of-Service,"Out of Service")')
+          .order('name', { ascending: true });
+
+        if (equipmentError) throw equipmentError;
+        if (isMounted) setEquipment((data ?? []) as RepositoryEquipment[]);
+      } catch (loadError) {
+        if (isMounted) setError(getErrorMessage(loadError));
+      } finally {
+        if (isMounted) setIsLoadingEquipment(false);
+      }
+    }
+
     async function loadProposalForEditing() {
       if (!proposalId) {
         if (isMounted) setIsLoadingProposal(false);
@@ -238,7 +324,7 @@ export function NewProposalPage() {
       try {
         const { data, error: proposalLoadError } = await supabase
           .from('proposals')
-          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard_assessment, proposal_amount, valid_until, status')
+          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard_assessment, proposal_equipment, proposal_amount, valid_until, status')
           .eq('id', proposalId)
           .is('deleted_at', null)
           .single();
@@ -250,6 +336,7 @@ export function NewProposalPage() {
           setLoadedProposal(proposal);
           setFormData(mapProposalToFormState(proposal));
           setSelectedHazards(normalizeSelectedHazards(proposal.hazard_assessment));
+          setSelectedEquipment(normalizeProposalEquipment(proposal.proposal_equipment));
         }
       } catch (loadError) {
         if (isMounted) setError(getErrorMessage(loadError));
@@ -275,6 +362,7 @@ export function NewProposalPage() {
 
     void loadCompanyIdentity();
     void loadPersonnel();
+    void loadEquipment();
     void loadHazardLibrary();
     void loadProposalForEditing();
 
@@ -338,6 +426,36 @@ export function NewProposalPage() {
 
   function updateCustomHazard(field: keyof typeof customHazard, value: string) {
     setCustomHazard((current) => ({ ...current, [field]: value }));
+  }
+
+  function addEquipment(equipmentId: string) {
+    const selected = equipment.find((item) => item.id === equipmentId);
+    if (!selected || !isEquipmentSelectable(selected)) return;
+
+    setSelectedEquipment((current) =>
+      current.some((item) => item.equipment_id === selected.id)
+        ? current
+        : [
+            ...current,
+            {
+              equipment_id: selected.id,
+              equipment_name: selected.name,
+              equipment_type: selected.equipment_type,
+              make: selected.make,
+              model: selected.model,
+              status: selected.status,
+              purpose: getDefaultEquipmentPurpose(selected.equipment_type, formData.serviceType)
+            }
+          ]
+    );
+  }
+
+  function removeEquipment(equipmentId: string) {
+    setSelectedEquipment((current) => current.filter((item) => item.equipment_id !== equipmentId));
+  }
+
+  function updateEquipmentPurpose(equipmentId: string, purpose: string) {
+    setSelectedEquipment((current) => current.map((item) => (item.equipment_id === equipmentId ? { ...item, purpose } : item)));
   }
 
   function addCustomHazard() {
@@ -430,6 +548,15 @@ export function NewProposalPage() {
         hazard: summarizedHazards.hazard,
         proposed_mitigation: summarizedHazards.proposedMitigation,
         hazard_assessment: selectedHazards.map(({ id, hazard_name, category, mitigation, source }) => ({ id, hazard_name, category, mitigation, source })),
+        proposal_equipment: selectedEquipment.map(({ equipment_id, equipment_name, equipment_type, make, model, status, purpose }) => ({
+          equipment_id,
+          equipment_name,
+          equipment_type,
+          make,
+          model,
+          status,
+          purpose: purpose.trim()
+        })),
         proposal_amount: formData.proposalAmount ? Number(formData.proposalAmount) : null,
         valid_until: formData.validUntil || null,
         status: formData.status,
@@ -520,11 +647,15 @@ export function NewProposalPage() {
           <RpicSnapshotCard snapshot={displayedRpicSnapshot} isLoading={isLoadingPersonnel} />
         </FormSection>
 
-        <FormSection title="Airspace Review">
-          <SelectField label="Airspace Class" value={formData.airspaceClass} options={airspaceClasses} onChange={(value) => updateField('airspaceClass', value)} disabled={isFormDisabled} />
-          <SelectField label="LAANC Required" value={formData.laancRequired} options={['No', 'Yes']} onChange={(value) => updateField('laancRequired', value)} disabled={isFormDisabled} />
-          <SelectField label="Additional Authorization Required" value={formData.additionalAuthorizationRequired} options={['No', 'Yes']} onChange={(value) => updateField('additionalAuthorizationRequired', value)} disabled={isFormDisabled} />
-        </FormSection>
+        <EquipmentSelection
+          equipment={equipment}
+          selectedEquipment={selectedEquipment}
+          disabled={isFormDisabled}
+          isLoading={isLoadingEquipment}
+          onAddEquipment={addEquipment}
+          onRemoveEquipment={removeEquipment}
+          onUpdatePurpose={updateEquipmentPurpose}
+        />
 
         <HazardSelection
           selectedHazards={selectedHazards}
@@ -539,11 +670,25 @@ export function NewProposalPage() {
           onAddCustomHazard={addCustomHazard}
         />
 
+        <FormSection title="Airspace Review">
+          <SelectField label="Airspace Class" value={formData.airspaceClass} options={airspaceClasses} onChange={(value) => updateField('airspaceClass', value)} disabled={isFormDisabled} />
+          <SelectField label="LAANC Required" value={formData.laancRequired} options={['No', 'Yes']} onChange={(value) => updateField('laancRequired', value)} disabled={isFormDisabled} />
+          <SelectField label="Additional Authorization Required" value={formData.additionalAuthorizationRequired} options={['No', 'Yes']} onChange={(value) => updateField('additionalAuthorizationRequired', value)} disabled={isFormDisabled} />
+        </FormSection>
+
         <FormSection title="Pricing">
           <TextField label="Proposal Amount" type="number" value={formData.proposalAmount} onChange={(value) => updateField('proposalAmount', value)} disabled={isFormDisabled} />
           <TextField label="Proposal Valid Until Date" type="date" value={formData.validUntil} onChange={(value) => updateField('validUntil', value)} disabled={isFormDisabled} />
           <SelectField label="Status" value={formData.status} options={proposalStatuses} onChange={(value) => updateField('status', value)} disabled={isFormDisabled} />
         </FormSection>
+
+        <ProposalEquipmentSummary selectedEquipment={selectedEquipment} />
+
+        {selectedEquipment.length === 0 ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
+            No equipment has been assigned to this proposal. The Equipment section of the generated proposal will contain placeholder content until equipment is selected.
+          </p>
+        ) : null}
 
         {error ? (
           <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
@@ -565,6 +710,98 @@ export function NewProposalPage() {
   );
 }
 
+
+
+function EquipmentSelection({
+  equipment,
+  selectedEquipment,
+  disabled,
+  isLoading,
+  onAddEquipment,
+  onRemoveEquipment,
+  onUpdatePurpose
+}: {
+  equipment: RepositoryEquipment[];
+  selectedEquipment: ProposalEquipmentAssignment[];
+  disabled: boolean;
+  isLoading: boolean;
+  onAddEquipment: (equipmentId: string) => void;
+  onRemoveEquipment: (equipmentId: string) => void;
+  onUpdatePurpose: (equipmentId: string, purpose: string) => void;
+}) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const selectedIds = useMemo(() => new Set(selectedEquipment.map((item) => item.equipment_id)), [selectedEquipment]);
+  const filteredEquipment = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return equipment.filter((item) => {
+      if (blockedEquipmentStatuses.has(item.status)) return false;
+      if (!query) return true;
+      return [item.name, item.equipment_type, item.make, item.model, item.status].filter(Boolean).join(' ').toLowerCase().includes(query);
+    });
+  }, [equipment, searchQuery]);
+
+  return (
+    <fieldset className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <legend className="px-1 text-base font-semibold text-brand-900">Proposal Equipment</legend>
+      <p className="mt-2 text-sm text-slate-600">Select active equipment from the Equipment repository and document each item’s proposal-specific purpose.</p>
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="space-y-3">
+          <input className="w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:text-sm" type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search equipment by name…" disabled={disabled} />
+          {isLoading ? <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">Loading equipment...</p> : null}
+          {!isLoading && filteredEquipment.length === 0 ? <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">No selectable equipment records match your search.</p> : null}
+          {filteredEquipment.map((item) => {
+            const isSelected = selectedIds.has(item.id);
+            return (
+              <article key={item.id} className={`rounded-lg border p-3 text-sm ${item.status === 'Available' ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="font-semibold text-brand-900">{item.name}</h3>
+                    <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{item.equipment_type} {item.make || item.model ? `• ${[item.make, item.model].filter(Boolean).join(' ')}` : ''}</p>
+                    <p className="mt-2 text-xs font-semibold text-slate-700">Status: <span className={item.status === 'Available' ? 'text-emerald-700' : 'text-slate-700'}>{item.status}</span></p>
+                  </div>
+                  <button type="button" className="min-h-11 rounded-lg border border-brand-700 bg-white px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400" onClick={() => onAddEquipment(item.id)} disabled={disabled || isSelected || !isEquipmentSelectable(item)}>{isSelected ? 'Added' : 'Add'}</button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold text-brand-900">Selected Equipment</h3>
+          {selectedEquipment.length === 0 ? <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">No equipment selected yet.</p> : null}
+          {selectedEquipment.map((item) => (
+            <article key={item.equipment_id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-brand-900">{formatEquipmentName(item)}</h4>
+                  <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{item.equipment_type} • {item.status}</p>
+                </div>
+                <button type="button" className="min-h-11 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:text-slate-400 sm:text-right" onClick={() => onRemoveEquipment(item.equipment_id)} disabled={disabled}>Remove</button>
+              </div>
+              <label className="mt-3 block text-sm font-medium text-slate-700">Purpose<textarea className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:text-sm" value={item.purpose} onChange={(event) => onUpdatePurpose(item.equipment_id, event.target.value)} disabled={disabled} /></label>
+            </article>
+          ))}
+        </div>
+      </div>
+    </fieldset>
+  );
+}
+
+function ProposalEquipmentSummary({ selectedEquipment }: { selectedEquipment: ProposalEquipmentAssignment[] }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <h2 className="text-base font-semibold text-brand-900">Proposal Equipment Summary</h2>
+      <p className="mt-2 text-sm text-slate-600">Review selected equipment before saving and generating the proposal PDF.</p>
+      {selectedEquipment.length === 0 ? <p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">No equipment assigned.</p> : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead><tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><th className="py-2 pr-4">Equipment Name</th><th className="py-2 pr-4">Type</th><th className="py-2 pr-4">Purpose</th></tr></thead>
+            <tbody className="divide-y divide-slate-100">{selectedEquipment.map((item) => <tr key={item.equipment_id}><td className="py-2 pr-4 font-medium text-brand-900">{item.equipment_name}</td><td className="py-2 pr-4 text-slate-700">{item.equipment_type}</td><td className="py-2 pr-4 text-slate-700">{item.purpose || 'No purpose entered.'}</td></tr>)}</tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
 
 function HazardSelection({
   serviceType,

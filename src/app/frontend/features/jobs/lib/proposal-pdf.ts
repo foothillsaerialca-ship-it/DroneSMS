@@ -58,9 +58,19 @@ type ProposalPdfRecord = {
   hazard: string | null;
   proposed_mitigation: string | null;
   hazard_assessment: unknown;
+  proposal_equipment: unknown;
   proposal_amount: number | string | null;
   valid_until: string | null;
   created_at: string | null;
+};
+
+type ProposalEquipmentAssignment = {
+  equipment_id: string;
+  equipment_name: string;
+  equipment_type: string;
+  make: string | null;
+  model: string | null;
+  purpose: string;
 };
 
 type PdfImage = { bytes: Uint8Array; width: number; height: number };
@@ -270,7 +280,7 @@ class ProposalPdfRenderer {
     this.table(
       [
         ['Equipment', 'Purpose'],
-        [clean(this.proposal.proposed_aircraft) || 'Aircraft/equipment to be assigned before deployment', clean(this.proposal.service_type) || 'Commercial UAS operation'],
+        ...buildEquipmentRows(this.proposal),
       ],
       [250, 237],
     );
@@ -514,7 +524,7 @@ export async function generateProposalPdf(proposalId: string) {
 async function loadProposalForPdf(proposalId: string) {
   const { data, error } = await supabase
     .from('proposals')
-    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, proposed_rpic, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_amount, valid_until, created_at')
+    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, proposed_rpic, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_amount, valid_until, created_at')
     .eq('id', proposalId)
     .is('deleted_at', null)
     .single();
@@ -588,6 +598,42 @@ function withLeadingArticle(value: string) {
 
 function buildDeliverables() {
   return 'Prepared according to the accepted scope, property conditions, and client coordination requirements.';
+}
+
+
+function normalizeProposalEquipment(value: unknown): ProposalEquipmentAssignment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      const record = item as Partial<ProposalEquipmentAssignment>;
+      const equipmentId = typeof record.equipment_id === 'string' ? record.equipment_id : '';
+      const equipmentName = typeof record.equipment_name === 'string' ? record.equipment_name : '';
+      if (!equipmentId || !equipmentName) return null;
+
+      return {
+        equipment_id: equipmentId,
+        equipment_name: equipmentName,
+        equipment_type: typeof record.equipment_type === 'string' ? record.equipment_type : '',
+        make: typeof record.make === 'string' ? record.make : null,
+        model: typeof record.model === 'string' ? record.model : null,
+        purpose: typeof record.purpose === 'string' ? record.purpose : ''
+      } satisfies ProposalEquipmentAssignment;
+    })
+    .filter((item): item is ProposalEquipmentAssignment => Boolean(item));
+}
+
+function buildEquipmentRows(proposal: ProposalPdfRecord): TableCell[][] {
+  const proposalEquipment = normalizeProposalEquipment(proposal.proposal_equipment);
+  if (!proposalEquipment.length) {
+    return [[clean(proposal.proposed_aircraft) || 'Aircraft/equipment to be assigned before deployment', clean(proposal.service_type) || 'Commercial UAS operation']];
+  }
+
+  return proposalEquipment.map((item) => {
+    const makeModel = [item.make, item.model].filter(Boolean).join(' ').trim();
+    const equipmentName = makeModel ? `${item.equipment_name} — ${makeModel}` : item.equipment_name;
+    return [equipmentName, clean(item.purpose) || 'Purpose to be confirmed before deployment'];
+  });
 }
 
 function buildHazardRows(proposal: ProposalPdfRecord): TableCell[][] {
