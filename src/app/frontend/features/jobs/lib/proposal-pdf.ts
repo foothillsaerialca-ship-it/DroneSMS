@@ -256,7 +256,7 @@ class ProposalPdfRenderer {
 
     this.startContentPage();
     this.section('EXECUTIVE SUMMARY');
-    this.paragraph(buildExecutiveSummary(this.proposal), 12);
+    this.paragraph(buildExecutiveSummary(this.proposal, this.organization), 12);
     this.section('SCOPE OF WORK');
     this.keyValueTable([
       ['Project / Proposal', clean(this.proposal.proposal_name) || proposalSubtitle(this.proposal)],
@@ -564,16 +564,23 @@ async function loadLogoImage(organization: OrganizationSettings | null): Promise
   }
 }
 
-function buildExecutiveSummary(proposal: ProposalPdfRecord) {
-  const serviceType = clean(proposal.service_type) || 'commercial UAS services';
-  const client = clientDisplay(proposal);
-  const property = clean(proposal.site_address) || 'the identified property or operating area';
-  const serviceDescription = buildServiceDescription(proposal);
-  const objective = withLeadingArticle(lowerFirst(serviceDescription.replace(/\.$/, '')));
+function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: OrganizationSettings | null) {
+  const operatorName = companyNameFor(organization);
+  const contactName = clean(proposal.contact_name) || 'your team';
+  const clientName = clean(proposal.client_name) || 'your organization';
+  const siteAddress = clean(proposal.site_address) || 'the identified property or operating area';
+  const serviceDescription = withLeadingArticle(lowerFirst(buildServiceDescription(proposal).replace(/\.$/, '')));
+  const validThrough = formatLongDate(proposal.valid_until) || 'the validity date stated in this proposal';
+  const rpicName = clean(proposal.proposed_rpic_name) || clean(proposal.proposed_rpic);
+
+  const qualifications = rpicName
+    ? `${rpicName}, FAA Part 107 certificated Remote Pilot in Command, will lead all field operations supported by a trained crew operating under ${operatorName}'s documented Safety Management System. Our aerial approach provides safe, efficient access to the work area while reducing the need for personnel to operate from elevated, difficult-to-access, or otherwise hazardous positions.`
+    : `All field operations will be led by a FAA Part 107 certificated Remote Pilot in Command, supported by a trained crew operating under ${operatorName}'s documented Safety Management System. Our aerial approach provides safe, efficient access to the work area while reducing the need for personnel to operate from elevated, difficult-to-access, or otherwise hazardous positions.`;
 
   return [
-    `This proposal presents a professional ${serviceType} engagement prepared for ${client}. The objective is ${objective} for the property at ${property}, completed through a planned, coordinated aerial services approach that protects people, property, and schedule quality.`,
-    'The work will be performed by assigned UAS personnel using equipment suited to the site and service requirements. Deliverables for this engagement will be prepared according to the accepted scope, property conditions, and client coordination requirements, with final scheduling and field coordination completed after proposal acceptance.',
+    `${operatorName} is pleased to submit this proposal to ${contactName} at ${clientName} for ${serviceDescription} at ${siteAddress}. Our goal is to deliver professional, well-documented results while keeping the engagement safe, efficient, and minimally disruptive to people and property.`,
+    qualifications,
+    `Upon completion, ${clientName} will receive documentation prepared according to the accepted scope and site conditions. This proposal is valid through ${validThrough}. We are ready to move forward upon your authorization and will follow up within one business day to confirm scheduling.`,
   ].join('\n\n');
 }
 
@@ -712,6 +719,16 @@ function formatDate(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value.slice(0, 10);
   return new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).format(date);
+}
+
+function formatLongDate(value: string | null | undefined) {
+  if (!value) return '';
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  const date = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
+  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(date);
 }
 
 function currency(value: number | string | null) {
