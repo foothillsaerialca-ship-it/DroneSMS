@@ -170,7 +170,7 @@ function toDateInputValue(value: string | null) {
 
 function getDefaultEquipmentPurpose(equipmentType: string, serviceType: string) {
   const normalizedType = equipmentType.trim().toLowerCase();
-  if (normalizedType === 'drone') return `Primary aircraft for ${serviceType || '[service type]'} operations`;
+  if (normalizedType === 'drone') return `Primary aircraft supporting ${serviceType || '[service type]'}`;
   if (normalizedType === 'payload') return 'Payload delivery and application system';
   if (normalizedType === 'ground support') return 'Ground support and site control';
   if (normalizedType === 'filtration / water system' || normalizedType === 'filtration' || normalizedType === 'water system') return 'Purified water production on site';
