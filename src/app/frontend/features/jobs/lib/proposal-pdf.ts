@@ -8,6 +8,7 @@ import {
   getSelectedHazardName,
   normalizeSelectedHazards,
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
+import { getProposalScopeDefaults } from '@frontend/features/jobs/lib/proposal-scope';
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -46,6 +47,8 @@ type ProposalPdfRecord = {
   service_type: string | null;
   site_address: string | null;
   description: string | null;
+  deliverables: string | null;
+  exclusions: string | null;
   proposed_rpic: string | null;
   proposed_crew: string | null;
   proposed_aircraft: string | null;
@@ -259,11 +262,12 @@ class ProposalPdfRenderer {
     this.paragraph(buildExecutiveSummary(this.proposal, this.organization), 12);
     this.section('SCOPE OF WORK');
     this.keyValueTable([
-      ['Project / Proposal', clean(this.proposal.proposal_name) || proposalSubtitle(this.proposal)],
       ['Services', buildServiceDescription(this.proposal)],
-      ['Property / Site', clean(this.proposal.site_address) || 'Property or operating area to be confirmed with client.'],
-      ['Deliverables', buildDeliverables()],
-      ['Exclusions', 'Work not expressly included above is excluded unless added by written change authorization.'],
+      ['Site Setup', 'Establish staging area, verify equipment readiness, conduct crew briefing, and implement site controls appropriate to the operating environment.'],
+      ['Operations', 'Operations will be conducted in accordance with applicable FAA regulations, the accepted scope of work, and the operator’s documented Safety Management System. Identified hazards and operational controls will be reviewed before work begins.'],
+      ['Site Restoration', 'Upon completion, equipment, staging materials, and temporary site controls will be removed and the work area will be returned to its pre-operation condition.'],
+      ['Deliverables', buildDeliverables(this.proposal)],
+      ['Exclusions', buildExclusions(this.proposal)],
     ]);
 
     this.startContentPage();
@@ -524,7 +528,7 @@ export async function generateProposalPdf(proposalId: string) {
 async function loadProposalForPdf(proposalId: string) {
   const { data, error } = await supabase
     .from('proposals')
-    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, proposed_rpic, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_amount, valid_until, created_at')
+    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, deliverables, exclusions, proposed_rpic, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_amount, valid_until, created_at')
     .eq('id', proposalId)
     .is('deleted_at', null)
     .single();
@@ -603,8 +607,12 @@ function withLeadingArticle(value: string) {
   return `the ${value}`;
 }
 
-function buildDeliverables() {
-  return 'Prepared according to the accepted scope, property conditions, and client coordination requirements.';
+function buildDeliverables(proposal: ProposalPdfRecord) {
+  return clean(proposal.deliverables) || getProposalScopeDefaults(proposal.service_type).deliverables;
+}
+
+function buildExclusions(proposal: ProposalPdfRecord) {
+  return clean(proposal.exclusions) || getProposalScopeDefaults(proposal.service_type).exclusions;
 }
 
 

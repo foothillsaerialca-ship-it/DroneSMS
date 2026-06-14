@@ -16,6 +16,7 @@ import {
   type SelectedPreliminaryHazard
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
+import { getProposalScopeDefaults } from '@frontend/features/jobs/lib/proposal-scope';
 
 const proposalStatuses = ['Draft', 'Sent', 'Under Review', 'Accepted', 'Declined'];
 const airspaceClasses = ['Not reviewed', 'Class B', 'Class C', 'Class D', 'Class E', 'Class G'];
@@ -30,6 +31,8 @@ type ProposalFormState = {
   serviceType: string;
   siteAddress: string;
   description: string;
+  deliverables: string;
+  exclusions: string;
   proposedRpicId: string;
   airspaceClass: string;
   laancRequired: string;
@@ -38,6 +41,8 @@ type ProposalFormState = {
   validUntil: string;
   status: string;
 };
+
+const initialScopeDefaults = getProposalScopeDefaults(serviceTypes[0]);
 
 const initialFormState: ProposalFormState = {
   clientName: '',
@@ -48,6 +53,8 @@ const initialFormState: ProposalFormState = {
   serviceType: serviceTypes[0],
   siteAddress: '',
   description: '',
+  deliverables: initialScopeDefaults.deliverables,
+  exclusions: initialScopeDefaults.exclusions,
   proposedRpicId: '',
   airspaceClass: airspaceClasses[0],
   laancRequired: 'No',
@@ -71,6 +78,8 @@ type ProposalRecord = {
   service_type: string;
   site_address: string | null;
   description: string | null;
+  deliverables: string | null;
+  exclusions: string | null;
   proposed_rpic_id: string | null;
   proposed_rpic_name: string | null;
   proposed_rpic_credentials: string | null;
@@ -220,6 +229,8 @@ function mapProposalToFormState(proposal: ProposalRecord) {
     serviceType: proposal.service_type || serviceTypes[0],
     siteAddress: proposal.site_address ?? '',
     description: proposal.description ?? '',
+    deliverables: proposal.deliverables ?? getProposalScopeDefaults(proposal.service_type).deliverables,
+    exclusions: proposal.exclusions ?? getProposalScopeDefaults(proposal.service_type).exclusions,
     proposedRpicId: proposal.proposed_rpic_id ?? '',
     airspaceClass: proposal.airspace_class ?? airspaceClasses[0],
     laancRequired: fromBoolean(proposal.laanc_required),
@@ -324,7 +335,7 @@ export function NewProposalPage() {
       try {
         const { data, error: proposalLoadError } = await supabase
           .from('proposals')
-          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard_assessment, proposal_equipment, proposal_amount, valid_until, status')
+          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, deliverables, exclusions, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard_assessment, proposal_equipment, proposal_amount, valid_until, status')
           .eq('id', proposalId)
           .is('deleted_at', null)
           .single();
@@ -398,7 +409,17 @@ export function NewProposalPage() {
   const isFormDisabled = isSaving || isLoadingProposal;
 
   function updateField(field: keyof typeof initialFormState, value: string) {
-    setFormData((current) => ({ ...current, [field]: value }));
+    setFormData((current) => {
+      if (field !== 'serviceType') return { ...current, [field]: value };
+
+      const defaults = getProposalScopeDefaults(value);
+      return {
+        ...current,
+        serviceType: value,
+        deliverables: current.deliverables.trim() ? current.deliverables : defaults.deliverables,
+        exclusions: current.exclusions.trim() ? current.exclusions : defaults.exclusions
+      };
+    });
   }
 
   function addLibraryHazard(hazardId: string) {
@@ -537,6 +558,8 @@ export function NewProposalPage() {
         service_type: formData.serviceType,
         site_address: formData.siteAddress.trim(),
         description: formData.description.trim() || null,
+        deliverables: formData.deliverables.trim() || null,
+        exclusions: formData.exclusions.trim() || null,
         proposed_rpic_id: rpicSnapshot.id || null,
         proposed_rpic_name: rpicSnapshot.full_name || null,
         proposed_rpic_credentials: rpicSnapshot.credentials || null,
@@ -633,6 +656,8 @@ export function NewProposalPage() {
           <SelectField label="Service Type" value={formData.serviceType} options={serviceTypes} onChange={(value) => updateField('serviceType', value)} disabled={isFormDisabled} />
           <TextField label="Site Address" value={formData.siteAddress} onChange={(value) => updateField('siteAddress', value)} disabled={isFormDisabled} required />
           <TextAreaField label="Description" value={formData.description} onChange={(value) => updateField('description', value)} disabled={isFormDisabled} />
+          <TextAreaField label="Deliverables" value={formData.deliverables} onChange={(value) => updateField('deliverables', value)} disabled={isFormDisabled} helperText="Describe what the client will receive when the work is complete." />
+          <TextAreaField label="Exclusions" value={formData.exclusions} onChange={(value) => updateField('exclusions', value)} disabled={isFormDisabled} helperText="Clarify work, services, or responsibilities not included in this proposal." />
         </FormSection>
 
         <FormSection title="Proposed RPIC">
@@ -1136,16 +1161,19 @@ function TextAreaField({
   label,
   value,
   onChange,
-  disabled
+  disabled,
+  helperText
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
+  helperText?: string;
 }) {
   return (
     <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
       {label}
+      {helperText ? <span className="mt-1 block text-xs font-normal text-slate-500">{helperText}</span> : null}
       <textarea
         className="mt-1 min-h-28 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
         value={value}
