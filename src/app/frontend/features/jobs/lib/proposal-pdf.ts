@@ -565,58 +565,23 @@ async function loadLogoImage(organization: OrganizationSettings | null): Promise
 }
 
 function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: OrganizationSettings | null) {
-  const operatorCompanyName = companyNameFor(organization);
+  const operatorName = companyNameFor(organization);
   const contactName = clean(proposal.contact_name) || 'your team';
   const clientName = clean(proposal.client_name) || 'your organization';
   const siteAddress = clean(proposal.site_address) || 'the identified property or operating area';
   const serviceDescription = withLeadingArticle(lowerFirst(buildServiceDescription(proposal).replace(/\.$/, '')));
   const validThrough = formatLongDate(proposal.valid_until) || 'the validity date stated in this proposal';
   const rpicName = clean(proposal.proposed_rpic_name) || clean(proposal.proposed_rpic);
-  const summaryLanguage = executiveSummaryLanguageFor(proposal.service_type);
 
   const qualifications = rpicName
-    ? `All work will be performed by ${rpicName}, FAA Part 107 certificated Remote Pilot in Command, supported by a trained ground crew operating under ${operatorCompanyName}'s documented Safety Management System. Our drone-based approach ${summaryLanguage.approachBenefit}.`
-    : `All work will be performed by a qualified FAA Part 107 certificated crew operating under ${operatorCompanyName}'s documented Safety Management System.`;
+    ? `${rpicName}, FAA Part 107 certificated Remote Pilot in Command, will lead all field operations supported by a trained crew operating under ${operatorName}'s documented Safety Management System. Our aerial approach provides safe, efficient access to the work area while reducing the need for personnel to operate from elevated, difficult-to-access, or otherwise hazardous positions.`
+    : `All field operations will be led by a FAA Part 107 certificated Remote Pilot in Command, supported by a trained crew operating under ${operatorName}'s documented Safety Management System. Our aerial approach provides safe, efficient access to the work area while reducing the need for personnel to operate from elevated, difficult-to-access, or otherwise hazardous positions.`;
 
   return [
-    `${operatorCompanyName} is pleased to submit this proposal to ${contactName} at ${clientName} for ${serviceDescription} at ${siteAddress}. Our goal is to deliver ${summaryLanguage.clientBenefit} while keeping the engagement safe, efficient, and minimally disruptive to ${summaryLanguage.stakeholder}.`,
+    `${operatorName} is pleased to submit this proposal to ${contactName} at ${clientName} for ${serviceDescription} at ${siteAddress}. Our goal is to deliver professional, well-documented results while keeping the engagement safe, efficient, and minimally disruptive to people and property.`,
     qualifications,
-    `Upon completion, ${clientName} will receive documentation of completed work prepared according to the accepted scope and site conditions. This proposal is valid through ${validThrough}. We are ready to move forward upon your authorization and will follow up within one business day to confirm scheduling.`,
+    `Upon completion, ${clientName} will receive documentation prepared according to the accepted scope and site conditions. This proposal is valid through ${validThrough}. We are ready to move forward upon your authorization and will follow up within one business day to confirm scheduling.`,
   ].join('\n\n');
-}
-
-function executiveSummaryLanguageFor(serviceType: string | null | undefined) {
-  const normalized = clean(serviceType).toLowerCase();
-
-  if (normalized.includes('clean')) {
-    return {
-      clientBenefit: 'clean, professionally maintained exterior surfaces',
-      stakeholder: 'guests and on-site staff',
-      approachBenefit: 'eliminates the need for lifts, scaffolding, or rope-access work at height, reducing risk to people and property while shortening on-site time',
-    };
-  }
-
-  if (normalized.includes('agricultural')) {
-    return {
-      clientBenefit: 'precise, effective coverage of the treatment area',
-      stakeholder: 'people, livestock, and adjacent properties',
-      approachBenefit: 'enables precise application over large or difficult terrain while maintaining safe separation from people, structures, and sensitive areas',
-    };
-  }
-
-  if (normalized.includes('inspection') || normalized.includes('thermal')) {
-    return {
-      clientBenefit: 'accurate, well-documented survey results',
-      stakeholder: 'building occupants and on-site personnel',
-      approachBenefit: 'provides safe, efficient access to areas that would otherwise require lifts or rope access, while capturing consistent, high-resolution data',
-    };
-  }
-
-  return {
-    clientBenefit: 'high-quality results consistent with the accepted scope',
-    stakeholder: 'people and property in and around the operating area',
-    approachBenefit: 'provides safe, efficient access to the work area while keeping personnel out of elevated or hazardous positions',
-  };
 }
 
 function buildServiceDescription(proposal: ProposalPdfRecord) {
