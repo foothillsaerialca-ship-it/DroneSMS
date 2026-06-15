@@ -83,6 +83,24 @@ create policy "Users can create organization generated documents"
       where profiles.id = auth.uid()
         and profiles.organization_id = generated_documents.organization_id
     )
+    and (
+      record_type <> 'proposal'
+      or exists (
+        select 1
+        from public.proposals
+        where proposals.id = generated_documents.record_id
+          and proposals.organization_id = generated_documents.organization_id
+      )
+    )
+    and (
+      record_type <> 'job'
+      or exists (
+        select 1
+        from public.jobs
+        where jobs.id = generated_documents.record_id
+          and jobs.organization_id = generated_documents.organization_id
+      )
+    )
   );
 
 grant select, insert on public.generated_documents to authenticated;
@@ -111,4 +129,5 @@ create policy "Users can upload generated document files"
   with check (
     bucket_id = 'generated-documents'
     and lower(right(name, 4)) = '.pdf'
+    and (storage.foldername(name))[1] in ('proposal', 'job', 'incident', 'organization')
   );

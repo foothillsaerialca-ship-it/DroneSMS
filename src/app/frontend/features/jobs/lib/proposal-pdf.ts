@@ -542,6 +542,10 @@ export async function generateProposalPdf(proposalId: string) {
 }
 
 async function getGeneratedDocumentUserId() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const sessionUserId = sessionData.session?.user.id;
+  if (sessionUserId) return sessionUserId;
+
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData.user?.id;
   if (!userId) {
