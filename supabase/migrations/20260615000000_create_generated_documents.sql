@@ -18,6 +18,8 @@ create table if not exists public.generated_documents (
   record_type text not null,
   record_id uuid not null,
   generated_by_user_id uuid references auth.users(id) on delete set null,
+  archived_at timestamptz,
+  archived_by_user_id uuid references auth.users(id) on delete set null,
   file_name text not null,
   display_file_name text,
   storage_path text not null unique,
@@ -54,6 +56,8 @@ create index if not exists generated_documents_generated_by_user_id_idx
   on public.generated_documents(generated_by_user_id);
 create index if not exists generated_documents_document_type_idx
   on public.generated_documents(document_type);
+create index if not exists generated_documents_archived_at_idx
+  on public.generated_documents(archived_at);
 
 alter table public.generated_documents enable row level security;
 
@@ -104,7 +108,30 @@ create policy "Users can create organization generated documents"
     )
   );
 
-grant select, insert on public.generated_documents to authenticated;
+drop policy if exists "Users can archive organization generated documents" on public.generated_documents;
+create policy "Users can archive organization generated documents"
+  on public.generated_documents
+  for update
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.profiles
+      where profiles.id = auth.uid()
+        and profiles.organization_id = generated_documents.organization_id
+    )
+  )
+  with check (
+    archived_by_user_id = auth.uid()
+    and exists (
+      select 1
+      from public.profiles
+      where profiles.id = auth.uid()
+        and profiles.organization_id = generated_documents.organization_id
+    )
+  );
+
+grant select, insert, update on public.generated_documents to authenticated;
 
 drop policy if exists "Users can view organization generated document files" on storage.objects;
 create policy "Users can view organization generated document files"

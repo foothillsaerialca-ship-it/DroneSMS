@@ -4,6 +4,7 @@ import { supabase } from "@frontend/lib/supabase";
 import { OrganizationIdentityCard } from "@frontend/features/settings/components/organization-identity-card";
 import { generateProposalPdf } from "@frontend/features/jobs/lib/proposal-pdf";
 import {
+  archiveGeneratedDocument,
   downloadGeneratedDocument,
   formatFileSize,
   loadGeneratedDocuments,
@@ -512,6 +513,32 @@ export function JobsPage() {
     }
   }
 
+
+  async function removeGeneratedDocument(documentId: string) {
+    if (!window.confirm("Remove this document from the proposal documents list?")) {
+      return;
+    }
+
+    setDocumentsError(null);
+    setWorkspaceWarning(null);
+    setWorkspaceMessage(null);
+
+    try {
+      await archiveGeneratedDocument(documentId);
+      setProposalDocuments((current) =>
+        current.filter((document) => document.id !== documentId),
+      );
+      setWorkspaceMessage("Document removed from proposal documents.");
+    } catch (archiveError) {
+      setDocumentsError(
+        getErrorMessage(
+          archiveError,
+          "Unable to remove document. Please try again.",
+        ),
+      );
+    }
+  }
+
   function renderProposalCard(proposal: Proposal, isConverted: boolean) {
     const proposalNumber =
       proposal.proposal_number ?? proposal.id.slice(0, 8).toUpperCase();
@@ -739,6 +766,13 @@ export function JobsPage() {
                       onClick={() => void downloadGeneratedDocument(document)}
                     >
                       Download
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                      onClick={() => void removeGeneratedDocument(document.id)}
+                    >
+                      Remove
                     </button>
                   </div>
                 </div>

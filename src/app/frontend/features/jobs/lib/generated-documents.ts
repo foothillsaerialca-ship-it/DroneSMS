@@ -25,6 +25,8 @@ export type GeneratedDocumentRecord = {
   record_type: GeneratedDocumentRecordType;
   record_id: string;
   generated_by_user_id: string | null;
+  archived_at: string | null;
+  archived_by_user_id: string | null;
   file_name: string | null;
   display_file_name: string | null;
   storage_path: string;
@@ -65,23 +67,27 @@ type LoadGeneratedDocumentsInput = {
   recordType: GeneratedDocumentRecordType;
   recordIds: string[];
   documentType?: GeneratedDocumentType;
+  includeArchived?: boolean;
 };
 
 export async function loadGeneratedDocuments({
   recordType,
   recordIds,
   documentType,
+  includeArchived = false,
 }: LoadGeneratedDocumentsInput) {
   if (recordIds.length === 0) return [];
 
   let query = supabase
     .from('generated_documents')
     .select(
-      'id, organization_id, document_type, record_type, record_id, generated_by_user_id, file_name, display_file_name, storage_path, file_size, generated_at, created_at',
+      'id, organization_id, document_type, record_type, record_id, generated_by_user_id, archived_at, archived_by_user_id, file_name, display_file_name, storage_path, file_size, generated_at, created_at',
     )
     .eq('record_type', recordType)
     .in('record_id', recordIds)
     .order('generated_at', { ascending: false });
+
+  if (!includeArchived) query = query.is('archived_at', null);
 
   if (documentType) query = query.eq('document_type', documentType);
 
@@ -176,4 +182,29 @@ export async function saveGeneratedDocument({
     });
 
   if (insertError) throw insertError;
+}
+
+async function getCurrentGeneratedDocumentUserId() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const sessionUserId = sessionData.session?.user.id;
+  if (sessionUserId) return sessionUserId;
+
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) {
+    throw new Error('You must be signed in to update generated documents.');
+  }
+  return userId;
+}
+
+export async function archiveGeneratedDocument(documentId: string) {
+  const { error } = await supabase
+    .from('generated_documents')
+    .update({
+      archived_at: new Date().toISOString(),
+      archived_by_user_id: await getCurrentGeneratedDocumentUserId(),
+    })
+    .eq('id', documentId);
+
+  if (error) throw error;
 }
