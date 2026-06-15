@@ -400,8 +400,14 @@ class ProposalPdfRenderer {
   }
 
   private paragraph(text: string, spacing = 16) {
-    this.ensureSpace(80);
-    this.y = this.pdf.drawWrappedText(this.currentPage, text, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 9.6, color: NAVY, lineHeight: 12.8 }) - spacing;
+    const paragraphs = text.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
+    if (paragraphs.length === 0) return;
+
+    paragraphs.forEach((paragraph, index) => {
+      this.ensureSpace(80);
+      const paragraphGap = index < paragraphs.length - 1 ? 7 : spacing;
+      this.y = this.pdf.drawWrappedText(this.currentPage, paragraph, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 9.6, color: NAVY, lineHeight: 12.8 }) - paragraphGap;
+    });
   }
 
   private bullets(items: string[]) {
@@ -723,20 +729,29 @@ function clean(value: string | null | undefined) {
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-  return new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).format(date);
+  return formatProposalDate(value, { month: '2-digit', day: '2-digit', year: 'numeric' });
 }
 
 function formatLongDate(value: string | null | undefined) {
+  return formatProposalDate(value, { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function formatProposalDate(value: string | null | undefined, options: Intl.DateTimeFormatOptions) {
   if (!value) return '';
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  const date = dateOnly
-    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
-    : new Date(value);
+
+  if (dateOnly) {
+    const year = Number(dateOnly[1]);
+    const month = Number(dateOnly[2]);
+    const day = Number(dateOnly[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (Number.isNaN(date.getTime())) return value.slice(0, 10);
+    return new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' }).format(date);
+  }
+
+  const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-  return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(date);
+  return new Intl.DateTimeFormat('en-US', options).format(date);
 }
 
 function currency(value: number | string | null) {
