@@ -16,11 +16,17 @@ import {
   type SelectedPreliminaryHazard
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
-import { getProposalScopeDefaults } from '@frontend/features/jobs/lib/proposal-scope';
+import { getProposalScopeDefaults, hasCustomizedProposalScope } from '@frontend/features/jobs/lib/proposal-scope';
 
 const proposalStatuses = ['Draft', 'Sent', 'Under Review', 'Accepted', 'Declined'];
 const airspaceClasses = ['Not reviewed', 'Class B', 'Class C', 'Class D', 'Class E', 'Class G'];
 const blockedEquipmentStatuses = new Set(['Archived', 'Retired', 'Out-of-Service', 'Out of Service', 'Maintenance']);
+
+type PendingServiceTypeChange = {
+  nextServiceType: string;
+  deliverables: string;
+  exclusions: string;
+};
 
 type ProposalFormState = {
   clientName: string;
@@ -260,6 +266,7 @@ export function NewProposalPage() {
   const [isLoadingEquipment, setIsLoadingEquipment] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingServiceTypeChange, setPendingServiceTypeChange] = useState<PendingServiceTypeChange | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -409,17 +416,62 @@ export function NewProposalPage() {
   const isFormDisabled = isSaving || isLoadingProposal;
 
   function updateField(field: keyof typeof initialFormState, value: string) {
+    if (field !== 'serviceType') {
+      setFormData((current) => ({ ...current, [field]: value }));
+      return;
+    }
+
     setFormData((current) => {
-      if (field !== 'serviceType') return { ...current, [field]: value };
+      if (current.serviceType === value) return current;
 
       const defaults = getProposalScopeDefaults(value);
+      const hasCustomizedScope = hasCustomizedProposalScope(
+        { deliverables: current.deliverables, exclusions: current.exclusions },
+        current.serviceType
+      );
+
+      if (isEditMode && hasCustomizedScope) {
+        setPendingServiceTypeChange({
+          nextServiceType: value,
+          deliverables: current.deliverables,
+          exclusions: current.exclusions
+        });
+
+        return { ...current, serviceType: value };
+      }
+
       return {
         ...current,
         serviceType: value,
-        deliverables: current.deliverables.trim() ? current.deliverables : defaults.deliverables,
-        exclusions: current.exclusions.trim() ? current.exclusions : defaults.exclusions
+        deliverables: defaults.deliverables,
+        exclusions: defaults.exclusions
       };
     });
+  }
+
+  function keepCurrentScopeForServiceTypeChange() {
+    if (!pendingServiceTypeChange) return;
+
+    setFormData((current) => ({
+      ...current,
+      serviceType: pendingServiceTypeChange.nextServiceType,
+      deliverables: pendingServiceTypeChange.deliverables,
+      exclusions: pendingServiceTypeChange.exclusions
+    }));
+    setPendingServiceTypeChange(null);
+  }
+
+  function replaceScopeDefaultsForServiceTypeChange() {
+    if (!pendingServiceTypeChange) return;
+
+    const defaults = getProposalScopeDefaults(pendingServiceTypeChange.nextServiceType);
+    setFormData((current) => ({
+      ...current,
+      serviceType: pendingServiceTypeChange.nextServiceType,
+      deliverables: defaults.deliverables,
+      exclusions: defaults.exclusions
+    }));
+    setPendingServiceTypeChange(null);
   }
 
   function addLibraryHazard(hazardId: string) {
@@ -640,6 +692,17 @@ export function NewProposalPage() {
       />
 
       <form className="space-y-4" onSubmit={handleSubmit}>
+        {pendingServiceTypeChange ? (
+          <ConfirmationDialog
+            title="Service Type Changed"
+            message="This proposal contains customized Deliverables and/or Exclusions. Would you like to replace them with the default values for the newly selected service type?"
+            confirmLabel="Replace With Defaults"
+            cancelLabel="Keep Current"
+            onCancel={keepCurrentScopeForServiceTypeChange}
+            onConfirm={replaceScopeDefaultsForServiceTypeChange}
+          />
+        ) : null}
+
         {isLoadingProposal ? (
           <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">Loading proposal details...</div>
         ) : null}
@@ -735,6 +798,55 @@ export function NewProposalPage() {
   );
 }
 
+
+
+function ConfirmationDialog({
+  title,
+  message,
+  confirmLabel,
+  cancelLabel,
+  onConfirm,
+  onCancel
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="presentation">
+      <div
+        aria-labelledby="service-type-change-title"
+        aria-modal="true"
+        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+        role="dialog"
+      >
+        <h2 id="service-type-change-title" className="text-lg font-semibold text-brand-900">
+          {title}
+        </h2>
+        <p className="mt-3 text-sm leading-6 text-slate-600">{message}</p>
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            onClick={onCancel}
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            className="min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-900"
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 
 function EquipmentSelection({
