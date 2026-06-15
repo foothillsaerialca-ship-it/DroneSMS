@@ -4,6 +4,16 @@ import { supabase } from "@frontend/lib/supabase";
 import { OrganizationIdentityCard } from "@frontend/features/settings/components/organization-identity-card";
 import { generateProposalPdf } from "@frontend/features/jobs/lib/proposal-pdf";
 import {
+  archiveGeneratedDocument,
+  downloadGeneratedDocument,
+  formatFileSize,
+  loadGeneratedDocuments,
+  openGeneratedDocument,
+  getGeneratedDocumentFileName,
+  getGeneratedDocumentTypeLabel,
+  type GeneratedDocumentRecord,
+} from "@frontend/features/jobs/lib/generated-documents";
+import {
   loadOrganizationSettingsForUser,
   type OrganizationSettings,
 } from "@frontend/features/settings/lib/organization-settings";
@@ -67,10 +77,20 @@ const tabs: { id: JobsTab; label: string }[] = [
   { id: "completed", label: "Completed Jobs" },
 ];
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error
-    ? error.message
-    : "Unable to load jobs. Please try again.";
+function getErrorMessage(
+  error: unknown,
+  fallback = "Unable to load jobs. Please try again.",
+) {
+  if (error instanceof Error) return error.message;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return fallback;
 }
 
 function formatDate(dateValue: string) {
@@ -116,9 +136,16 @@ export function JobsPage() {
   const [deletingProposalId, setDeletingProposalId] = useState<string | null>(
     null,
   );
-  const [generatingProposalPdfId, setGeneratingProposalPdfId] = useState<string | null>(null);
+  const [generatingProposalPdfId, setGeneratingProposalPdfId] = useState<
+    string | null
+  >(null);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [workspaceMessage, setWorkspaceMessage] = useState<string | null>(null);
+  const [workspaceWarning, setWorkspaceWarning] = useState<string | null>(null);
+  const [proposalDocuments, setProposalDocuments] = useState<
+    GeneratedDocumentRecord[]
+  >([]);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
   const [organizationSettings, setOrganizationSettings] =
     useState<OrganizationSettings | null>(null);
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
@@ -174,6 +201,33 @@ export function JobsPage() {
       setIsLoadingProposals(false);
     }
   }, []);
+
+  const loadDocumentsForProposals = useCallback(
+    async (proposalIds: string[]) => {
+      setDocumentsError(null);
+      try {
+        setProposalDocuments(
+          await loadGeneratedDocuments({
+            recordType: 'proposal',
+            recordIds: proposalIds,
+            documentType: 'proposal_pdf',
+          }),
+        );
+      } catch (documentsLoadError) {
+        setDocumentsError(
+          getErrorMessage(
+            documentsLoadError,
+            "Unable to load documents. Please try again.",
+          ),
+        );
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    void loadDocumentsForProposals(proposals.map((proposal) => proposal.id));
+  }, [loadDocumentsForProposals, proposals]);
 
   useEffect(() => {
     let isMounted = true;
@@ -370,10 +424,22 @@ export function JobsPage() {
     setGeneratingProposalPdfId(proposalId);
     setProposalsError(null);
     setWorkspaceMessage(null);
+    setWorkspaceWarning(null);
 
     try {
-      await generateProposalPdf(proposalId);
-      setWorkspaceMessage("Proposal PDF generated.");
+      const result = await generateProposalPdf(proposalId);
+      if (result.saved) {
+        setWorkspaceMessage(
+          "Proposal PDF downloaded and saved to DroneSMS records.",
+        );
+        await loadDocumentsForProposals(
+          proposals.map((proposal) => proposal.id),
+        );
+      } else {
+        setWorkspaceWarning(
+          "Proposal PDF downloaded successfully. Unable to save a copy to DroneSMS records.",
+        );
+      }
     } catch (pdfError) {
       setProposalsError(getErrorMessage(pdfError));
     } finally {
@@ -447,11 +513,40 @@ export function JobsPage() {
     }
   }
 
+
+  async function removeGeneratedDocument(documentId: string) {
+    if (!window.confirm("Remove this document from the proposal documents list?")) {
+      return;
+    }
+
+    setDocumentsError(null);
+    setWorkspaceWarning(null);
+    setWorkspaceMessage(null);
+
+    try {
+      await archiveGeneratedDocument(documentId);
+      setProposalDocuments((current) =>
+        current.filter((document) => document.id !== documentId),
+      );
+      setWorkspaceMessage("Document removed from proposal documents.");
+    } catch (archiveError) {
+      setDocumentsError(
+        getErrorMessage(
+          archiveError,
+          "Unable to remove document. Please try again.",
+        ),
+      );
+    }
+  }
+
   function renderProposalCard(proposal: Proposal, isConverted: boolean) {
     const proposalNumber =
       proposal.proposal_number ?? proposal.id.slice(0, 8).toUpperCase();
     const isBusy = creatingJobProposalId === proposal.id;
     const isGeneratingPdf = generatingProposalPdfId === proposal.id;
+    const documents = proposalDocuments.filter(
+      (document) => document.record_id === proposal.id,
+    );
 
     return (
       <article
@@ -625,6 +720,72 @@ export function JobsPage() {
           </div>
         ) : null}
 
+
+        <section
+          className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3"
+          aria-label="Proposal documents"
+        >
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-brand-900">
+                Documents
+              </h3>
+              <p className="text-xs text-slate-500">
+                Retained proposal files are listed newest first.
+              </p>
+            </div>
+          </div>
+          {documents.length > 0 ? (
+            <div className="mt-3 divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+              {documents.map((document) => (
+                <div
+                  key={document.id}
+                  className="flex flex-col gap-3 p-3 text-sm lg:flex-row lg:items-center lg:justify-between"
+                >
+                  <div>
+                    <p className="font-medium text-slate-800">
+                      {getGeneratedDocumentFileName(document)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {getGeneratedDocumentTypeLabel(document.document_type)} ·{" "}
+                      Generated {formatDate(document.generated_at)} ·{" "}
+                      {formatFileSize(document.file_size)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-brand-700 bg-white px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50"
+                      onClick={() => void openGeneratedDocument(document)}
+                    >
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-brand-700 bg-brand-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-900"
+                      onClick={() => void downloadGeneratedDocument(document)}
+                    >
+                      Download
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                      onClick={() => void removeGeneratedDocument(document.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-500">
+              No proposal documents have been saved yet. Generate a Proposal PDF
+              to retain a copy in DroneSMS records.
+            </p>
+          )}
+        </section>
+
         {proposal.hazard_assessment?.length ? (
           <div className="mt-4 space-y-2">
             <h3 className="text-sm font-semibold text-brand-900">
@@ -733,6 +894,24 @@ export function JobsPage() {
           role="status"
         >
           {workspaceMessage}
+        </div>
+      ) : null}
+
+      {workspaceWarning ? (
+        <div
+          className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-800 shadow-sm"
+          role="status"
+        >
+          {workspaceWarning}
+        </div>
+      ) : null}
+
+      {documentsError ? (
+        <div
+          className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shadow-sm"
+          role="status"
+        >
+          Documents could not be loaded: {documentsError}
         </div>
       ) : null}
 

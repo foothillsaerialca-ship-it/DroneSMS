@@ -1,4 +1,5 @@
 import { supabase } from '@frontend/lib/supabase';
+import { saveGeneratedDocument } from '@frontend/features/jobs/lib/generated-documents';
 import {
   getOrganizationLogoUrl,
   loadOrganizationSettingsById,
@@ -528,7 +529,64 @@ export async function generateProposalPdf(proposalId: string) {
   const pdf = new PdfBuilder(logo);
   new ProposalPdfRenderer(pdf, proposal, organization).render();
   const blob = pdf.save();
-  downloadBlob(blob, `Proposal-${sanitizeFileName(proposalNumber(proposal))}.pdf`);
+  const fileName = buildProposalPdfFileName(proposal, proposal.user_id);
+  const displayFileName = buildProposalPdfDisplayFileName(proposal);
+  downloadBlob(blob, displayFileName);
+
+  try {
+    await retainProposalPdf(blob, fileName, displayFileName, proposal);
+    return { saved: true };
+  } catch (error) {
+    console.error('Unable to save proposal PDF to DroneSMS records.', error);
+    return { saved: false, error };
+  }
+}
+
+async function getGeneratedDocumentUserId() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const sessionUserId = sessionData.session?.user.id;
+  if (sessionUserId) return sessionUserId;
+
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) {
+    throw new Error('You must be signed in to save proposal documents.');
+  }
+  return userId;
+}
+
+function buildProposalPdfFileName(proposal: ProposalPdfRecord, userId: string) {
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}Z$/, 'Z');
+  const randomId = crypto.randomUUID();
+  return `proposal_pdf-user_${sanitizeFileName(userId)}-${timestamp}-${randomId}-${sanitizeFileName(proposalNumber(proposal))}.pdf`;
+}
+
+function buildProposalPdfDisplayFileName(proposal: ProposalPdfRecord) {
+  const number = sanitizeFileName(proposalNumber(proposal));
+  const client = sanitizeFileName(proposal.client_name ?? '');
+  return client ? `${number} - ${client}.pdf` : `${number}.pdf`;
+}
+
+async function retainProposalPdf(
+  blob: Blob,
+  fileName: string,
+  displayFileName: string,
+  proposal: ProposalPdfRecord,
+) {
+  await saveGeneratedDocument({
+    blob,
+    organizationId: proposal.organization_id,
+    documentType: 'proposal_pdf',
+    recordType: 'proposal',
+    recordId: proposal.id,
+    generatedByUserId: await getGeneratedDocumentUserId(),
+    fileName,
+    displayFileName,
+    storagePath: `proposal/${proposal.id}/${fileName}`,
+  });
 }
 
 async function loadProposalForPdf(proposalId: string) {
