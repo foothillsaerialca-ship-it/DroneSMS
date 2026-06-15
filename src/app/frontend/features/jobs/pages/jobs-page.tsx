@@ -8,6 +8,7 @@ import {
   formatFileSize,
   loadGeneratedDocuments,
   openGeneratedDocument,
+  getGeneratedDocumentFileName,
   getGeneratedDocumentTypeLabel,
   type GeneratedDocumentRecord,
 } from "@frontend/features/jobs/lib/generated-documents";
@@ -701,7 +702,7 @@ export function JobsPage() {
                 >
                   <div>
                     <p className="font-medium text-slate-800">
-                      {document.file_name}
+                      {getGeneratedDocumentFileName(document)}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
                       {getGeneratedDocumentTypeLabel(document.document_type)} ·{" "}

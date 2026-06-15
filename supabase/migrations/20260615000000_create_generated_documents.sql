@@ -19,6 +19,7 @@ create table if not exists public.generated_documents (
   record_id uuid not null,
   generated_by_user_id uuid references auth.users(id) on delete set null,
   file_name text not null,
+  display_file_name text,
   storage_path text not null unique,
   file_size bigint,
   generated_at timestamptz not null default now(),

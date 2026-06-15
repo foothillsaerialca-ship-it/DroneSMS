@@ -25,7 +25,8 @@ export type GeneratedDocumentRecord = {
   record_type: GeneratedDocumentRecordType;
   record_id: string;
   generated_by_user_id: string | null;
-  file_name: string;
+  file_name: string | null;
+  display_file_name: string | null;
   storage_path: string;
   file_size: number | null;
   generated_at: string;
@@ -76,7 +77,7 @@ export async function loadGeneratedDocuments({
   let query = supabase
     .from('generated_documents')
     .select(
-      'id, organization_id, document_type, record_type, record_id, generated_by_user_id, file_name, storage_path, file_size, generated_at, created_at',
+      'id, organization_id, document_type, record_type, record_id, generated_by_user_id, file_name, display_file_name, storage_path, file_size, generated_at, created_at',
     )
     .eq('record_type', recordType)
     .in('record_id', recordIds)
@@ -88,6 +89,16 @@ export async function loadGeneratedDocuments({
 
   if (error) throw error;
   return (data ?? []) as GeneratedDocumentRecord[];
+}
+
+export function getGeneratedDocumentFileName(document: GeneratedDocumentRecord) {
+  const storageFileName = document.storage_path.split('/').pop();
+  return (
+    document.display_file_name ||
+    document.file_name ||
+    storageFileName ||
+    'generated-document.pdf'
+  );
 }
 
 export async function openGeneratedDocument(document: GeneratedDocumentRecord) {
@@ -109,7 +120,7 @@ export async function downloadGeneratedDocument(document: GeneratedDocumentRecor
   const url = URL.createObjectURL(data);
   const link = window.document.createElement('a');
   link.href = url;
-  link.download = document.file_name;
+  link.download = getGeneratedDocumentFileName(document);
   window.document.body.appendChild(link);
   link.click();
   link.remove();
@@ -124,6 +135,7 @@ type SaveGeneratedDocumentInput = {
   recordId: string;
   generatedByUserId: string;
   fileName: string;
+  displayFileName?: string;
   storagePath: string;
 };
 
@@ -135,6 +147,7 @@ export async function saveGeneratedDocument({
   recordId,
   generatedByUserId,
   fileName,
+  displayFileName,
   storagePath,
 }: SaveGeneratedDocumentInput) {
   const { error: uploadError } = await supabase.storage
@@ -156,6 +169,7 @@ export async function saveGeneratedDocument({
       record_id: recordId,
       generated_by_user_id: generatedByUserId,
       file_name: fileName,
+      display_file_name: displayFileName ?? null,
       storage_path: storagePath,
       file_size: blob.size,
       generated_at: new Date().toISOString(),

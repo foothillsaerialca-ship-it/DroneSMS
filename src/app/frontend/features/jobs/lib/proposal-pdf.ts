@@ -530,10 +530,11 @@ export async function generateProposalPdf(proposalId: string) {
   new ProposalPdfRenderer(pdf, proposal, organization).render();
   const blob = pdf.save();
   const fileName = buildProposalPdfFileName(proposal, proposal.user_id);
-  downloadBlob(blob, fileName);
+  const displayFileName = buildProposalPdfDisplayFileName(proposal);
+  downloadBlob(blob, displayFileName);
 
   try {
-    await retainProposalPdf(blob, fileName, proposal);
+    await retainProposalPdf(blob, fileName, displayFileName, proposal);
     return { saved: true };
   } catch (error) {
     console.error('Unable to save proposal PDF to DroneSMS records.', error);
@@ -563,7 +564,18 @@ function buildProposalPdfFileName(proposal: ProposalPdfRecord, userId: string) {
   return `proposal_pdf-user_${sanitizeFileName(userId)}-${timestamp}-${randomId}-${sanitizeFileName(proposalNumber(proposal))}.pdf`;
 }
 
-async function retainProposalPdf(blob: Blob, fileName: string, proposal: ProposalPdfRecord) {
+function buildProposalPdfDisplayFileName(proposal: ProposalPdfRecord) {
+  const number = sanitizeFileName(proposalNumber(proposal));
+  const client = sanitizeFileName(proposal.client_name ?? '');
+  return client ? `${number} - ${client}.pdf` : `${number}.pdf`;
+}
+
+async function retainProposalPdf(
+  blob: Blob,
+  fileName: string,
+  displayFileName: string,
+  proposal: ProposalPdfRecord,
+) {
   await saveGeneratedDocument({
     blob,
     organizationId: proposal.organization_id,
@@ -572,6 +584,7 @@ async function retainProposalPdf(blob: Blob, fileName: string, proposal: Proposa
     recordId: proposal.id,
     generatedByUserId: await getGeneratedDocumentUserId(),
     fileName,
+    displayFileName,
     storagePath: `proposal/${proposal.id}/${fileName}`,
   });
 }
