@@ -349,8 +349,7 @@ class ProposalPdfRenderer {
       this.pdf.drawWrappedText(this.currentPage, companyName, coverTextX, PAGE_HEIGHT - 148, coverTextWidth, { size: 24, font: 'bold', color: NAVY, align: 'center', lineHeight: 28 });
     }
 
-    this.pdf.drawWrappedText(this.currentPage, 'AERIAL SERVICES PROPOSAL', coverTextX, PAGE_HEIGHT - 270, coverTextWidth, { size: 29, font: 'bold', color: NAVY, align: 'center', lineHeight: 32 });
-    this.pdf.drawWrappedText(this.currentPage, proposalSubtitle(this.proposal), coverTextX, PAGE_HEIGHT - 302, coverTextWidth, { size: 13.5, color: GRAY, align: 'center', lineHeight: 16 });
+    this.pdf.drawWrappedText(this.currentPage, proposalSubtitle(this.proposal), coverTextX, PAGE_HEIGHT - 270, coverTextWidth, { size: 18, font: 'bold', color: NAVY, align: 'center', lineHeight: 22 });
     this.pdf.drawLine(this.currentPage, MARGIN + 96, PAGE_HEIGHT - 332, PAGE_WIDTH - MARGIN - 96, PAGE_HEIGHT - 332, BLUE, 1.1);
 
     this.coverInfoBlock(PAGE_HEIGHT - 412);
