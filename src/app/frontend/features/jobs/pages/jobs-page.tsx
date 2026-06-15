@@ -76,10 +76,20 @@ const tabs: { id: JobsTab; label: string }[] = [
   { id: "completed", label: "Completed Jobs" },
 ];
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error
-    ? error.message
-    : "Unable to load jobs. Please try again.";
+function getErrorMessage(
+  error: unknown,
+  fallback = "Unable to load jobs. Please try again.",
+) {
+  if (error instanceof Error) return error.message;
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return fallback;
 }
 
 function formatDate(dateValue: string) {
@@ -203,7 +213,12 @@ export function JobsPage() {
           }),
         );
       } catch (documentsLoadError) {
-        setDocumentsError(getErrorMessage(documentsLoadError));
+        setDocumentsError(
+          getErrorMessage(
+            documentsLoadError,
+            "Unable to load documents. Please try again.",
+          ),
+        );
       }
     },
     [],
