@@ -48,3 +48,22 @@ export function getProposalScopeDefaults(serviceType: string | null | undefined)
   if (normalizedServiceType.includes('inspection')) return inspectionDefaults;
   return customOperationDefaults;
 }
+
+
+export function isProposalScopeFieldCustomized(
+  value: string | null | undefined,
+  serviceType: string | null | undefined,
+  field: keyof ProposalScopeDefaults
+) {
+  return (value ?? '') !== getProposalScopeDefaults(serviceType)[field];
+}
+
+export function hasCustomizedProposalScope(
+  values: Pick<ProposalScopeDefaults, 'deliverables' | 'exclusions'>,
+  serviceType: string | null | undefined
+) {
+  return (
+    isProposalScopeFieldCustomized(values.deliverables, serviceType, 'deliverables') ||
+    isProposalScopeFieldCustomized(values.exclusions, serviceType, 'exclusions')
+  );
+}
