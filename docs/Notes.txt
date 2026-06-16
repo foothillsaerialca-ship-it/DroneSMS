@@ -1,6 +1,9 @@
 1. remove the profile page entirely if it is unused and clean up other unused pages and routes. 
 delete the unused pages associated with the profile. 
 modify the entire settings layout to be more user friendly and presented better
+make everything use the src/app router, and remove frontend router
+merge all supabase migrations into 1 file
+address 4 vulnerabilities in npm audit
 2. user email and password change support
 3. email verification for registration, and email and password changes
 4. have non-displayed backup email support

@@ -39,7 +39,7 @@ The active package versions are defined in `package.json` and locked in `package
 2. Verify migrations are correct:
 
 ```bash
-npm install
+npm run build
 ```
 
 3. Install dependencies:
