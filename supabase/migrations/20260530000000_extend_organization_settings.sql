@@ -3,6 +3,7 @@ alter table public.organizations
   add column if not exists email_address text,
   add column if not exists physical_address text,
   add column if not exists primary_contact text,
+  add column if not exists company_statement text,
   add column if not exists emergency_contact text,
   add column if not exists safety_manager text,
   add column if not exists stop_work_authority_statement text,

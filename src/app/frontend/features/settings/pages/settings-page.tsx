@@ -1,16 +1,18 @@
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../auth/components/use-auth';
 
 type SettingsForm = {
+  firstName: string;
+  lastName: string;
+  faaPartNumber: string;
   companyName: string;
   phoneNumber: string;
   emailAddress: string;
   websiteUrl: string;
   physicalAddress: string;
   primaryContact: string;
-  emergencyContact: string;
+  companyStatement: string;
   safetyManager: string;
   stopWorkAuthorityStatement: string;
   hazardReportingStatement: string;
@@ -19,16 +21,19 @@ type SettingsForm = {
   logoUrl: string;
 };
 
-type EditableSection = 'organization' | 'safety';
+type EditableSection = 'user' | 'organization' | 'safety';
 
 const emptySettingsForm: SettingsForm = {
+  firstName: '',
+  lastName: '',
+  faaPartNumber: '',
   companyName: '',
   phoneNumber: '',
   emailAddress: '',
   websiteUrl: '',
   physicalAddress: '',
   primaryContact: '',
-  emergencyContact: '',
+  companyStatement: '',
   safetyManager: '',
   stopWorkAuthorityStatement: '',
   hazardReportingStatement: '',
@@ -37,14 +42,20 @@ const emptySettingsForm: SettingsForm = {
   logoUrl: ''
 };
 
+const userFields = [
+  { key: 'firstName', label: 'First Name', type: 'text', autoComplete: 'given-name' },
+  { key: 'lastName', label: 'Last Name', type: 'text', autoComplete: 'family-name' },
+  { key: 'faaPartNumber', label: 'FAA Part 107 License Number', type: 'text', autoComplete: 'off' }
+] as const;
+
 const organizationFields = [
   { key: 'companyName', label: 'Company Name', type: 'text', autoComplete: 'organization' },
   { key: 'phoneNumber', label: 'Phone Number', type: 'tel', autoComplete: 'tel' },
   { key: 'emailAddress', label: 'Email Address', type: 'email', autoComplete: 'email' },
   { key: 'websiteUrl', label: 'Website', type: 'url', autoComplete: 'url' },
-  { key: 'physicalAddress', label: 'Physical Address', type: 'textarea', autoComplete: 'street-address' },
+  { key: 'physicalAddress', label: 'Physical Address', type: 'text', autoComplete: 'street-address' },
   { key: 'primaryContact', label: 'Primary Contact', type: 'text', autoComplete: 'name' },
-  { key: 'emergencyContact', label: 'Emergency Contact', type: 'text', autoComplete: 'name' }
+  { key: 'companyStatement', label: 'Company Statement', type: 'textarea', autoComplete: 'off' }
 ] as const;
 
 const safetyFields = [
@@ -58,21 +69,27 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function normalizeSettings(data: Record<string, unknown> | null | undefined): SettingsForm {
+function normalizeSettings(
+  organization: Record<string, unknown> | null | undefined,
+  profile: Record<string, unknown> | null | undefined
+): SettingsForm {
   return {
-    companyName: String(data?.name ?? ''),
-    phoneNumber: String(data?.phone_number ?? ''),
-    emailAddress: String(data?.email_address ?? ''),
-    websiteUrl: String(data?.website_url ?? ''),
-    physicalAddress: String(data?.physical_address ?? ''),
-    primaryContact: String(data?.primary_contact ?? ''),
-    emergencyContact: String(data?.emergency_contact ?? ''),
-    safetyManager: String(data?.safety_manager ?? ''),
-    stopWorkAuthorityStatement: String(data?.stop_work_authority_statement ?? ''),
-    hazardReportingStatement: String(data?.hazard_reporting_statement ?? ''),
-    emergencyProceduresSummary: String(data?.emergency_procedures_summary ?? ''),
-    logoPath: String(data?.logo_path ?? ''),
-    logoUrl: String(data?.logo_url ?? '')
+    firstName: String(profile?.first_name ?? ''),
+    lastName: String(profile?.last_name ?? ''),
+    faaPartNumber: String(profile?.faa_part_number ?? ''),
+    companyName: String(organization?.name ?? ''),
+    phoneNumber: String(organization?.phone_number ?? ''),
+    emailAddress: String(organization?.email_address ?? ''),
+    websiteUrl: String(organization?.website_url ?? ''),
+    physicalAddress: String(organization?.physical_address ?? ''),
+    primaryContact: String(organization?.primary_contact ?? ''),
+    companyStatement: String(organization?.company_statement ?? ''),
+    safetyManager: String(organization?.safety_manager ?? ''),
+    stopWorkAuthorityStatement: String(organization?.stop_work_authority_statement ?? ''),
+    hazardReportingStatement: String(organization?.hazard_reporting_statement ?? ''),
+    emergencyProceduresSummary: String(organization?.emergency_procedures_summary ?? ''),
+    logoPath: String(organization?.logo_path ?? ''),
+    logoUrl: String(organization?.logo_url ?? '')
   };
 }
 
@@ -144,7 +161,6 @@ function SettingsInput({
 }
 
 export function SettingsPage() {
-  const navigate = useNavigate();
   const { session } = useAuth();
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [settings, setSettings] = useState<SettingsForm>(emptySettingsForm);
@@ -153,7 +169,6 @@ export function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
-  const [isSigningOut, setIsSigningOut] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -174,7 +189,7 @@ export function SettingsPage() {
       try {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('organization_id')
+          .select('organization_id, first_name, last_name, company_name, faa_part_number')
           .eq('id', session.user.id)
           .maybeSingle();
 
@@ -184,7 +199,7 @@ export function SettingsPage() {
         const { data: organization, error: organizationError } = await supabase
           .from('organizations')
           .select(
-            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, emergency_contact, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
           )
           .eq('id', profile.organization_id)
           .maybeSingle();
@@ -194,7 +209,7 @@ export function SettingsPage() {
 
         if (!isMounted) return;
 
-        const normalizedSettings = normalizeSettings(organization);
+        const normalizedSettings = normalizeSettings(organization, profile);
         setOrganizationId(organization.id as string);
         setSettings(normalizedSettings);
         setDraft(normalizedSettings);
@@ -233,7 +248,7 @@ export function SettingsPage() {
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!organizationId || !editingSection) return;
+    if (!editingSection) return;
 
     const companyName = draft.companyName.trim();
     if (editingSection === 'organization' && !companyName) {
@@ -241,43 +256,91 @@ export function SettingsPage() {
       return;
     }
 
+    if (editingSection === 'organization' && !organizationId) return;
+    if (editingSection === 'safety' && !organizationId) return;
+
     setIsSaving(true);
     setError(null);
     setMessage(null);
 
     try {
-      const changes =
-        editingSection === 'organization'
-          ? {
-              name: companyName,
-              phone_number: draft.phoneNumber.trim() || null,
-              email_address: draft.emailAddress.trim() || null,
-              website_url: draft.websiteUrl.trim() || null,
-              physical_address: draft.physicalAddress.trim() || null,
-              primary_contact: draft.primaryContact.trim() || null,
-              emergency_contact: draft.emergencyContact.trim() || null,
-              updated_at: new Date().toISOString()
-            }
-          : {
-              safety_manager: draft.safetyManager.trim() || null,
-              stop_work_authority_statement: draft.stopWorkAuthorityStatement.trim() || null,
-              hazard_reporting_statement: draft.hazardReportingStatement.trim() || null,
-              emergency_procedures_summary: draft.emergencyProceduresSummary.trim() || null,
-              updated_at: new Date().toISOString()
-            };
+      let updatedSettings = draft;
 
-      const { data, error: updateError } = await supabase
-        .from('organizations')
-        .update(changes)
-        .eq('id', organizationId)
-        .select(
-          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, emergency_contact, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
-        )
-        .single();
+      if (editingSection === 'user') {
+        if (!session?.user.id) throw new Error('User session not found. Please log in again.');
 
-      if (updateError) throw updateError;
+        const { data, error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            first_name: draft.firstName.trim() || null,
+            last_name: draft.lastName.trim() || null,
+            faa_part_number: draft.faaPartNumber.trim() || null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', session.user.id)
+          .select('organization_id, first_name, last_name, company_name, faa_part_number')
+          .single();
 
-      const updatedSettings = normalizeSettings(data);
+        if (updateError) throw updateError;
+
+        updatedSettings = normalizeSettings(
+          {
+            id: organizationId,
+            name: settings.companyName,
+            phone_number: settings.phoneNumber,
+            email_address: settings.emailAddress,
+            website_url: settings.websiteUrl,
+            physical_address: settings.physicalAddress,
+            primary_contact: settings.primaryContact,
+            company_statement: settings.companyStatement,
+            safety_manager: settings.safetyManager,
+            stop_work_authority_statement: settings.stopWorkAuthorityStatement,
+            hazard_reporting_statement: settings.hazardReportingStatement,
+            emergency_procedures_summary: settings.emergencyProceduresSummary,
+            logo_path: settings.logoPath,
+            logo_url: settings.logoUrl
+          },
+          data
+        );
+      } else {
+        const changes =
+          editingSection === 'organization'
+            ? {
+                name: companyName,
+                phone_number: draft.phoneNumber.trim() || null,
+                email_address: draft.emailAddress.trim() || null,
+                website_url: draft.websiteUrl.trim() || null,
+                physical_address: draft.physicalAddress.trim() || null,
+                primary_contact: draft.primaryContact.trim() || null,
+                company_statement: draft.companyStatement.trim() || null,
+                updated_at: new Date().toISOString()
+              }
+            : {
+                safety_manager: draft.safetyManager.trim() || null,
+                stop_work_authority_statement: draft.stopWorkAuthorityStatement.trim() || null,
+                hazard_reporting_statement: draft.hazardReportingStatement.trim() || null,
+                emergency_procedures_summary: draft.emergencyProceduresSummary.trim() || null,
+                updated_at: new Date().toISOString()
+              };
+
+        const { data, error: updateError } = await supabase
+          .from('organizations')
+          .update(changes)
+          .eq('id', organizationId)
+          .select(
+            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+          )
+          .single();
+
+        if (updateError) throw updateError;
+
+        updatedSettings = normalizeSettings(data, {
+          first_name: settings.firstName,
+          last_name: settings.lastName,
+          faa_part_number: settings.faaPartNumber
+        });
+      }
+
       setSettings(updatedSettings);
       setDraft(updatedSettings);
       setEditingSection(null);
@@ -321,7 +384,7 @@ export function SettingsPage() {
         .update({ logo_path: logoPath, logo_url: logoUrl, updated_at: new Date().toISOString() })
         .eq('id', organizationId)
         .select(
-          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, emergency_contact, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
         )
         .single();
 
@@ -331,7 +394,11 @@ export function SettingsPage() {
         await supabase.storage.from('organization-logos').remove([settings.logoPath]);
       }
 
-      const updatedSettings = normalizeSettings(data);
+      const updatedSettings = normalizeSettings(data, {
+        first_name: settings.firstName,
+        last_name: settings.lastName,
+        faa_part_number: settings.faaPartNumber
+      });
       setSettings(updatedSettings);
       setDraft(updatedSettings);
       setMessage('Logo updated.');
@@ -339,21 +406,6 @@ export function SettingsPage() {
       setError(getErrorMessage(logoError, 'Unable to upload logo.'));
     } finally {
       setIsUploadingLogo(false);
-    }
-  }
-
-  async function handleSignOut() {
-    setIsSigningOut(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-      const { error: signOutError } = await supabase.auth.signOut();
-      if (signOutError) throw signOutError;
-      navigate('/', { replace: true });
-    } catch (signOutError) {
-      setError(getErrorMessage(signOutError, 'Unable to log out.'));
-      setIsSigningOut(false);
     }
   }
 
@@ -383,28 +435,11 @@ export function SettingsPage() {
                 <h2 className="text-lg font-semibold text-brand-900">User Profile</h2>
                 <p className="mt-1 text-sm text-slate-600">Manage your personal and professional information.</p>
               </div>
-              <button
-                type="button"
-                className="rounded-lg border border-brand-700 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50"
-                onClick={() => navigate('/settings/profile')}
-              >
-                Edit Profile
-              </button>
-            </div>
-            <p className="mt-4 text-sm text-slate-600">Visit your profile page to update your name, company affiliation, and FAA license information.</p>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-brand-900">Organization</h2>
-                <p className="mt-1 text-sm text-slate-600">Core company and emergency contact information.</p>
-              </div>
-              {editingSection !== 'organization' ? (
+              {editingSection !== 'user' ? (
                 <button
                   type="button"
                   className="rounded-lg border border-brand-700 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
-                  onClick={() => beginEdit('organization')}
+                  onClick={() => beginEdit('user')}
                   disabled={Boolean(editingSection)}
                 >
                   Edit
@@ -412,9 +447,9 @@ export function SettingsPage() {
               ) : null}
             </div>
 
-            {editingSection === 'organization' ? (
+            {editingSection === 'user' ? (
               <form className="mt-4 space-y-4" onSubmit={handleSave}>
-                {organizationFields.map((field) => (
+                {userFields.map((field) => (
                   <SettingsInput
                     key={field.key}
                     label={field.label}
@@ -446,8 +481,79 @@ export function SettingsPage() {
               </form>
             ) : (
               <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {organizationFields.map((field) => (
+                {userFields.map((field) => (
                   <FieldDisplay key={field.key} label={field.label} value={settings[field.key]} />
+                ))}
+                <FieldDisplay label="Login Email" value={userEmail} />
+              </dl>
+            )}
+          </article>
+
+          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-brand-900">Organization</h2>
+                <p className="mt-1 text-sm text-slate-600">Core company details and public company statement.</p>
+              </div>
+              {editingSection !== 'organization' ? (
+                <button
+                  type="button"
+                  className="rounded-lg border border-brand-700 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
+                  onClick={() => beginEdit('organization')}
+                  disabled={Boolean(editingSection)}
+                >
+                  Edit
+                </button>
+              ) : null}
+            </div>
+
+            {editingSection === 'organization' ? (
+              <form className="mt-4" onSubmit={handleSave}>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {organizationFields.map((field) => (
+                    <div
+                      key={field.key}
+                      className={field.key === 'companyStatement' ? 'sm:col-span-2' : ''}
+                    >
+                      <SettingsInput
+                        label={field.label}
+                        name={field.key}
+                        value={draft[field.key]}
+                        type={field.type}
+                        autoComplete={field.autoComplete}
+                        disabled={isSaving}
+                        onChange={updateDraft}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <button
+                    type="submit"
+                    className="min-h-11 rounded-lg bg-brand-700 px-3 py-3 text-sm font-medium text-white transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
+                    disabled={isSaving}
+                  >
+                    {isSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    className="min-h-11 rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 sm:py-2"
+                    onClick={cancelEdit}
+                    disabled={isSaving}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {organizationFields.map((field) => (
+                  <div
+                    key={field.key}
+                    className={field.key === 'companyStatement' ? 'sm:col-span-2' : ''}
+                  >
+                    <FieldDisplay label={field.label} value={settings[field.key]} />
+                  </div>
                 ))}
               </dl>
             )}
@@ -536,21 +642,7 @@ export function SettingsPage() {
             <p className="mt-2 text-xs text-slate-500">{isUploadingLogo ? 'Uploading logo...' : 'Choosing a new image replaces the current logo.'}</p>
           </article>
 
-          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <h2 className="text-lg font-semibold text-brand-900">Account</h2>
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Logged-in User Email</p>
-              <p className="mt-1 break-words text-sm text-slate-800">{userEmail}</p>
-            </div>
-            <button
-              type="button"
-              className="mt-4 min-h-11 w-full rounded-lg bg-red-600 px-3 py-3 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-              onClick={handleSignOut}
-              disabled={isSigningOut}
-            >
-              {isSigningOut ? 'Logging out...' : 'Log Out'}
-            </button>
-          </article>
+
         </>
       )}
     </section>

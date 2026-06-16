@@ -78,7 +78,7 @@ function LogoutButton({ onLogout }: LogoutButtonProps) {
     <button
       type="button"
       onClick={handleLogout}
-      className="flex w-full items-center rounded-xl border border-slate-200 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
+      className="flex w-full items-center rounded-xl bg-red-400/40 px-3 py-2.5 text-left text-sm font-semibold text-red-900 transition hover:bg-red-400/50 focus:outline-none focus:ring-2 focus:ring-red-600 focus:ring-offset-2"
     >
       Logout
     </button>

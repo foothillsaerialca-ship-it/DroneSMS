@@ -40,7 +40,7 @@ export function OrganizationIdentityCard({
           <IdentityField label="Email" value={organization?.email ?? ''} />
           <IdentityField label="Address" value={organization?.address ?? ''} />
           <IdentityField label="Primary Contact" value={organization?.primaryContact ?? ''} />
-          <IdentityField label="Emergency Contact" value={organization?.emergencyContact ?? ''} />
+          <IdentityField label="Company Statement" value={organization?.companyStatement ?? ''} />
         </dl>
       )}
     </section>

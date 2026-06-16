@@ -105,7 +105,7 @@ export function CompanyOnboardingPage() {
 
       const { data: profile, error: profileLookupError } = await supabase
         .from('profiles')
-        .select('organization_id, full_name, faa_part_number')
+        .select('organization_id, first_name, last_name, faa_part_number')
         .eq('id', userData.user.id)
         .maybeSingle();
 
@@ -122,7 +122,8 @@ export function CompanyOnboardingPage() {
         {
           id: userData.user.id,
           organization_id: organizationId,
-          full_name: profile?.full_name || userData.user.user_metadata?.full_name || null,
+          first_name: profile?.first_name || userData.user.user_metadata?.first_name || null,
+          last_name: profile?.last_name || userData.user.user_metadata?.last_name || null,
           company_name: trimmedCompanyName,
           faa_part_number: trimmedPart107Number || profile?.faa_part_number || null,
           updated_at: new Date().toISOString()

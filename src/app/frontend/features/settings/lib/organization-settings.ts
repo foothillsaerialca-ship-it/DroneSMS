@@ -10,7 +10,7 @@ export type OrganizationSettings = {
   website: string;
   address: string;
   primaryContact: string;
-  emergencyContact: string;
+  companyStatement: string;
   logoPath: string;
   logoUrl: string;
 };
@@ -26,7 +26,7 @@ export function normalizeOrganizationSettings(data: Record<string, unknown> | nu
     website: String(data.website_url ?? ''),
     address: String(data.physical_address ?? ''),
     primaryContact: String(data.primary_contact ?? ''),
-    emergencyContact: String(data.emergency_contact ?? ''),
+    companyStatement: String(data.company_statement ?? ''),
     logoPath: String(data.logo_path ?? ''),
     logoUrl: String(data.logo_url ?? '')
   };
@@ -55,7 +55,7 @@ export async function loadOrganizationSettingsForUser(userId: string) {
 
   const { data: organization, error: organizationError } = await supabase
     .from('organizations')
-    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, emergency_contact, logo_path, logo_url')
+    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, logo_path, logo_url')
     .eq('id', profile.organization_id)
     .maybeSingle();
 
@@ -67,7 +67,7 @@ export async function loadOrganizationSettingsForUser(userId: string) {
 export async function loadOrganizationSettingsById(organizationId: string) {
   const { data: organization, error } = await supabase
     .from('organizations')
-    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, emergency_contact, logo_path, logo_url')
+    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, logo_path, logo_url')
     .eq('id', organizationId)
     .maybeSingle();
 

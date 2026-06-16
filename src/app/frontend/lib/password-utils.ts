@@ -1,5 +1,3 @@
-import bcrypt from 'bcryptjs';
-
 export interface PasswordRequirements {
   hasMinLength: boolean;
   hasUpperCase: boolean;
@@ -23,9 +21,4 @@ export function areAllRequirementsMet(requirements: PasswordRequirements): boole
     requirements.hasNumber &&
     requirements.hasSpecialChar
   );
-}
-
-export async function hashPassword(password: string): Promise<string> {
-  const salt = await bcrypt.genSalt(10);
-  return bcrypt.hash(password, salt);
 }

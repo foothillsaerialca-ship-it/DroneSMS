@@ -36,8 +36,13 @@ The active package versions are defined in `package.json` and locked in `package
 
 1. Open a terminal in the project root:
 
+2. Verify migrations are correct:
 
-2. Install dependencies:
+```bash
+npm install
+```
+
+3. Install dependencies:
 
 ```bash
 npm install

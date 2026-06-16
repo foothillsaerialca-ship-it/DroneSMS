@@ -1,14 +1,13 @@
-0. verify current application infrastructure works post refactorization. 
-1. create login and registration edits for verified password, email varification, 
-    password requirements like capitals and such
-2. add logout button on dashboard 
-3. create user based session browsing to prevent login bypass
-4. 
+1. remove the profile page entirely if it is unused and clean up other unused pages and routes. 
+delete the unused pages associated with the profile. 
+modify the entire settings layout to be more user friendly and presented better
+2. user email and password change support
+3. email verification for registration, and email and password changes
+4. have non-displayed backup email support
 
 Eventual:
     Subscription Paywall info
     session safety and middleware for user verification
-    pdf exportation
 
 
 Suggest getting it out on market locally 

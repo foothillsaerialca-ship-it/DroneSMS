@@ -4,20 +4,26 @@ import { supabase, isSupabaseConfigured } from '@frontend/lib/supabase';
 import {
   validatePasswordRequirements,
   areAllRequirementsMet,
-  hashPassword,
 } from '@frontend/lib/password-utils';
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to create account. Please try again.';
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+  }
+  return 'Unable to create account. Please try again.';
 }
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const configured = isSupabaseConfigured();
 
@@ -41,8 +47,11 @@ export function RegisterPage() {
       return;
     }
 
-    if (!fullName.trim() || !email.trim() || !password) {
-      setError('Full name, email, and password are required.');
+    const trimmedFirstName = firstName.trim();
+    const trimmedLastName = lastName.trim();
+
+    if (!trimmedFirstName || !trimmedLastName || !email.trim() || !password) {
+      setError('First name, last name, email, and password are required.');
       return;
     }
 
@@ -57,17 +66,17 @@ export function RegisterPage() {
     }
 
     setError(null);
+    setSuccessMessage(null);
     setIsSubmitting(true);
 
     try {
-      const hashedPassword = await hashPassword(password);
-
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
-        password: hashedPassword,
+        password,
         options: {
           data: {
-            full_name: fullName.trim()
+            first_name: trimmedFirstName,
+            last_name: trimmedLastName
           }
         }
       });
@@ -75,11 +84,16 @@ export function RegisterPage() {
       if (signUpError) throw signUpError;
       if (!authData.user?.id) throw new Error('Signup succeeded but user ID was not returned.');
 
-      // Create profile record with full_name
+      if (!authData.session) {
+        setSuccessMessage('Account created. Check your email to confirm your account, then sign in.');
+        return;
+      }
+
       const { error: profileError } = await supabase.from('profiles').upsert(
         {
           id: authData.user.id,
-          full_name: fullName.trim(),
+          first_name: trimmedFirstName,
+          last_name: trimmedLastName,
           updated_at: new Date().toISOString()
         },
         { onConflict: 'id' }
@@ -108,13 +122,25 @@ export function RegisterPage() {
 
       <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
         <label className="block text-sm font-medium text-slate-700">
-          Full Name
+          First Name
           <input
             className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             type="text"
-            placeholder="Alex Pilot"
-            value={fullName}
-            onChange={(event) => setFullName(event.target.value)}
+            placeholder="Alex"
+            value={firstName}
+            onChange={(event) => setFirstName(event.target.value)}
+            disabled={isSubmitting || !configured}
+            required
+          />
+        </label>
+        <label className="block text-sm font-medium text-slate-700">
+          Last Name
+          <input
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+            type="text"
+            placeholder="Pilot"
+            value={lastName}
+            onChange={(event) => setLastName(event.target.value)}
             disabled={isSubmitting || !configured}
             required
           />
@@ -208,6 +234,11 @@ export function RegisterPage() {
         {error ? (
           <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
             {error}
+          </p>
+        ) : null}
+        {successMessage ? (
+          <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700" role="status">
+            {successMessage}
           </p>
         ) : null}
 

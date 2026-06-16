@@ -10,7 +10,8 @@ function getErrorMessage(error: unknown) {
 export function ProfilePage() {
   const navigate = useNavigate();
   const { session } = useAuth();
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [faaPartNumber, setFaaPartNumber] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -28,14 +29,15 @@ export function ProfilePage() {
       try {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('full_name, company_name, faa_part_number')
+          .select('first_name, last_name, company_name, faa_part_number')
           .eq('id', session.user.id)
           .maybeSingle();
 
         if (profileError) throw profileError;
 
         if (profile) {
-          setFullName(profile.full_name || '');
+          setFirstName(profile.first_name || '');
+          setLastName(profile.last_name || '');
           setCompanyName(profile.company_name || '');
           setFaaPartNumber(profile.faa_part_number || '');
         }
@@ -65,7 +67,8 @@ export function ProfilePage() {
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
-          full_name: fullName.trim() || null,
+          first_name: firstName.trim() || null,
+          last_name: lastName.trim() || null,
           company_name: companyName.trim() || null,
           faa_part_number: faaPartNumber.trim() || null,
           updated_at: new Date().toISOString()
@@ -96,13 +99,26 @@ export function ProfilePage() {
       ) : (
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <label className="block text-sm font-medium text-slate-700">
-            Full Name
+            First Name
             <input
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               type="text"
-              placeholder="Your full name"
-              value={fullName}
-              onChange={(event) => setFullName(event.target.value)}
+              placeholder="Your first name"
+              value={firstName}
+              onChange={(event) => setFirstName(event.target.value)}
+              disabled={isSaving}
+              required
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-slate-700">
+            Last Name
+            <input
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              type="text"
+              placeholder="Your last name"
+              value={lastName}
+              onChange={(event) => setLastName(event.target.value)}
               disabled={isSaving}
               required
             />
