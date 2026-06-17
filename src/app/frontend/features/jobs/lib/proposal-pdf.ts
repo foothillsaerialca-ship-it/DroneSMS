@@ -78,6 +78,8 @@ type ProposalEquipmentAssignment = {
 };
 
 type PdfImage = { bytes: Uint8Array; width: number; height: number };
+type PacketPhotoImage = PdfImage & { id: string; caption: string | null; timestamp: string | null; hazardId: string | null; hazardName: string | null; photoUrl: string; category: string | null };
+type TocGroup = { title: string; items: string[] };
 type TableColumn = { header: string; width: number; align?: 'left' | 'right' | 'center' };
 type TableCell = string | number | null | undefined;
 type TableOptions = { totalRowIndex?: number; minRowHeight?: number };
@@ -95,6 +97,7 @@ class PdfBuilder {
   private readonly panelStateId: number;
   private logoImageId: number | null = null;
   private logo: PdfImage | null = null;
+  private imageXObjects: Array<{ name: string; id: number }> = [];
 
   constructor(logo: PdfImage | null) {
     this.catalogId = this.addObject('');
@@ -175,6 +178,24 @@ class PdfBuilder {
     page.commands.push('Q');
   }
 
+
+
+  addJpegImage(image: PdfImage) {
+    const name = `Img${this.imageXObjects.length + 1}`;
+    const id = this.addStream(
+      image.bytes,
+      `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/ASCIIHexDecode /DCTDecode] /Length ${image.bytes.length * 2 + 1} >>`,
+    );
+    this.imageXObjects.push({ name, id });
+    return name;
+  }
+
+  drawNamedImage(page: PageState, name: string, x: number, y: number, width: number, height: number) {
+    page.commands.push('q');
+    page.commands.push(`${formatNumber(width)} 0 0 ${formatNumber(height)} ${formatNumber(x)} ${formatNumber(y)} cm /${name} Do`);
+    page.commands.push('Q');
+  }
+
   drawCircularImage(page: PageState, centerX: number, centerY: number, diameter: number, opacity = 1) {
     const logo = this.logo;
     if (!this.logoImageId || !logo) return;
@@ -201,7 +222,8 @@ class PdfBuilder {
     for (const page of this.pages) {
       const stream = page.commands.join('\n');
       this.setObject(page.contentId, `<< /Length ${byteLength(stream)} >>\nstream\n${stream}\nendstream`);
-      const xObjects = this.logoImageId ? `/XObject << /Logo ${this.logoImageId} 0 R >>` : '';
+      const xObjectEntries = [this.logoImageId ? `/Logo ${this.logoImageId} 0 R` : '', ...this.imageXObjects.map((image) => `/${image.name} ${image.id} 0 R`)].filter(Boolean).join(' ');
+      const xObjects = xObjectEntries ? `/XObject << ${xObjectEntries} >>` : '';
       this.setObject(page.pageId, `<< /Type /Page /Parent ${this.pagesId} 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Resources << /Font << /F1 ${this.fontRegularId} 0 R /F2 ${this.fontBoldId} 0 R /F3 ${this.fontObliqueId} 0 R >> /ExtGState << /GS1 ${this.watermarkStateId} 0 R /GS2 ${this.panelStateId} 0 R >> ${xObjects} >> /Contents ${page.contentId} 0 R >>`);
     }
 
@@ -255,8 +277,9 @@ class ProposalPdfRenderer {
     this.currentPage = this.pdf.addPage();
   }
 
-  render() {
+  render(options: { tableOfContents?: TocGroup[]; jobPacketDivider?: { projectNumber: string } } = {}) {
     this.renderCover();
+    if (options.tableOfContents) this.renderTableOfContents(options.tableOfContents);
 
     this.startContentPage();
     this.section('EXECUTIVE SUMMARY');
@@ -332,6 +355,37 @@ class ProposalPdfRenderer {
     this.section('ACCEPTANCE');
     this.paragraph('Signature constitutes acceptance of the scope, pricing, and conditions in this proposal.', 8);
     this.signatureBlock();
+    if (options.jobPacketDivider) this.renderJobPacketDivider(options.jobPacketDivider.projectNumber);
+  }
+
+  renderTableOfContents(groups: TocGroup[]) {
+    this.startContentPage(false);
+    this.pdf.drawText(this.currentPage, 'TABLE OF CONTENTS', MARGIN, this.y, { size: 15, font: 'bold', color: NAVY });
+    this.pdf.drawLine(this.currentPage, MARGIN, this.y - 8, PAGE_WIDTH - MARGIN, this.y - 8, BLUE, 1.05);
+    this.y -= 34;
+    groups.filter((group) => group.items.length > 0).forEach((group) => {
+      this.ensureSpace(32 + group.items.length * 15);
+      this.pdf.drawText(this.currentPage, group.title, MARGIN, this.y, { size: 10.5, font: 'bold', color: BLUE });
+      this.y -= 18;
+      group.items.forEach((item) => {
+        this.pdf.drawText(this.currentPage, '•', MARGIN + 8, this.y, { size: 9.5, color: BLUE, font: 'bold' });
+        this.pdf.drawText(this.currentPage, item, MARGIN + 24, this.y, { size: 9.4, color: NAVY });
+        this.y -= 15;
+      });
+      this.y -= 10;
+    });
+  }
+
+  renderJobPacketDivider(projectNumber: string) {
+    this.pageNumber += 1;
+    this.currentPage = this.pdf.addPage();
+    this.watermark(this.currentPage);
+    const centerX = PAGE_WIDTH / 2;
+    this.pdf.drawText(this.currentPage, 'JOB PACKET', centerX, PAGE_HEIGHT - 280, { size: 26, font: 'bold', color: NAVY, align: 'center' });
+    this.pdf.drawLine(this.currentPage, MARGIN + 120, PAGE_HEIGHT - 306, PAGE_WIDTH - MARGIN - 120, PAGE_HEIGHT - 306, BLUE, 1.2);
+    this.pdf.drawText(this.currentPage, 'Operational Record', centerX, PAGE_HEIGHT - 336, { size: 14, font: 'bold', color: GRAY, align: 'center' });
+    this.pdf.drawText(this.currentPage, `Project Number: ${projectNumber || 'Not recorded'}`, centerX, PAGE_HEIGHT - 382, { size: 10.5, color: NAVY, align: 'center' });
+    this.pdf.drawText(this.currentPage, 'Generated by DroneSMS', centerX, PAGE_HEIGHT - 405, { size: 10.5, color: NAVY, align: 'center' });
   }
 
   private renderCover() {
@@ -356,12 +410,12 @@ class ProposalPdfRenderer {
     this.footer(this.currentPage, this.pageNumber);
   }
 
-  private startContentPage() {
+  startContentPage(showPageNumber = true) {
     this.pageNumber += 1;
     this.currentPage = this.pdf.addPage();
     this.watermark(this.currentPage);
     this.header(this.currentPage);
-    this.footer(this.currentPage, this.pageNumber);
+    this.footer(this.currentPage, showPageNumber ? this.pageNumber : 1);
     this.y = PAGE_HEIGHT - 78;
   }
 
@@ -391,7 +445,7 @@ class ProposalPdfRenderer {
     this.pdf.drawText(page, companyNameFor(this.organization), PAGE_WIDTH / 2, PAGE_HEIGHT / 2, { size: 36, font: 'bold', color: LIGHT_GRAY, align: 'center' });
   }
 
-  private section(title: string, subtitle?: string) {
+  section(title: string, subtitle?: string) {
     this.ensureSpace(subtitle ? 48 : 34);
     this.pdf.drawText(this.currentPage, title, MARGIN, this.y, { size: 12.5, font: 'bold', color: NAVY });
     this.pdf.drawLine(this.currentPage, MARGIN, this.y - 7, PAGE_WIDTH - MARGIN, this.y - 7, BLUE, 1.05);
@@ -399,7 +453,7 @@ class ProposalPdfRenderer {
     if (subtitle) this.y = this.pdf.drawWrappedText(this.currentPage, subtitle, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 8.6, font: 'oblique', color: GRAY, lineHeight: 11 }) - 3;
   }
 
-  private paragraph(text: string, spacing = 16) {
+  paragraph(text: string, spacing = 16) {
     const paragraphs = text.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
     if (paragraphs.length === 0) return;
 
@@ -410,7 +464,7 @@ class ProposalPdfRenderer {
     });
   }
 
-  private bullets(items: string[]) {
+  bullets(items: string[]) {
     for (const item of items) {
       this.ensureSpace(21);
       this.pdf.drawText(this.currentPage, '•', MARGIN + 5, this.y, { size: 9.5, color: BLUE, font: 'bold' });
@@ -419,11 +473,11 @@ class ProposalPdfRenderer {
     this.y -= 6;
   }
 
-  private keyValueTable(rows: Array<[string, string]>) {
+  keyValueTable(rows: Array<[string, string]>) {
     this.table([['Item', 'Details'], ...rows], [155, 332]);
   }
 
-  private table(rows: TableCell[][], columnWidths: number[], options: TableOptions = {}) {
+  table(rows: TableCell[][], columnWidths: number[], options: TableOptions = {}) {
     const columns = rows[0].map((header, index) => ({ header: String(header ?? ''), width: columnWidths[index] ?? 100 }));
     this.drawTable(columns, rows.slice(1), options);
   }
@@ -515,7 +569,7 @@ class ProposalPdfRenderer {
     this.pdf.drawText(this.currentPage, label, x, y - 11, { size: 7.6, font: 'regular', color: GRAY });
   }
 
-  private ensureSpace(required: number) {
+  ensureSpace(required: number) {
     if (this.y - required > 52) return;
     this.startContentPage();
   }
@@ -553,6 +607,7 @@ type JobPacketSafetyEvent = { category: string | null; description: string | nul
 type JobPacketJha = { status: string | null; faa_airspace_class: string | null; laanc_required: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
 type JobPacketPreflight = Record<string, boolean | string | null> & { status: string | null; notes?: string | null; final_rpic_approval?: boolean | null };
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
+type JobPacketPhoto = { id: string; hazard_id: string | null; hazard_name: string | null; photo_url: string; caption: string | null; include_in_packet: boolean; created_at: string | null; category?: string | null };
 
 export async function generateJobPacketPdf(jobId: string) {
   const packet = await loadJobPacketForPdf(jobId);
@@ -560,14 +615,18 @@ export async function generateJobPacketPdf(jobId: string) {
   const logo = await loadLogoImage(organization);
   const pdf = new PdfBuilder(logo);
   const proposal = packet.proposal ?? buildPacketPlaceholderProposal(packet.job);
-  const renderer = new ProposalPdfRenderer(pdf, proposal, organization) as any;
+  const renderer = new ProposalPdfRenderer(pdf, proposal, organization);
+  const packetPhotos = await loadPacketPhotoImages(packet.photos);
+  const toc = buildCloseoutTableOfContents(packet, packetPhotos);
 
-  if (packet.proposal) renderer.render();
+  if (packet.proposal) renderer.render({ tableOfContents: toc, jobPacketDivider: { projectNumber: proposalNumber(proposal) } });
   else {
-    renderer.renderCover();
+    (renderer as any).renderCover();
+    renderer.renderTableOfContents(toc);
     renderer.startContentPage();
     renderer.section('PROPOSAL');
     renderer.paragraph('No associated proposal was found for this job. Operational packet sections continue below.');
+    renderer.renderJobPacketDivider(proposalNumber(proposal));
   }
 
   renderer.startContentPage();
@@ -587,11 +646,11 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.section('EQUIPMENT ASSIGNMENT');
   renderer.table([['Equipment', 'Type / Purpose'], ...(packet.equipmentAssignments.length ? packet.equipmentAssignments.map((a) => [clean(a.equipment?.name) || 'Equipment record unavailable', clean(a.equipment?.equipment_type) || 'Unknown type']) : [['Not assigned', 'Equipment was not assigned in the job record.']])], [220, 267]);
   renderer.section('JHA SUMMARY');
-  renderer.table([['Hazard', 'Category', 'Mitigation'], ...buildJobHazardRows(packet.jha)], [165, 95, 227]);
+  renderJhaSummary(renderer, pdf, packet.jha, packetPhotos);
   renderer.section('AIRSPACE REVIEW');
   renderer.keyValueTable([['Airspace Class', clean(packet.jha?.faa_airspace_class) || PLACEHOLDER], ['Nearby Airport', PLACEHOLDER], ['LAANC Required', clean(packet.jha?.laanc_required) || PLACEHOLDER], ['Operational Finding', packet.jha ? `JHA status: ${clean(packet.jha.status) || 'Draft'}. Controls in place: ${packet.jha.controls_in_place ? 'Yes' : 'No'}.` : 'Airspace review not started.']]);
-  renderer.section('CREW BRIEFING');
-  renderer.paragraph(packet.jha?.crew_briefed ? 'Briefing was completed through the JHA.' : packet.jha ? 'Briefing is pending in the JHA.' : 'To be completed prior to flight operations.');
+  const documentationPhotos = packetPhotos.filter((photo) => !photo.hazardId);
+  if (documentationPhotos.length) renderPhotoDocumentation(renderer, pdf, documentationPhotos);
   renderer.section('PREFLIGHT CHECKLIST');
   renderer.table([['Checklist Item', 'State'], ...buildPreflightRows(packet.preflight)], [300, 187]);
   renderer.section('SAFETY EVENTS');
@@ -615,7 +674,7 @@ export async function generateJobPacketPdf(jobId: string) {
 }
 
 async function loadJobPacketForPdf(jobId: string) {
-  const [jobResult, assignmentsResult, equipmentResult, safetyResult, jhaResult, preflightResult, closeoutResult, documentsResult] = await Promise.all([
+  const [jobResult, assignmentsResult, equipmentResult, safetyResult, jhaResult, preflightResult, closeoutResult, documentsResult, photosResult] = await Promise.all([
     supabase.from('jobs').select('id, organization_id, user_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number, client_name, site_address').eq('id', jobId).single(),
     supabase.from('job_personnel').select('assigned_role, personnel:personnel_id(full_name, role, part_107_expiration_date, training_expiration_date, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
@@ -624,18 +683,110 @@ async function loadJobPacketForPdf(jobId: string) {
     supabase.from('preflight_checklists').select('*').eq('job_id', jobId).maybeSingle(),
     supabase.from('job_operation_closeouts').select('operation_result, deviation_narrative, updated_at').eq('job_id', jobId).maybeSingle(),
     supabase.from('generated_documents').select('document_type, file_name, display_file_name').eq('record_type', 'job').eq('record_id', jobId).is('archived_at', null).neq('document_type', 'job_packet_pdf').order('generated_at', { ascending: false }),
+    supabase.from('job_hazard_photos').select('id, hazard_id, hazard_name, photo_url, caption, include_in_packet, created_at').eq('job_id', jobId).eq('include_in_packet', true).is('deleted_at', null).order('created_at', { ascending: true }),
   ]);
-  if (jobResult.error) throw jobResult.error; if (assignmentsResult.error) throw assignmentsResult.error; if (equipmentResult.error) throw equipmentResult.error; if (safetyResult.error) throw safetyResult.error; if (jhaResult.error) throw jhaResult.error; if (preflightResult.error) throw preflightResult.error; if (closeoutResult.error) throw closeoutResult.error; if (documentsResult.error) throw documentsResult.error;
+  if (jobResult.error) throw jobResult.error; if (assignmentsResult.error) throw assignmentsResult.error; if (equipmentResult.error) throw equipmentResult.error; if (safetyResult.error) throw safetyResult.error; if (jhaResult.error) throw jhaResult.error; if (preflightResult.error) throw preflightResult.error; if (closeoutResult.error) throw closeoutResult.error; if (documentsResult.error) throw documentsResult.error; if (photosResult.error) throw photosResult.error;
   const job = jobResult.data as JobPacketRecord;
   const proposal = job.source_proposal_id ? await loadProposalForPdf(job.source_proposal_id).catch(() => null) : null;
-  return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}> };
+  return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}>, photos: (photosResult.data ?? []) as JobPacketPhoto[] };
 }
 
-function buildJobHazardRows(jha: JobPacketJha | null) {
-  const entries = Array.isArray(jha?.hazard_entries) ? jha.hazard_entries as Array<Record<string, unknown>> : [];
-  if (!entries.length) return [['No hazards documented', 'Not recorded', 'No JHA hazards or mitigations were documented.']];
-  return entries.map((entry) => [clean(String(entry.description ?? '')) || clean(String(entry.hazard ?? '')) || 'Documented hazard', clean(String(entry.category ?? '')) || clean(String(entry.owner ?? '')) || 'Operational', clean(String(entry.mitigation ?? '')) || clean(String(entry.controls ?? '')) || 'Mitigation not recorded.']);
+function getJobHazardEntries(jha: JobPacketJha | null) {
+  return Array.isArray(jha?.hazard_entries) ? (jha.hazard_entries as Array<Record<string, unknown>>) : [];
 }
+
+async function loadPacketPhotoImages(photos: JobPacketPhoto[]): Promise<PacketPhotoImage[]> {
+  const loaded = await Promise.all(photos.map(async (photo) => {
+    try {
+      const { data } = await supabase.storage.from('job-evidence-photos').createSignedUrl(photo.photo_url, 60 * 60);
+      const response = await fetch(data?.signedUrl ?? supabase.storage.from('job-evidence-photos').getPublicUrl(photo.photo_url).data.publicUrl);
+      if (!response.ok) return null;
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const dimensions = readJpegDimensions(bytes);
+      if (!dimensions) return null;
+      return { ...dimensions, bytes, id: photo.id, caption: photo.caption, timestamp: photo.created_at, hazardId: photo.hazard_id, hazardName: photo.hazard_name, photoUrl: photo.photo_url, category: photo.category ?? null };
+    } catch (error) {
+      console.warn('Unable to load packet evidence photo.', error);
+      return null;
+    }
+  }));
+  return loaded.filter(Boolean) as PacketPhotoImage[];
+}
+
+function readJpegDimensions(bytes: Uint8Array): Pick<PdfImage, 'width' | 'height'> | null {
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let offset = 2;
+  while (offset < bytes.length) {
+    if (bytes[offset] !== 0xff) return null;
+    const marker = bytes[offset + 1];
+    const length = (bytes[offset + 2] << 8) + bytes[offset + 3];
+    if (marker >= 0xc0 && marker <= 0xc3) return { height: (bytes[offset + 5] << 8) + bytes[offset + 6], width: (bytes[offset + 7] << 8) + bytes[offset + 8] };
+    offset += 2 + length;
+  }
+  return null;
+}
+
+function buildCloseoutTableOfContents(packet: Awaited<ReturnType<typeof loadJobPacketForPdf>>, photos: PacketPhotoImage[]): TocGroup[] {
+  const environmentalRows = buildEnvironmentalRows(packet.jha);
+  return [
+    { title: 'PROPOSAL', items: ['Executive Summary', 'Scope of Work', 'Personnel', 'Equipment', 'Preliminary Hazard Assessment', 'Airspace Review', 'Pricing', 'Acceptance'] },
+    { title: 'OPERATIONAL RECORD', items: ['Job Information', 'Crew Assignment', 'Equipment Assignment', ...(getJobHazardEntries(packet.jha).length ? ['JHA Summary'] : [])] },
+    { title: 'OPERATIONAL EVIDENCE', items: [...(photos.some((photo) => photo.hazardId) ? ['Hazard Mitigation Verification'] : []), ...(photos.some((photo) => !photo.hazardId) ? ['Photo Documentation'] : [])] },
+    { title: 'COMPLIANCE RECORDS', items: [...(environmentalRows.length ? ['Environmental Controls'] : []), 'Preflight Checklist', 'Safety Events'] },
+    { title: 'CLOSEOUT', items: ['Closeout Summary', 'Personnel Qualification Summary'] },
+  ];
+}
+
+function renderJhaSummary(renderer: ProposalPdfRenderer, pdf: PdfBuilder, jha: JobPacketJha | null, photos: PacketPhotoImage[]) {
+  const entries = getJobHazardEntries(jha);
+  if (!entries.length) {
+    renderer.table([['Hazard', 'Category', 'Mitigation'], ['No hazards documented', 'Not recorded', 'No JHA hazards or mitigations were documented.']], [165, 95, 227]);
+    return;
+  }
+  entries.forEach((entry, index) => {
+    const hazardId = clean(String(entry.id ?? ''));
+    const hazardName = clean(String(entry.description ?? entry.hazard ?? '')) || `Hazard ${index + 1}`;
+    renderer.table([['Hazard', 'Category', 'Mitigation'], [hazardName, clean(String(entry.category ?? entry.owner ?? '')) || 'Operational', clean(String(entry.mitigation ?? entry.controls ?? '')) || 'Mitigation not recorded.']], [165, 95, 227]);
+    const hazardPhotos = photos.filter((photo) => photo.hazardId === hazardId || (!photo.hazardId && false));
+    if (hazardPhotos.length) renderPhotoGrid(renderer, pdf, 'Verification Photos', hazardPhotos);
+  });
+}
+
+function renderPhotoDocumentation(renderer: ProposalPdfRenderer, pdf: PdfBuilder, photos: PacketPhotoImage[]) {
+  renderer.section('PHOTO DOCUMENTATION');
+  renderPhotoGrid(renderer, pdf, 'General Documentation', photos);
+}
+
+function renderPhotoGrid(renderer: ProposalPdfRenderer, pdf: PdfBuilder, title: string, photos: PacketPhotoImage[]) {
+  renderer.ensureSpace(34);
+  (pdf as any).drawText((renderer as any).currentPage, title, MARGIN, (renderer as any).y, { size: 10, font: 'bold', color: BLUE });
+  (renderer as any).y -= 18;
+  photos.forEach((photo) => {
+    renderer.ensureSpace(190);
+    const imageName = pdf.addJpegImage(photo);
+    const maxWidth = PAGE_WIDTH - MARGIN * 2;
+    const maxHeight = 140;
+    const ratio = Math.min(maxWidth / photo.width, maxHeight / photo.height);
+    const width = photo.width * ratio;
+    const height = photo.height * ratio;
+    const page = (renderer as any).currentPage as PageState;
+    const y = (renderer as any).y - height;
+    pdf.drawNamedImage(page, imageName, MARGIN, y, width, height);
+    (renderer as any).y = y - 12;
+    const caption = clean(photo.caption) || 'Operational evidence photo.';
+    (renderer as any).y = pdf.drawWrappedText(page, caption, MARGIN, (renderer as any).y, maxWidth, { size: 8.8, color: NAVY, lineHeight: 11 }) - 2;
+    const timestamp = formatPhotoTimestamp(photo.timestamp);
+    if (timestamp) (renderer as any).y = pdf.drawWrappedText(page, timestamp, MARGIN, (renderer as any).y, maxWidth, { size: 8, color: GRAY, lineHeight: 10 }) - 10;
+  });
+}
+
+function formatPhotoTimestamp(value: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date).replace(',', '');
+}
+
 
 function buildPreflightRows(preflight: JobPacketPreflight | null) {
   if (!preflight) return [['Status', 'Preflight checklist not started.']];
