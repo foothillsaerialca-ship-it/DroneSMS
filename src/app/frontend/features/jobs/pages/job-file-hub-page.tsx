@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
+import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 
 const operationResultOptions = ['Completed as Planned', 'Completed with Changes', 'Delayed', 'Aborted', 'Incident Occurred'];
@@ -176,10 +177,6 @@ function getPersonnelReadinessSummary(assignments: JobPersonnelAssignment[]) {
 
   const crewLabel = assignments.length === 1 ? 'crew member' : 'crew members';
   return `${currentAndQualified} assigned ${crewLabel} current and qualified`;
-}
-
-function formatNullable(value: string | null | undefined, fallback = 'Not documented') {
-  return value?.trim() || fallback;
 }
 
 function normalizeAssignment(row: unknown): JobPersonnelAssignment {
@@ -739,34 +736,21 @@ export function JobFileHubPage() {
     }
   }
 
-  function handleExportPacket() {
+  async function handleExportPacket() {
     if (!job) return;
 
-    const crewLines = assignments.map((assignment) => `${assignment.assigned_role}: ${assignment.personnel?.full_name ?? 'Personnel record unavailable'}`);
-    const equipmentLines = equipmentAssignments.map((assignment) => `${assignment.equipment?.name ?? 'Equipment record unavailable'} (${assignment.equipment?.equipment_type ?? 'Unknown type'})`);
-    const safetyEventLines = safetyEvents.map((event) => `${event.category} - ${event.outcome}: ${event.description}`);
-    const qualificationLines = assignments.map((assignment) => `${assignment.personnel?.full_name ?? 'Personnel record unavailable'} - Part 107: ${formatExpirationDate(assignment.personnel?.part_107_expiration_date ?? null)}, Training: ${formatExpirationDate(assignment.personnel?.training_expiration_date ?? null)}, Status: ${assignment.personnel?.status ?? 'Missing'}`);
-    const packetSections = [
-      `Job Information\n${job.name}\nService Type: ${job.service_type}\nLocation: ${job.location}\nPlanned Date: ${formatPlannedDate(job.planned_date)}\nStatus: ${job.status}`,
-      `Crew Assignment\n${crewLines.join('\n') || 'No crew assigned.'}`,
-      `Equipment Assignment\n${equipmentLines.join('\n') || 'No equipment assigned.'}`,
-      `JHA\nStatus: ${jhaSummary?.status ?? 'Not started'}`,
-      `Airspace Review (from JHA)\nAirspace Class: ${formatNullable(jhaSummary?.faa_airspace_class)}\nLAANC Required: ${formatNullable(jhaSummary?.laanc_required)}`,
-      `Crew Briefing (from JHA)\n${crewBriefingComplete ? 'Completed via JHA' : 'Not completed in JHA'}`,
-      `Preflight Checklist\nStatus: ${preflightSummary?.status ?? 'Not started'}`,
-      `Safety Events\n${safetyEventLines.join('\n') || 'No safety events recorded.'}`,
-      `Closeout Summary\nResult: ${operationCloseout?.operation_result ?? 'Not completed'}\nNarrative: ${formatNullable(operationCloseout?.deviation_narrative, 'No narrative provided')}`,
-      `Personnel Qualification Summary (from Personnel records)\n${personnelReadinessSummary}\n${qualificationLines.join('\n')}`
-    ];
-
-    const packet = packetSections.join('\n\n---\n\n');
-    const blob = new Blob([packet], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${job.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'job'}-export-packet.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
+    setCloseoutError(null);
+    setCloseoutMessage(null);
+    try {
+      const result = await generateJobPacketPdf(job.id);
+      setCloseoutMessage(
+        result.saved
+          ? 'Closeout packet PDF downloaded and saved to DroneSMS records.'
+          : 'Closeout packet PDF downloaded successfully. Unable to save a copy to DroneSMS records.',
+      );
+    } catch (exportError) {
+      setCloseoutError(getErrorMessage(exportError));
+    }
   }
 
 
@@ -1526,7 +1510,7 @@ export function JobFileHubPage() {
           <button
             type="button"
             className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 sm:min-h-0 sm:py-2"
-            onClick={handleExportPacket}
+            onClick={() => void handleExportPacket()}
             disabled={!closeoutComplete}
           >
             Export Packet

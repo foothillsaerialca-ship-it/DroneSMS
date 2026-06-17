@@ -541,6 +541,118 @@ export async function generateProposalPdf(proposalId: string) {
   }
 }
 
+
+
+type JobPacketRecord = {
+  id: string; organization_id: string; user_id: string | null; name: string; service_type: string | null; location: string | null; planned_date: string | null; status: string | null; source_proposal_id: string | null; source_proposal_number: string | null; client_name?: string | null; site_address?: string | null;
+};
+
+type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: { full_name: string | null; role: string | null; part_107_expiration_date: string | null; training_expiration_date: string | null; status: string | null } | null };
+type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipment_type: string | null; status: string | null } | null };
+type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
+type JobPacketJha = { status: string | null; faa_airspace_class: string | null; laanc_required: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
+type JobPacketPreflight = Record<string, boolean | string | null> & { status: string | null; notes?: string | null; final_rpic_approval?: boolean | null };
+type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
+
+export async function generateJobPacketPdf(jobId: string) {
+  const packet = await loadJobPacketForPdf(jobId);
+  const organization = await loadOrganizationSettingsById(packet.job.organization_id);
+  const logo = await loadLogoImage(organization);
+  const pdf = new PdfBuilder(logo);
+  const proposal = packet.proposal ?? buildPacketPlaceholderProposal(packet.job);
+  const renderer = new ProposalPdfRenderer(pdf, proposal, organization) as any;
+
+  if (packet.proposal) renderer.render();
+  else {
+    renderer.renderCover();
+    renderer.startContentPage();
+    renderer.section('PROPOSAL');
+    renderer.paragraph('No associated proposal was found for this job. Operational packet sections continue below.');
+  }
+
+  renderer.startContentPage();
+  renderer.section('JOB INFORMATION');
+  renderer.keyValueTable([
+    ['Job Name', clean(packet.job.name)],
+    ['Client', clean(packet.job.client_name) || clean(packet.proposal?.client_name) || PLACEHOLDER],
+    ['Service Type', clean(packet.job.service_type) || PLACEHOLDER],
+    ['Site Address', clean(packet.job.site_address) || clean(packet.job.location) || clean(packet.proposal?.site_address) || PLACEHOLDER],
+    ['Planned Date', formatDate(packet.job.planned_date) || 'Not scheduled'],
+    ['Actual / Completion Date', formatDate(packet.closeout?.updated_at) || 'Not recorded'],
+    ['Job Status', clean(packet.job.status) || PLACEHOLDER],
+    ['Result', clean(packet.closeout?.operation_result) || 'Not recorded'],
+  ]);
+  renderer.section('CREW ASSIGNMENT');
+  renderer.table([['Role', 'Crew Member'], ...(packet.assignments.length ? packet.assignments.map((a) => [clean(a.assigned_role) || clean(a.personnel?.role) || 'Crew', clean(a.personnel?.full_name) || 'Personnel record unavailable']) : [['Not assigned', 'No crew assigned.']])], [170, 317]);
+  renderer.section('EQUIPMENT ASSIGNMENT');
+  renderer.table([['Equipment', 'Type / Purpose'], ...(packet.equipmentAssignments.length ? packet.equipmentAssignments.map((a) => [clean(a.equipment?.name) || 'Equipment record unavailable', clean(a.equipment?.equipment_type) || 'Unknown type']) : [['Not assigned', 'Equipment was not assigned in the job record.']])], [220, 267]);
+  renderer.section('JHA SUMMARY');
+  renderer.table([['Hazard', 'Category', 'Mitigation'], ...buildJobHazardRows(packet.jha)], [165, 95, 227]);
+  renderer.section('AIRSPACE REVIEW');
+  renderer.keyValueTable([['Airspace Class', clean(packet.jha?.faa_airspace_class) || PLACEHOLDER], ['Nearby Airport', PLACEHOLDER], ['LAANC Required', clean(packet.jha?.laanc_required) || PLACEHOLDER], ['Operational Finding', packet.jha ? `JHA status: ${clean(packet.jha.status) || 'Draft'}. Controls in place: ${packet.jha.controls_in_place ? 'Yes' : 'No'}.` : 'Airspace review not started.']]);
+  renderer.section('CREW BRIEFING');
+  renderer.paragraph(packet.jha?.crew_briefed ? 'Briefing was completed through the JHA.' : packet.jha ? 'Briefing is pending in the JHA.' : 'To be completed prior to flight operations.');
+  renderer.section('PREFLIGHT CHECKLIST');
+  renderer.table([['Checklist Item', 'State'], ...buildPreflightRows(packet.preflight)], [300, 187]);
+  renderer.section('SAFETY EVENTS');
+  renderer.table([['Category', 'Outcome', 'Details'], ...(packet.safetyEvents.length ? packet.safetyEvents.map((e) => [clean(e.category) || 'Safety Event', clean(e.outcome) || 'Recorded', `${clean(e.description) || 'No description.'}${e.immediate_actions_taken ? ` Immediate actions: ${e.immediate_actions_taken}` : ''}`]) : [['None', 'None', 'No safety events recorded.']])], [95, 105, 287]);
+  const environmentalRows = buildEnvironmentalRows(packet.jha);
+  if (environmentalRows.length) { renderer.section('ENVIRONMENTAL CONTROLS'); renderer.keyValueTable(environmentalRows); }
+  renderer.section('CLOSEOUT SUMMARY');
+  renderer.keyValueTable([['Operation Result', clean(packet.closeout?.operation_result) || 'Not completed'], ['Closeout Narrative', clean(packet.closeout?.deviation_narrative) || 'No closeout narrative was provided.'], ['Completion Date', formatDate(packet.closeout?.updated_at) || 'Not recorded']]);
+  renderer.section('PERSONNEL QUALIFICATION SUMMARY');
+  renderer.table([['Name', 'Role', 'Part 107', 'Training', 'Status'], ...(packet.assignments.length ? packet.assignments.map((a) => [clean(a.personnel?.full_name) || 'Unavailable', clean(a.assigned_role) || clean(a.personnel?.role) || 'Crew', formatDate(a.personnel?.part_107_expiration_date) || 'Not tracked', formatDate(a.personnel?.training_expiration_date) || 'Not tracked', clean(a.personnel?.status) || 'Missing']) : [['No assigned crew', '-', '-', '-', '-']])], [130, 85, 88, 88, 96]);
+  if (packet.documents.length) { renderer.section('GENERATED DOCUMENTS / ATTACHMENTS SUMMARY'); renderer.bullets(packet.documents.map((d) => `${getPacketDocumentLabel(d.document_type)} - ${d.display_file_name || d.file_name || 'Generated document'}`)); }
+
+  const blob = pdf.save();
+  const fileName = buildJobPacketStorageFileName(packet.job, await getGeneratedDocumentUserId());
+  const displayFileName = buildJobPacketDisplayFileName(packet.job);
+  downloadBlob(blob, displayFileName);
+  try {
+    await saveGeneratedDocument({ blob, organizationId: packet.job.organization_id, documentType: 'job_packet_pdf', recordType: 'job', recordId: packet.job.id, generatedByUserId: await getGeneratedDocumentUserId(), fileName, displayFileName, storagePath: `job/${packet.job.id}/${fileName}` });
+    return { saved: true };
+  } catch (error) { console.error('Unable to save job packet PDF to DroneSMS records.', error); return { saved: false, error }; }
+}
+
+async function loadJobPacketForPdf(jobId: string) {
+  const [jobResult, assignmentsResult, equipmentResult, safetyResult, jhaResult, preflightResult, closeoutResult, documentsResult] = await Promise.all([
+    supabase.from('jobs').select('id, organization_id, user_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number, client_name, site_address').eq('id', jobId).single(),
+    supabase.from('job_personnel').select('assigned_role, personnel:personnel_id(full_name, role, part_107_expiration_date, training_expiration_date, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
+    supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
+    supabase.from('job_safety_events').select('category, description, immediate_actions_taken, outcome, created_at').eq('job_id', jobId).order('created_at', { ascending: false }),
+    supabase.from('jha_assessments').select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, hazard_entries, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
+    supabase.from('preflight_checklists').select('*').eq('job_id', jobId).maybeSingle(),
+    supabase.from('job_operation_closeouts').select('operation_result, deviation_narrative, updated_at').eq('job_id', jobId).maybeSingle(),
+    supabase.from('generated_documents').select('document_type, file_name, display_file_name').eq('record_type', 'job').eq('record_id', jobId).is('archived_at', null).neq('document_type', 'job_packet_pdf').order('generated_at', { ascending: false }),
+  ]);
+  if (jobResult.error) throw jobResult.error; if (assignmentsResult.error) throw assignmentsResult.error; if (equipmentResult.error) throw equipmentResult.error; if (safetyResult.error) throw safetyResult.error; if (jhaResult.error) throw jhaResult.error; if (preflightResult.error) throw preflightResult.error; if (closeoutResult.error) throw closeoutResult.error; if (documentsResult.error) throw documentsResult.error;
+  const job = jobResult.data as JobPacketRecord;
+  const proposal = job.source_proposal_id ? await loadProposalForPdf(job.source_proposal_id).catch(() => null) : null;
+  return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}> };
+}
+
+function buildJobHazardRows(jha: JobPacketJha | null) {
+  const entries = Array.isArray(jha?.hazard_entries) ? jha.hazard_entries as Array<Record<string, unknown>> : [];
+  if (!entries.length) return [['No hazards documented', 'Not recorded', 'No JHA hazards or mitigations were documented.']];
+  return entries.map((entry) => [clean(String(entry.description ?? '')) || clean(String(entry.hazard ?? '')) || 'Documented hazard', clean(String(entry.category ?? '')) || clean(String(entry.owner ?? '')) || 'Operational', clean(String(entry.mitigation ?? '')) || clean(String(entry.controls ?? '')) || 'Mitigation not recorded.']);
+}
+
+function buildPreflightRows(preflight: JobPacketPreflight | null) {
+  if (!preflight) return [['Status', 'Preflight checklist not started.']];
+  const labels: Record<string, string> = { aircraft_selected: 'Aircraft selected', battery_condition_checked: 'Battery condition checked', propellers_inspected: 'Propellers inspected', firmware_app_status_checked: 'Firmware/app status checked', gps_signal_confirmed: 'GPS signal confirmed', home_point_verified: 'Home point verified', storage_media_checked: 'Storage media checked', weather_verified: 'Weather verified', wind_conditions_acceptable: 'Wind conditions acceptable', airspace_reviewed: 'Airspace reviewed', laanc_confirmed_if_required: 'LAANC confirmed if required', notam_tfr_checked: 'NOTAM/TFR checked', visual_observer_assigned_if_needed: 'Visual observer assigned if needed', emergency_procedures_reviewed: 'Emergency procedures reviewed', crew_communications_confirmed: 'Crew communications confirmed', final_rpic_approval: 'Final RPIC approval' };
+  return [['Status', clean(preflight.status) || 'Draft'], ...Object.entries(labels).map(([key, label]) => [label, preflight[key] ? 'Complete' : 'Open'])];
+}
+
+function buildEnvironmentalRows(jha: JobPacketJha | null): Array<[string, string]> {
+  if (!jha || (!jha.runoff_risk && !jha.water_body_proximity && !clean(jha.containment_plan))) return [];
+  return [['Runoff Planning', jha.runoff_risk ? 'Documented as applicable' : 'Not marked applicable'], ['Containment Plan', clean(jha.containment_plan) || 'Not recorded'], ['Water Body Proximity', jha.water_body_proximity ? `Yes${jha.water_body_distance ? ` - ${jha.water_body_distance} feet` : ''}${jha.water_body_type ? ` (${jha.water_body_type})` : ''}` : 'Not marked applicable'], ['Secondary Containment', jha.secondary_containment_in_place ? 'In place' : 'Not recorded'], ['Reclamation Method', clean(jha.reclamation_method) || 'Not recorded'], ['Estimated Volume', jha.reclamation_volume_estimate ? `${jha.reclamation_volume_estimate} gallons` : 'Not recorded'], ['Vendor / Contact', clean(jha.disposal_vendor_name_contact) || 'Not recorded']];
+}
+
+function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_amount: null, valid_until: null, created_at: null }; }
+function buildJobPacketStorageFileName(job: JobPacketRecord, userId: string) { const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); return `job_packet_pdf-user_${sanitizeFileName(userId)}-${timestamp}-${crypto.randomUUID()}-${sanitizeFileName(job.name)}.pdf`; }
+function buildJobPacketDisplayFileName(job: JobPacketRecord) { const jobNumber = clean(job.source_proposal_number); const jobName = sanitizeFileName(job.name).replace(/-/g, ' '); return jobNumber ? `JOB-${jobNumber} - ${jobName} - Closeout Packet.pdf` : `${jobName} - Closeout Packet.pdf`; }
+function getPacketDocumentLabel(type: string) { return type === 'proposal_pdf' ? 'Proposal PDF' : type === 'job_packet_pdf' ? 'Job Packet PDF' : type.replace(/_/g, ' '); }
+
 async function getGeneratedDocumentUserId() {
   const { data: sessionData } = await supabase.auth.getSession();
   const sessionUserId = sessionData.session?.user.id;
