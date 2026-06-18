@@ -403,14 +403,13 @@ class ProposalPdfRenderer {
     const centerX = PAGE_WIDTH / 2;
     if (logo) this.pdf.drawCircularImage(this.currentPage, centerX, PAGE_HEIGHT - 132, 82);
     else this.pdf.drawWrappedText(this.currentPage, companyName, MARGIN, PAGE_HEIGHT - 118, PAGE_WIDTH - MARGIN * 2, { size: 22, font: 'bold', color: NAVY, align: 'center', lineHeight: 26 });
-    this.pdf.drawWrappedText(this.currentPage, 'OPERATIONAL RECORD & CLOSEOUT PACKET', MARGIN + 28, PAGE_HEIGHT - 238, PAGE_WIDTH - (MARGIN + 28) * 2, { size: 22, font: 'bold', color: NAVY, align: 'center', lineHeight: 27 });
-    this.pdf.drawWrappedText(this.currentPage, 'DroneSMS Completed Job Record', MARGIN + 28, PAGE_HEIGHT - 272, PAGE_WIDTH - (MARGIN + 28) * 2, { size: 13, font: 'bold', color: BLUE, align: 'center', lineHeight: 16 });
-    this.pdf.drawLine(this.currentPage, MARGIN + 82, PAGE_HEIGHT - 302, PAGE_WIDTH - MARGIN - 82, PAGE_HEIGHT - 302, BLUE, 1.1);
+    this.pdf.drawWrappedText(this.currentPage, 'Completed Job Record', MARGIN + 28, PAGE_HEIGHT - 226, PAGE_WIDTH - (MARGIN + 28) * 2, { size: 13, font: 'bold', color: BLUE, align: 'center', lineHeight: 16 });
+    this.pdf.drawLine(this.currentPage, MARGIN + 82, PAGE_HEIGHT - 254, PAGE_WIDTH - MARGIN - 82, PAGE_HEIGHT - 254, BLUE, 1.1);
     const blockX = MARGIN + 18;
     const blockWidth = PAGE_WIDTH - (MARGIN + 18) * 2;
     const rowHeight = 30;
     const blockHeight = rows.length * rowHeight + 40;
-    const startY = PAGE_HEIGHT - 356;
+    const startY = PAGE_HEIGHT - 308;
     this.pdf.drawRect(this.currentPage, blockX, startY - blockHeight, blockWidth, blockHeight, { fill: SOFT_PANEL, stroke: LIGHT_GRAY, strokeWidth: 0.45, opacity: 0.5 });
     this.pdf.drawText(this.currentPage, 'COMPLETED PROJECT RECORD', blockX + 24, startY - 24, { size: 8.8, font: 'bold', color: BLUE });
     let rowY = startY - 52;
@@ -692,7 +691,6 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.renderTableOfContents(toc);
   renderer.renderProposalContent({ sectionTitle: 'PROPOSAL DOCUMENTATION' });
 
-  renderer.section('OPERATIONAL RECORD');
   renderer.section('JOB INFORMATION');
   renderer.keyValueTable([
     ['Job Name', clean(packet.job.name)],
@@ -866,6 +864,7 @@ function buildCloseoutCoverRows(packet: Awaited<ReturnType<typeof loadJobPacketF
   return [
     ['Project / Job Name', clean(packet.job.name)],
     ['Client', clean(packet.job.client_name) || clean(proposal.client_name)],
+    ['Organization', companyNameFor(organization)],
     ['Site / Property Address', clean(packet.job.site_address) || clean(packet.job.location) || clean(proposal.site_address)],
     ['Service Type', clean(packet.job.service_type) || clean(proposal.service_type)],
     ['Proposal Number', clean(proposal.proposal_number) || clean(packet.job.source_proposal_number)],
@@ -915,7 +914,7 @@ function buildCloseoutTableOfContents(packet: Awaited<ReturnType<typeof loadJobP
   const environmentalRows = buildEnvironmentalRows(packet.jha);
   return [
     { title: 'PROPOSAL DOCUMENTATION', items: ['Executive Summary', 'Scope of Work', 'Personnel', 'Equipment', 'Preliminary Hazard Assessment', 'Airspace Review', 'Pricing', 'Acceptance'] },
-    { title: 'OPERATIONAL RECORD', items: ['Job Information', 'Crew Assignment', 'Equipment Assignment', ...(getJobHazardEntries(packet.jha).length ? ['JHA Summary'] : [])] },
+    { title: 'JOB RECORD', items: ['Job Information', 'Crew Assignment', 'Equipment Assignment', ...(getJobHazardEntries(packet.jha).length ? ['JHA Summary'] : [])] },
     { title: 'CONTROL VERIFICATION', items: photos.some((photo) => photo.hazardId) ? ['Hazard Mitigation Verification'] : [] },
     { title: 'OPERATIONAL EVIDENCE', items: photos.some((photo) => !photo.hazardId) ? ['Photo Documentation'] : [] },
     { title: 'COMPLIANCE RECORDS', items: [...(environmentalRows.length ? ['Environmental Controls'] : []), 'Preflight Checklist', 'Safety Events'] },
