@@ -619,7 +619,8 @@ type JobPacketRecord = {
 };
 
 type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: { full_name: string | null; role: string | null; part_107_expiration_date: string | null; training_expiration_date: string | null; status: string | null } | null };
-type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipment_type: string | null; status: string | null } | null };
+type JobPacketEquipmentReferenceDocument = { document_type: string; display_file_name: string | null; storage_path: string | null; created_at: string | null };
+type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipment_type: string | null; status: string | null; make?: string | null; product_category?: string | null; typical_mix_ratio?: string | null; application_notes?: string | null; equipment_reference_documents?: JobPacketEquipmentReferenceDocument[] } | null };
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
 type JobPacketJha = { status: string | null; faa_airspace_class: string | null; laanc_required: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
 type JobPacketPreflight = Record<string, boolean | string | null> & { status: string | null; notes?: string | null; final_rpic_approval?: boolean | null };
@@ -673,6 +674,7 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.section('PERSONNEL QUALIFICATION SUMMARY');
   renderer.table([['Name', 'Role', 'Part 107', 'Training', 'Status'], ...(packet.assignments.length ? packet.assignments.map((a) => [clean(a.personnel?.full_name) || 'Unavailable', clean(a.assigned_role) || clean(a.personnel?.role) || 'Crew', formatDate(a.personnel?.part_107_expiration_date) || 'Not tracked', formatDate(a.personnel?.training_expiration_date) || 'Not tracked', clean(a.personnel?.status) || 'Missing']) : [['No assigned crew', '-', '-', '-', '-']])], [130, 85, 88, 88, 96]);
   if (packet.documents.length) { renderer.section('GENERATED DOCUMENTS / ATTACHMENTS SUMMARY'); renderer.bullets(packet.documents.map((d) => `${getPacketDocumentLabel(d.document_type)} - ${d.display_file_name || d.file_name || 'Generated document'}`)); }
+  await renderChemicalReferenceAppendix(renderer, packet.equipmentAssignments);
 
   const blob = pdf.save();
   const fileName = buildJobPacketStorageFileName(packet.job, await getGeneratedDocumentUserId());
@@ -688,7 +690,7 @@ async function loadJobPacketForPdf(jobId: string) {
   const [jobResult, assignmentsResult, equipmentResult, safetyResult, jhaResult, preflightResult, closeoutResult, documentsResult, photosResult] = await Promise.all([
     supabase.from('jobs').select('id, organization_id, user_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number, client_name, site_address').eq('id', jobId).single(),
     supabase.from('job_personnel').select('assigned_role, personnel:personnel_id(full_name, role, part_107_expiration_date, training_expiration_date, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
-    supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
+    supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status, make, product_category, typical_mix_ratio, application_notes, equipment_reference_documents(document_type, display_file_name, storage_path, created_at))').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_safety_events').select('category, description, immediate_actions_taken, outcome, created_at').eq('job_id', jobId).order('created_at', { ascending: false }),
     supabase.from('jha_assessments').select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, hazard_entries, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
     supabase.from('preflight_checklists').select('*').eq('job_id', jobId).maybeSingle(),
@@ -702,6 +704,46 @@ async function loadJobPacketForPdf(jobId: string) {
   return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}>, photos: (photosResult.data ?? []) as JobPacketPhoto[] };
 }
 
+
+async function renderChemicalReferenceAppendix(renderer: ProposalPdfRenderer, assignments: JobPacketEquipmentAssignment[]) {
+  const documentOrder = ['Safety Data Sheet (SDS)', 'Product Label', 'Technical Data Sheet (TDS)'];
+  const materials = assignments
+    .map((assignment) => assignment.equipment)
+    .filter((equipment): equipment is NonNullable<JobPacketEquipmentAssignment['equipment']> => equipment?.equipment_type === 'Chemical / Material')
+    .map((equipment) => ({ ...equipment, equipment_reference_documents: [...(equipment.equipment_reference_documents ?? [])].sort((left, right) => documentOrder.indexOf(left.document_type) - documentOrder.indexOf(right.document_type)) }))
+    .filter((equipment) => equipment.equipment_reference_documents.some((document) => document.document_type === 'Safety Data Sheet (SDS)'));
+
+  if (!materials.length) return;
+
+  renderer.section('CHEMICAL REFERENCE DOCUMENTS');
+  renderer.bullets(materials.map((equipment) => `${clean(equipment.name) || 'Chemical / Material'}${equipment.make ? ` - ${equipment.make}` : ''}`));
+
+  for (const equipment of materials) {
+    for (const document of equipment.equipment_reference_documents) {
+      renderer.section(`${clean(equipment.name) || 'Chemical / Material'} — ${document.document_type}`);
+      const signedUrl = await getEquipmentReferenceDocumentUrl(document.storage_path);
+      renderer.keyValueTable([
+        ['Product Name', clean(equipment.name) || 'Not recorded'],
+        ['Manufacturer', clean(equipment.make) || 'Not recorded'],
+        ['Document Type', document.document_type],
+        ['Repository File', clean(document.display_file_name) || 'Uploaded PDF'],
+        ['Embedded Reference', signedUrl ? 'Open from the Equipment repository using the generated signed link below.' : 'Stored with the Equipment repository record.'],
+      ]);
+      if (signedUrl) renderer.bullets([signedUrl]);
+    }
+  }
+}
+
+async function getEquipmentReferenceDocumentUrl(storagePath: string | null) {
+  if (!storagePath) return '';
+  try {
+    const { data, error } = await supabase.storage.from('equipment-reference-documents').createSignedUrl(storagePath, 60 * 60);
+    if (error) return '';
+    return data?.signedUrl ?? '';
+  } catch {
+    return '';
+  }
+}
 
 function buildCloseoutCoverRows(packet: Awaited<ReturnType<typeof loadJobPacketForPdf>>, proposal: ProposalPdfRecord, organization: OrganizationSettings | null): Array<[string, string]> {
   return [
@@ -760,7 +802,7 @@ function buildCloseoutTableOfContents(packet: Awaited<ReturnType<typeof loadJobP
     { title: 'CONTROL VERIFICATION', items: photos.some((photo) => photo.hazardId) ? ['Hazard Mitigation Verification'] : [] },
     { title: 'OPERATIONAL EVIDENCE', items: photos.some((photo) => !photo.hazardId) ? ['Photo Documentation'] : [] },
     { title: 'COMPLIANCE RECORDS', items: [...(environmentalRows.length ? ['Environmental Controls'] : []), 'Preflight Checklist', 'Safety Events'] },
-    { title: 'CLOSEOUT', items: ['Closeout Summary', 'Personnel Qualification Summary'] },
+    { title: 'CLOSEOUT', items: ['Closeout Summary', 'Personnel Qualification Summary', ...(packet.equipmentAssignments.some((assignment) => assignment.equipment?.equipment_type === 'Chemical / Material' && assignment.equipment.equipment_reference_documents?.some((document) => document.document_type === 'Safety Data Sheet (SDS)')) ? ['Chemical Reference Documents'] : [])] },
   ];
 }
 

@@ -190,6 +190,7 @@ function getDefaultEquipmentPurpose(equipmentType: string, serviceType: string) 
   if (normalizedType === 'ground support') return 'Ground support and site control';
   if (normalizedType === 'filtration / water system' || normalizedType === 'filtration' || normalizedType === 'water system') return 'Purified water production on site';
   if (normalizedType === 'camera / sensor' || normalizedType === 'camera' || normalizedType === 'sensor') return 'Visual documentation and inspection';
+  if (normalizedType === 'chemical / material') return 'Operational material for the assigned service scope';
   return '';
 }
 
