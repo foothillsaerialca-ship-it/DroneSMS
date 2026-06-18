@@ -9,7 +9,7 @@ alter table public.equipment
 create index if not exists equipment_product_category_idx on public.equipment(product_category);
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('equipment-reference-documents', 'equipment-reference-documents', false, 52428800, array['application/pdf'])
+values ('equipment-reference-documents', 'equipment-reference-documents', false, 52428800, array['application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
 on conflict (id) do update
   set file_size_limit = excluded.file_size_limit,
       allowed_mime_types = excluded.allowed_mime_types;
