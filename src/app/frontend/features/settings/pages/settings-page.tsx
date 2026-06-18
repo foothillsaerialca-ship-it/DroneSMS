@@ -172,9 +172,7 @@ export function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const userEmail = session?.user.email ?? 'Unavailable';
   const currentLogoUrl = settings.logoUrl || (settings.logoPath ? supabase.storage.from('organization-logos').getPublicUrl(settings.logoPath).data.publicUrl : '');
-
 
   useEffect(() => {
     let isMounted = true;
@@ -414,7 +412,7 @@ export function SettingsPage() {
       <div>
         <p className="text-sm font-medium uppercase tracking-wide text-brand-700">Settings</p>
         <h1 className="mt-1 text-2xl font-semibold text-brand-900">Organization Settings</h1>
-        <p className="mt-2 text-sm text-slate-600">Manage company details, safety program language, branding, and account access.</p>
+        <p className="mt-2 text-sm text-slate-600">Manage company details, safety program language, and branding.</p>
       </div>
 
       {error ? (
@@ -429,6 +427,105 @@ export function SettingsPage() {
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">Loading settings...</div>
       ) : (
         <>
+          <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="bg-slate-50 px-4 py-6 sm:px-6">
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
+                {currentLogoUrl ? (
+                  <img className="h-24 w-full rounded-lg object-contain" src={currentLogoUrl} alt={`${settings.companyName || 'Organization'} logo`} />
+                ) : (
+                  <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
+                    No logo uploaded
+                  </div>
+                )}
+              </div>
+              {editingSection === 'organization' && (
+                <>
+                  <label className="mt-3 block">
+                    <span className="sr-only">Upload organization logo</span>
+                    <input
+                      className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-700 file:px-4 file:py-3 file:text-sm file:font-medium file:text-white hover:file:bg-brand-800 disabled:cursor-not-allowed disabled:file:bg-slate-400"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoChange}
+                      disabled={isUploadingLogo || !organizationId}
+                    />
+                  </label>
+                  <p className="mt-2 text-xs text-slate-500">{isUploadingLogo ? 'Uploading logo...' : 'Choosing a new image replaces the current logo.'}</p>
+                </>
+              )}
+            </div>
+
+            <div className="border-t border-slate-200 px-4 py-4 sm:px-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-brand-900">Organization</h2>
+                  <p className="mt-1 text-sm text-slate-600">Company details and statement.</p>
+                </div>
+                {editingSection !== 'organization' ? (
+                  <button
+                    type="button"
+                    className="rounded-lg border border-brand-700 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
+                    onClick={() => beginEdit('organization')}
+                    disabled={Boolean(editingSection)}
+                  >
+                    Edit
+                  </button>
+                ) : null}
+              </div>
+
+              {editingSection === 'organization' ? (
+                <form className="mt-4" onSubmit={handleSave}>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {organizationFields.map((field) => (
+                      <div
+                        key={field.key}
+                        className={field.key === 'companyStatement' ? 'sm:col-span-2' : ''}
+                      >
+                        <SettingsInput
+                          label={field.label}
+                          name={field.key}
+                          value={draft[field.key]}
+                          type={field.type}
+                          autoComplete={field.autoComplete}
+                          disabled={isSaving}
+                          onChange={updateDraft}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <button
+                      type="submit"
+                      className="min-h-11 rounded-lg bg-brand-700 px-3 py-3 text-sm font-medium text-white transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
+                      disabled={isSaving}
+                    >
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      className="min-h-11 rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 sm:py-2"
+                      onClick={cancelEdit}
+                      disabled={isSaving}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {organizationFields.map((field) => (
+                    <div
+                      key={field.key}
+                      className={field.key === 'companyStatement' ? 'sm:col-span-2' : ''}
+                    >
+                      <FieldDisplay label={field.label} value={settings[field.key]} />
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </div>
+          </article>
+
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -483,77 +580,6 @@ export function SettingsPage() {
               <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {userFields.map((field) => (
                   <FieldDisplay key={field.key} label={field.label} value={settings[field.key]} />
-                ))}
-                <FieldDisplay label="Login Email" value={userEmail} />
-              </dl>
-            )}
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-brand-900">Organization</h2>
-                <p className="mt-1 text-sm text-slate-600">Core company details and public company statement.</p>
-              </div>
-              {editingSection !== 'organization' ? (
-                <button
-                  type="button"
-                  className="rounded-lg border border-brand-700 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
-                  onClick={() => beginEdit('organization')}
-                  disabled={Boolean(editingSection)}
-                >
-                  Edit
-                </button>
-              ) : null}
-            </div>
-
-            {editingSection === 'organization' ? (
-              <form className="mt-4" onSubmit={handleSave}>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {organizationFields.map((field) => (
-                    <div
-                      key={field.key}
-                      className={field.key === 'companyStatement' ? 'sm:col-span-2' : ''}
-                    >
-                      <SettingsInput
-                        label={field.label}
-                        name={field.key}
-                        value={draft[field.key]}
-                        type={field.type}
-                        autoComplete={field.autoComplete}
-                        disabled={isSaving}
-                        onChange={updateDraft}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <button
-                    type="submit"
-                    className="min-h-11 rounded-lg bg-brand-700 px-3 py-3 text-sm font-medium text-white transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-                    disabled={isSaving}
-                  >
-                    {isSaving ? 'Saving...' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    className="min-h-11 rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 sm:py-2"
-                    onClick={cancelEdit}
-                    disabled={isSaving}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {organizationFields.map((field) => (
-                  <div
-                    key={field.key}
-                    className={field.key === 'companyStatement' ? 'sm:col-span-2' : ''}
-                  >
-                    <FieldDisplay label={field.label} value={settings[field.key]} />
-                  </div>
                 ))}
               </dl>
             )}
@@ -616,33 +642,6 @@ export function SettingsPage() {
               </dl>
             )}
           </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <h2 className="text-lg font-semibold text-brand-900">Branding</h2>
-            <p className="mt-1 text-sm text-slate-600">Upload or replace your organization logo.</p>
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-              {currentLogoUrl ? (
-                <img className="max-h-32 w-full rounded-lg object-contain" src={currentLogoUrl} alt={`${settings.companyName || 'Organization'} logo`} />
-              ) : (
-                <div className="flex min-h-28 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-sm text-slate-500">
-                  No logo uploaded
-                </div>
-              )}
-            </div>
-            <label className="mt-4 block">
-              <span className="sr-only">Upload organization logo</span>
-              <input
-                className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-700 file:px-4 file:py-3 file:text-sm file:font-medium file:text-white hover:file:bg-brand-800 disabled:cursor-not-allowed disabled:file:bg-slate-400"
-                type="file"
-                accept="image/*"
-                onChange={handleLogoChange}
-                disabled={isUploadingLogo || !organizationId}
-              />
-            </label>
-            <p className="mt-2 text-xs text-slate-500">{isUploadingLogo ? 'Uploading logo...' : 'Choosing a new image replaces the current logo.'}</p>
-          </article>
-
-
         </>
       )}
     </section>
