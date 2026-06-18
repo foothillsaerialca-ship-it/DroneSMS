@@ -1,8 +1,11 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@frontend/lib/supabase';
 
-const typeOptions = ['Drone', 'Controller', 'Battery', 'Payload', 'Charger', 'Safety Kit', 'Other'];
-const statusOptions = ['Available', 'In Use', 'Maintenance', 'Retired'];
+const typeOptions = ['Drone', 'Controller', 'Battery', 'Payload', 'Ground Support', 'Filtration / Water System', 'Camera / Sensor', 'Charger', 'Safety Kit', 'Chemical / Material', 'Other'];
+const statusOptions = ['Available', 'In Use', 'Maintenance', 'Inactive', 'Retired'];
+const chemicalMaterialType = 'Chemical / Material';
+const chemicalDocumentTypes = ['Safety Data Sheet (SDS)', 'Product Label', 'Technical Data Sheet (TDS)'] as const;
+type ChemicalDocumentType = (typeof chemicalDocumentTypes)[number];
 
 const initialFormState = {
   name: '',
@@ -14,7 +17,13 @@ const initialFormState = {
   assignedLocation: '',
   status: statusOptions[0],
   maintenanceDueDate: '',
-  notes: ''
+  notes: '',
+  productCategory: '',
+  typicalMixRatio: '',
+  applicationNotes: '',
+  epaRegistrationNumber: '',
+  signalWord: '',
+  restrictedUseProduct: 'No'
 };
 
 type Equipment = {
@@ -29,10 +38,31 @@ type Equipment = {
   status: string;
   maintenance_due_date: string | null;
   notes: string | null;
+  product_category: string | null;
+  typical_mix_ratio: string | null;
+  application_notes: string | null;
+  epa_registration_number: string | null;
+  signal_word: string | null;
+  restricted_use_product: boolean | null;
+  equipment_reference_documents?: EquipmentReferenceDocument[];
   updated_at: string;
 };
 
 type EquipmentFormState = typeof initialFormState;
+
+type EquipmentReferenceDocument = {
+  id: string;
+  equipment_id: string;
+  document_type: ChemicalDocumentType;
+  file_name: string;
+  display_file_name: string | null;
+  storage_path: string;
+  created_at: string;
+};
+
+type PendingReferenceDocument = { documentType: ChemicalDocumentType; file: File };
+
+const equipmentReferenceDocumentsBucket = 'equipment-reference-documents';
 
 type ReadinessState = {
   label: string;
@@ -133,7 +163,13 @@ function toFormState(equipment: Equipment): EquipmentFormState {
     assignedLocation: equipment.assigned_location ?? '',
     status: equipment.status,
     maintenanceDueDate: equipment.maintenance_due_date ?? '',
-    notes: equipment.notes ?? ''
+    notes: equipment.notes ?? '',
+    productCategory: equipment.product_category ?? '',
+    typicalMixRatio: equipment.typical_mix_ratio ?? '',
+    applicationNotes: equipment.application_notes ?? '',
+    epaRegistrationNumber: equipment.epa_registration_number ?? '',
+    signalWord: equipment.signal_word ?? '',
+    restrictedUseProduct: equipment.restricted_use_product ? 'Yes' : 'No'
   };
 }
 
@@ -145,7 +181,16 @@ async function getCurrentOrganizationId(userId: string) {
   return data?.organization_id ?? null;
 }
 
+function isChemicalMaterial(formData: EquipmentFormState | Equipment) {
+  return ('equipmentType' in formData ? formData.equipmentType : formData.equipment_type) === chemicalMaterialType;
+}
+
+function sanitizeStorageName(value: string) {
+  return value.trim().replace(/[^a-z0-9._-]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'document';
+}
+
 function buildEquipmentPayload(formData: EquipmentFormState) {
+  const chemical = formData.equipmentType === chemicalMaterialType;
   return {
     name: formData.name.trim(),
     equipment_type: formData.equipmentType,
@@ -157,6 +202,12 @@ function buildEquipmentPayload(formData: EquipmentFormState) {
     status: formData.status,
     maintenance_due_date: formData.maintenanceDueDate || null,
     notes: formData.notes.trim() || null,
+    product_category: chemical ? formData.productCategory.trim() || null : null,
+    typical_mix_ratio: chemical ? formData.typicalMixRatio.trim() || null : null,
+    application_notes: chemical ? formData.applicationNotes.trim() || null : null,
+    epa_registration_number: chemical ? formData.epaRegistrationNumber.trim() || null : null,
+    signal_word: chemical ? formData.signalWord.trim() || null : null,
+    restricted_use_product: chemical ? formData.restrictedUseProduct === 'Yes' : null,
     updated_at: new Date().toISOString()
   };
 }
@@ -173,6 +224,7 @@ export function EquipmentPage() {
   const [deletingEquipmentId, setDeletingEquipmentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [pendingDocuments, setPendingDocuments] = useState<PendingReferenceDocument[]>([]);
 
   async function loadEquipment() {
     setIsLoading(true);
@@ -181,7 +233,7 @@ export function EquipmentPage() {
     try {
       const { data, error: equipmentError } = await supabase
         .from('equipment')
-        .select('id, name, equipment_type, make, model, serial_number, faa_registration_number, assigned_location, status, maintenance_due_date, notes, updated_at')
+        .select('id, name, equipment_type, make, model, serial_number, faa_registration_number, assigned_location, status, maintenance_due_date, notes, product_category, typical_mix_ratio, application_notes, epa_registration_number, signal_word, restricted_use_product, updated_at, equipment_reference_documents(id, equipment_id, document_type, file_name, display_file_name, storage_path, created_at)')
         .order('status', { ascending: true })
         .order('name', { ascending: true });
 
@@ -241,6 +293,7 @@ export function EquipmentPage() {
   function resetForm() {
     setFormData(initialFormState);
     setEditingEquipmentId(null);
+    setPendingDocuments([]);
     setSaveMessage(null);
   }
 
@@ -248,7 +301,27 @@ export function EquipmentPage() {
     if (!formData.name.trim()) return 'Equipment name is required.';
     if (!formData.equipmentType) return 'Equipment type is required.';
     if (!formData.status) return 'Status is required.';
+    if (formData.equipmentType === chemicalMaterialType && !formData.productCategory.trim()) return 'Product category is required for Chemical / Material records.';
     return null;
+  }
+
+  function addPendingDocument(documentType: ChemicalDocumentType, files: FileList | null) {
+    if (!files?.length) return;
+    setPendingDocuments((current) => [...current, ...Array.from(files).map((file) => ({ documentType, file }))]);
+  }
+
+  function removePendingDocument(index: number) {
+    setPendingDocuments((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  async function uploadPendingDocuments(equipmentId: string, organizationId: string) {
+    await Promise.all(pendingDocuments.map(async ({ documentType, file }) => {
+      const storagePath = `${organizationId}/${equipmentId}/${crypto.randomUUID()}-${sanitizeStorageName(file.name)}`;
+      const { error: uploadError } = await supabase.storage.from(equipmentReferenceDocumentsBucket).upload(storagePath, file, { contentType: file.type || 'application/pdf', upsert: false });
+      if (uploadError) throw uploadError;
+      const { error: insertError } = await supabase.from('equipment_reference_documents').insert({ equipment_id: equipmentId, organization_id: organizationId, document_type: documentType, file_name: storagePath.split('/').pop() ?? file.name, display_file_name: file.name, storage_path: storagePath, file_size: file.size, mime_type: file.type || 'application/pdf' });
+      if (insertError) throw insertError;
+    }));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -274,8 +347,9 @@ export function EquipmentPage() {
       const successMessage = editingEquipmentId ? 'Equipment record updated.' : 'Equipment record added.';
 
       if (editingEquipmentId) {
-        const { error: updateError } = await supabase.from('equipment').update(payload).eq('id', editingEquipmentId);
+        const { data: updated, error: updateError } = await supabase.from('equipment').update(payload).eq('id', editingEquipmentId).select('id, organization_id').single();
         if (updateError) throw updateError;
+        if (pendingDocuments.length) await uploadPendingDocuments(updated.id, updated.organization_id);
       } else {
         const organizationId = await getCurrentOrganizationId(userData.user.id);
 
@@ -283,13 +357,14 @@ export function EquipmentPage() {
           throw new Error('Finish company onboarding before adding equipment.');
         }
 
-        const { error: insertError } = await supabase.from('equipment').insert({
+        const { data: inserted, error: insertError } = await supabase.from('equipment').insert({
           ...payload,
           organization_id: organizationId,
           user_id: userData.user.id
-        });
+        }).select('id, organization_id').single();
 
         if (insertError) throw insertError;
+        if (pendingDocuments.length) await uploadPendingDocuments(inserted.id, inserted.organization_id);
       }
 
       resetForm();
@@ -327,10 +402,13 @@ export function EquipmentPage() {
   function handleEdit(item: Equipment) {
     setEditingEquipmentId(item.id);
     setFormData(toFormState(item));
+    setPendingDocuments([]);
     setError(null);
     setSaveMessage(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+
+  const showChemicalFields = formData.equipmentType === chemicalMaterialType;
 
   return (
     <section className="space-y-4">
@@ -340,7 +418,7 @@ export function EquipmentPage() {
             <p className="text-sm font-medium text-slate-500">Repository</p>
             <h1 className="mt-1 text-2xl font-semibold text-brand-900">Equipment</h1>
             <p className="mt-2 text-sm text-slate-600">
-              Track aircraft, batteries, payloads, support gear, maintenance windows, and operational readiness.
+              Track aircraft, payloads, support gear, chemicals/materials, maintenance windows, and operational readiness.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 text-center sm:min-w-64">
@@ -368,7 +446,7 @@ export function EquipmentPage() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-brand-900">{editingEquipmentId ? 'Edit Equipment' : 'Add Equipment'}</h2>
-            <p className="mt-1 text-sm text-slate-600">Capture required equipment details first, then add maintenance and tracking fields.</p>
+            <p className="mt-1 text-sm text-slate-600">Capture required equipment details first, then add maintenance, tracking, and chemical/material reference fields when applicable.</p>
           </div>
           {editingEquipmentId ? (
             <button type="button" className="text-sm font-medium text-brand-700 hover:text-brand-900" onClick={resetForm} disabled={isSaving}>
@@ -493,6 +571,23 @@ export function EquipmentPage() {
             />
           </label>
 
+          {showChemicalFields ? (
+            <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-4 sm:col-span-2">
+              <h3 className="text-sm font-semibold text-brand-900">Chemical / Material Details</h3>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-700">Product Name<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.name} onChange={(event) => updateField('name', event.target.value)} disabled={isSaving} /></label>
+                <label className="block text-sm font-medium text-slate-700">Manufacturer<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.make} onChange={(event) => updateField('make', event.target.value)} disabled={isSaving} /></label>
+                <label className="block text-sm font-medium text-slate-700">Product Category<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.productCategory} onChange={(event) => updateField('productCategory', event.target.value)} placeholder="Cleaner, carrier water, pesticide, surfactant" disabled={isSaving} /></label>
+                <label className="block text-sm font-medium text-slate-700">Typical Mix Ratio<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.typicalMixRatio} onChange={(event) => updateField('typicalMixRatio', event.target.value)} placeholder="Optional" disabled={isSaving} /></label>
+                <label className="block text-sm font-medium text-slate-700 sm:col-span-2">Application Notes<textarea className="mt-1 min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.applicationNotes} onChange={(event) => updateField('applicationNotes', event.target.value)} placeholder="Optional" disabled={isSaving} /></label>
+                <label className="block text-sm font-medium text-slate-700">EPA Registration Number<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.epaRegistrationNumber} onChange={(event) => updateField('epaRegistrationNumber', event.target.value)} disabled={isSaving} /></label>
+                <label className="block text-sm font-medium text-slate-700">Signal Word<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.signalWord} onChange={(event) => updateField('signalWord', event.target.value)} placeholder="Caution, Warning, Danger" disabled={isSaving} /></label>
+                <label className="block text-sm font-medium text-slate-700">Restricted Use Product<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={formData.restrictedUseProduct} onChange={(event) => updateField('restrictedUseProduct', event.target.value)} disabled={isSaving}><option>No</option><option>Yes</option></select></label>
+              </div>
+              <div className="mt-4 space-y-3"><p className="text-sm font-semibold text-brand-900">Reference Documents</p>{chemicalDocumentTypes.map((documentType) => <label key={documentType} className="block text-sm font-medium text-slate-700">{documentType}<input className="mt-1 block w-full text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-brand-700" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" multiple onChange={(event) => addPendingDocument(documentType, event.target.files)} disabled={isSaving} /></label>)}{pendingDocuments.length ? <ul className="rounded-lg bg-white p-3 text-sm text-slate-700">{pendingDocuments.map((doc, index) => <li key={`${doc.documentType}-${doc.file.name}-${index}`} className="flex justify-between gap-3 py-1"><span>{doc.documentType}: {doc.file.name}</span><button type="button" className="text-red-700" onClick={() => removePendingDocument(index)}>Remove</button></li>)}</ul> : null}</div>
+            </div>
+          ) : null}
+
           <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
             Notes
             <textarea
@@ -588,6 +683,7 @@ export function EquipmentPage() {
                       {item.equipment_type} {item.make || item.model ? `• ${[item.make, item.model].filter(Boolean).join(' ')}` : ''}
                     </p>
                     <p className="mt-2 text-sm text-slate-600">{readiness.detail}</p>
+                    {isChemicalMaterial(item) ? <p className="mt-1 text-sm text-slate-600">{[item.product_category, item.typical_mix_ratio ? `Mix: ${item.typical_mix_ratio}` : null].filter(Boolean).join(' • ')}</p> : null}
                   </div>
                   <div className="flex gap-2">
                     <button type="button" className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-brand-700 shadow-sm hover:text-brand-900" onClick={() => handleEdit(item)}>
@@ -625,6 +721,12 @@ export function EquipmentPage() {
                     <dt className="font-medium text-slate-500">Location</dt>
                     <dd className="text-slate-800">{item.assigned_location || 'Not assigned'}</dd>
                   </div>
+                  {isChemicalMaterial(item) ? (<>
+                    <div><dt className="font-medium text-slate-500">EPA Reg. No.</dt><dd className="text-slate-800">{item.epa_registration_number || 'Not tracked'}</dd></div>
+                    <div><dt className="font-medium text-slate-500">Signal Word</dt><dd className="text-slate-800">{item.signal_word || 'Not tracked'}</dd></div>
+                    <div><dt className="font-medium text-slate-500">Restricted Use</dt><dd className="text-slate-800">{item.restricted_use_product ? 'Yes' : 'No'}</dd></div>
+                    <div><dt className="font-medium text-slate-500">Documents</dt><dd className="text-slate-800">{item.equipment_reference_documents?.length ?? 0} uploaded</dd></div>
+                  </>) : null}
                   <div className="sm:col-span-2">
                     <dt className="font-medium text-slate-500">Notes</dt>
                     <dd className="text-slate-800">{item.notes || 'No notes'}</dd>

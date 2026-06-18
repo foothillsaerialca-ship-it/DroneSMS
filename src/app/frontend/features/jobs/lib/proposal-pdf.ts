@@ -84,9 +84,10 @@ type TableColumn = { header: string; width: number; align?: 'left' | 'right' | '
 type TableCell = string | number | null | undefined;
 type TableOptions = { totalRowIndex?: number; minRowHeight?: number };
 type PageState = { commands: string[]; contentId: number; pageId: number };
+type PdfObjectValue = string | Uint8Array;
 
 class PdfBuilder {
-  private readonly objects: string[] = [];
+  private readonly objects: PdfObjectValue[] = [];
   private readonly pages: PageState[] = [];
   private readonly catalogId: number;
   private readonly pagesId: number;
@@ -218,8 +219,41 @@ class PdfBuilder {
     page.commands.push('Q');
   }
 
+  appendPdfPages(bytes: Uint8Array) {
+    const binary = bytesToBinaryString(bytes);
+    const objectMatches = [...binary.matchAll(/(\d+)\s+(\d+)\s+obj\s*([\s\S]*?)\s*endobj/g)];
+    if (!objectMatches.length) throw new Error('No PDF objects found.');
+
+    const sourceObjectIds = objectMatches.map((match) => Number(match[1]));
+    const idMap = new Map<number, number>();
+    sourceObjectIds.forEach((sourceId) => idMap.set(sourceId, this.objects.length + idMap.size + 1));
+
+    const pageSourceIds = objectMatches
+      .filter((match) => /\/Type\s*\/Page(?!s)/.test(match[3]))
+      .map((match) => Number(match[1]));
+
+    if (!pageSourceIds.length) throw new Error('No PDF pages found.');
+
+    for (const match of objectMatches) {
+      const sourceId = Number(match[1]);
+      let body = match[3].replace(/(\d+)\s+0\s+R/g, (_ref, refId: string) => `${idMap.get(Number(refId)) ?? Number(refId)} 0 R`);
+      if (pageSourceIds.includes(sourceId)) {
+        body = body.replace(/\/Parent\s+\d+\s+0\s+R/, `/Parent ${this.pagesId} 0 R`);
+      }
+      this.objects.push(binaryStringToBytes(body));
+    }
+
+    for (const sourcePageId of pageSourceIds) {
+      const pageId = idMap.get(sourcePageId);
+      if (pageId) this.pages.push({ commands: [], contentId: 0, pageId });
+    }
+
+    return pageSourceIds.length;
+  }
+
   save() {
     for (const page of this.pages) {
+      if (!page.contentId) continue;
       const stream = page.commands.join('\n');
       this.setObject(page.contentId, `<< /Length ${byteLength(stream)} >>\nstream\n${stream}\nendstream`);
       const xObjectEntries = [this.logoImageId ? `/Logo ${this.logoImageId} 0 R` : '', ...this.imageXObjects.map((image) => `/${image.name} ${image.id} 0 R`)].filter(Boolean).join(' ');
@@ -230,16 +264,17 @@ class PdfBuilder {
     this.setObject(this.pagesId, `<< /Type /Pages /Kids [${this.pages.map((page) => `${page.pageId} 0 R`).join(' ')}] /Count ${this.pages.length} >>`);
     this.setObject(this.catalogId, `<< /Type /Catalog /Pages ${this.pagesId} 0 R >>`);
 
-    const chunks: string[] = ['%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'];
+    const header = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
+    const chunks: BlobPart[] = [header];
     const offsets: number[] = [0];
-    let offset = byteLength(chunks[0]);
+    let offset = byteLength(header);
 
     this.objects.forEach((object, index) => {
       offsets.push(offset);
       const prefix = `${index + 1} 0 obj\n`;
       const suffix = '\nendobj\n';
-      chunks.push(prefix, object, suffix);
-      offset += byteLength(prefix) + byteLength(object) + byteLength(suffix);
+      chunks.push(prefix, blobPartForObject(object), suffix);
+      offset += byteLength(prefix) + objectByteLength(object) + byteLength(suffix);
     });
 
     const xrefOffset = offset;
@@ -254,7 +289,7 @@ class PdfBuilder {
     return this.objects.length;
   }
 
-  private setObject(id: number, value: string) {
+  private setObject(id: number, value: PdfObjectValue) {
     this.objects[id - 1] = value;
   }
 
@@ -499,6 +534,22 @@ class ProposalPdfRenderer {
     this.drawTable(columns, rows.slice(1), options);
   }
 
+  imageDocumentPage(title: string, rows: Array<[string, string]>, image: PdfImage) {
+    this.startContentPage();
+    this.section(title);
+    this.keyValueTable(rows);
+    const maxWidth = PAGE_WIDTH - MARGIN * 2;
+    const maxHeight = Math.max(120, this.y - 44);
+    const scale = Math.min(maxWidth / image.width, maxHeight / image.height);
+    const width = image.width * scale;
+    const height = image.height * scale;
+    const x = MARGIN + (maxWidth - width) / 2;
+    const y = Math.max(44, this.y - height);
+    const imageName = this.pdf.addJpegImage(image);
+    this.pdf.drawNamedImage(this.currentPage, imageName, x, y, width, height);
+    this.y = y - 14;
+  }
+
   private drawTable(columns: TableColumn[], rows: TableCell[][], options: TableOptions) {
     const x = MARGIN;
     const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
@@ -619,7 +670,8 @@ type JobPacketRecord = {
 };
 
 type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: { full_name: string | null; role: string | null; part_107_expiration_date: string | null; training_expiration_date: string | null; status: string | null } | null };
-type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipment_type: string | null; status: string | null } | null };
+type JobPacketEquipmentReferenceDocument = { document_type: string; file_name: string | null; display_file_name: string | null; storage_path: string | null; mime_type: string | null; created_at: string | null };
+type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipment_type: string | null; status: string | null; make?: string | null; product_category?: string | null; typical_mix_ratio?: string | null; application_notes?: string | null; equipment_reference_documents?: JobPacketEquipmentReferenceDocument[] } | null };
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
 type JobPacketJha = { status: string | null; faa_airspace_class: string | null; laanc_required: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
 type JobPacketPreflight = Record<string, boolean | string | null> & { status: string | null; notes?: string | null; final_rpic_approval?: boolean | null };
@@ -673,6 +725,7 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.section('PERSONNEL QUALIFICATION SUMMARY');
   renderer.table([['Name', 'Role', 'Part 107', 'Training', 'Status'], ...(packet.assignments.length ? packet.assignments.map((a) => [clean(a.personnel?.full_name) || 'Unavailable', clean(a.assigned_role) || clean(a.personnel?.role) || 'Crew', formatDate(a.personnel?.part_107_expiration_date) || 'Not tracked', formatDate(a.personnel?.training_expiration_date) || 'Not tracked', clean(a.personnel?.status) || 'Missing']) : [['No assigned crew', '-', '-', '-', '-']])], [130, 85, 88, 88, 96]);
   if (packet.documents.length) { renderer.section('GENERATED DOCUMENTS / ATTACHMENTS SUMMARY'); renderer.bullets(packet.documents.map((d) => `${getPacketDocumentLabel(d.document_type)} - ${d.display_file_name || d.file_name || 'Generated document'}`)); }
+  await renderChemicalReferenceAppendix(renderer, packet.equipmentAssignments, pdf);
 
   const blob = pdf.save();
   const fileName = buildJobPacketStorageFileName(packet.job, await getGeneratedDocumentUserId());
@@ -688,7 +741,7 @@ async function loadJobPacketForPdf(jobId: string) {
   const [jobResult, assignmentsResult, equipmentResult, safetyResult, jhaResult, preflightResult, closeoutResult, documentsResult, photosResult] = await Promise.all([
     supabase.from('jobs').select('id, organization_id, user_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number, client_name, site_address').eq('id', jobId).single(),
     supabase.from('job_personnel').select('assigned_role, personnel:personnel_id(full_name, role, part_107_expiration_date, training_expiration_date, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
-    supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
+    supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status, make, product_category, typical_mix_ratio, application_notes, equipment_reference_documents(document_type, file_name, display_file_name, storage_path, mime_type, created_at))').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_safety_events').select('category, description, immediate_actions_taken, outcome, created_at').eq('job_id', jobId).order('created_at', { ascending: false }),
     supabase.from('jha_assessments').select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, hazard_entries, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
     supabase.from('preflight_checklists').select('*').eq('job_id', jobId).maybeSingle(),
@@ -702,6 +755,112 @@ async function loadJobPacketForPdf(jobId: string) {
   return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}>, photos: (photosResult.data ?? []) as JobPacketPhoto[] };
 }
 
+
+async function renderChemicalReferenceAppendix(renderer: ProposalPdfRenderer, assignments: JobPacketEquipmentAssignment[], pdf: PdfBuilder) {
+  const documentOrder = ['Safety Data Sheet (SDS)', 'Product Label', 'Technical Data Sheet (TDS)'];
+  const documentLabel: Record<string, string> = { 'Safety Data Sheet (SDS)': 'SDS', 'Product Label': 'Product Label', 'Technical Data Sheet (TDS)': 'TDS' };
+  const materials = assignments
+    .map((assignment) => assignment.equipment)
+    .filter((equipment): equipment is NonNullable<JobPacketEquipmentAssignment['equipment']> => equipment?.equipment_type === 'Chemical / Material')
+    .map((equipment) => ({
+      ...equipment,
+      equipment_reference_documents: [...(equipment.equipment_reference_documents ?? [])]
+        .sort((left, right) => {
+          const leftOrder = documentOrder.includes(left.document_type) ? documentOrder.indexOf(left.document_type) : documentOrder.length;
+          const rightOrder = documentOrder.includes(right.document_type) ? documentOrder.indexOf(right.document_type) : documentOrder.length;
+          return leftOrder - rightOrder;
+        }),
+    }))
+    .filter((equipment) => equipment.equipment_reference_documents.length > 0);
+
+  if (!materials.length) return;
+
+  renderer.section('CHEMICAL DOCUMENTATION');
+  renderer.table(
+    [
+      ['Product', 'Manufacturer', 'Documents Included'],
+      ...materials.map((equipment) => [
+        clean(equipment.name) || 'Chemical / Material',
+        clean(equipment.make) || 'Not recorded',
+        equipment.equipment_reference_documents.map((document) => documentLabel[document.document_type] ?? document.document_type).join(', '),
+      ]),
+    ],
+    [170, 145, 172],
+  );
+
+  for (const equipment of materials) {
+    for (const document of equipment.equipment_reference_documents) {
+      const titleRows: Array<[string, string]> = [
+        ['Product Name', clean(equipment.name) || 'Not recorded'],
+        ['Manufacturer', clean(equipment.make) || 'Not recorded'],
+        ['Document Type', document.document_type],
+      ];
+      const fileName = clean(document.display_file_name) || clean(document.file_name);
+      if (fileName) titleRows.push(['Source Filename', fileName]);
+
+      try {
+        const bytes = await downloadEquipmentReferenceDocument(document.storage_path);
+        if (isPdfDocument(document, bytes)) {
+          renderer.startContentPage();
+          renderer.section('CHEMICAL DOCUMENTATION');
+          renderer.keyValueTable(titleRows);
+          pdf.appendPdfPages(bytes);
+          continue;
+        }
+
+        const image = await decodeReferenceImage(bytes, document.mime_type, fileName);
+        if (image) {
+          renderer.imageDocumentPage('CHEMICAL DOCUMENTATION', titleRows, image);
+          continue;
+        }
+
+        throw new Error('Unsupported reference document format.');
+      } catch (error) {
+        console.error('Reference document could not be embedded.', { product: equipment.name, documentType: document.document_type, error });
+        renderer.startContentPage();
+        renderer.section('CHEMICAL DOCUMENTATION');
+        renderer.keyValueTable([...titleRows, ['Embedding Status', 'Reference document could not be embedded.']]);
+      }
+    }
+  }
+}
+
+async function downloadEquipmentReferenceDocument(storagePath: string | null) {
+  if (!storagePath) throw new Error('Missing equipment reference document storage path.');
+  const { data, error } = await supabase.storage.from('equipment-reference-documents').download(storagePath);
+  if (error) throw error;
+  if (!data) throw new Error('Equipment reference document download returned no data.');
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+function isPdfDocument(document: JobPacketEquipmentReferenceDocument, bytes: Uint8Array) {
+  const mimeType = document.mime_type?.toLowerCase() ?? '';
+  const fileName = `${document.display_file_name ?? ''} ${document.file_name ?? ''}`.toLowerCase();
+  return mimeType.includes('pdf') || fileName.includes('.pdf') || bytesToBinaryString(bytes.slice(0, 5)) === '%PDF-';
+}
+
+async function decodeReferenceImage(bytes: Uint8Array, mimeType: string | null, fileName: string) {
+  const jpegDimensions = readJpegDimensions(bytes);
+  if (jpegDimensions) return { ...jpegDimensions, bytes };
+
+  const normalizedMimeType = mimeType || (fileName.toLowerCase().endsWith('.png') ? 'image/png' : fileName.toLowerCase().endsWith('.webp') ? 'image/webp' : '');
+  if (!normalizedMimeType.startsWith('image/')) return null;
+
+  const blob = new Blob([new Uint8Array(bytes)], { type: normalizedMimeType });
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  context.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  const jpegBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+  if (!jpegBlob) return null;
+  const jpegBytes = new Uint8Array(await jpegBlob.arrayBuffer());
+  const dimensions = readJpegDimensions(jpegBytes);
+  return dimensions ? { ...dimensions, bytes: jpegBytes } : null;
+}
 
 function buildCloseoutCoverRows(packet: Awaited<ReturnType<typeof loadJobPacketForPdf>>, proposal: ProposalPdfRecord, organization: OrganizationSettings | null): Array<[string, string]> {
   return [
@@ -760,7 +919,7 @@ function buildCloseoutTableOfContents(packet: Awaited<ReturnType<typeof loadJobP
     { title: 'CONTROL VERIFICATION', items: photos.some((photo) => photo.hazardId) ? ['Hazard Mitigation Verification'] : [] },
     { title: 'OPERATIONAL EVIDENCE', items: photos.some((photo) => !photo.hazardId) ? ['Photo Documentation'] : [] },
     { title: 'COMPLIANCE RECORDS', items: [...(environmentalRows.length ? ['Environmental Controls'] : []), 'Preflight Checklist', 'Safety Events'] },
-    { title: 'CLOSEOUT', items: ['Closeout Summary', 'Personnel Qualification Summary'] },
+    { title: 'CLOSEOUT', items: ['Closeout Summary', 'Personnel Qualification Summary', ...(packet.equipmentAssignments.some((assignment) => assignment.equipment?.equipment_type === 'Chemical / Material' && assignment.equipment.equipment_reference_documents?.some((document) => document.document_type === 'Safety Data Sheet (SDS)')) ? ['Chemical Documentation'] : [])] },
   ];
 }
 
@@ -1170,6 +1329,29 @@ function wrapText(value: string, maxWidth: number, size: number) {
 
 function byteLength(value: string) {
   return new TextEncoder().encode(value).length;
+}
+
+function objectByteLength(value: PdfObjectValue) {
+  return typeof value === 'string' ? byteLength(value) : value.byteLength;
+}
+
+function blobPartForObject(value: PdfObjectValue): BlobPart {
+  if (typeof value === 'string') return value;
+  return value.buffer instanceof ArrayBuffer ? value as Uint8Array<ArrayBuffer> : new Uint8Array(value);
+}
+
+function bytesToBinaryString(bytes: Uint8Array) {
+  let output = '';
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    output += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return output;
+}
+
+function binaryStringToBytes(value: string) {
+  const bytes = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) bytes[index] = value.charCodeAt(index) & 0xff;
+  return bytes;
 }
 
 function bytesToHexString(bytes: Uint8Array) {
