@@ -1,6 +1,12 @@
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../auth/components/use-auth';
+import {
+  DEFAULT_EMERGENCY_PROCEDURES_SUMMARY,
+  DEFAULT_HAZARD_REPORTING_STATEMENT,
+  DEFAULT_STOP_WORK_AUTHORITY_STATEMENT,
+  defaultSmsValue
+} from '../lib/sms-defaults';
 
 type SettingsForm = {
   companyName: string;
@@ -103,9 +109,9 @@ function normalizeSettings(organization: Record<string, unknown> | null | undefi
     defaultPaymentTerms: String(organization?.default_payment_terms ?? ''),
     warranty: String(organization?.warranty ?? ''),
     safetyManager: String(organization?.safety_manager ?? ''),
-    stopWorkAuthorityStatement: String(organization?.stop_work_authority_statement ?? ''),
-    hazardReportingStatement: String(organization?.hazard_reporting_statement ?? ''),
-    emergencyProceduresSummary: String(organization?.emergency_procedures_summary ?? ''),
+    stopWorkAuthorityStatement: defaultSmsValue(organization?.stop_work_authority_statement, DEFAULT_STOP_WORK_AUTHORITY_STATEMENT),
+    hazardReportingStatement: defaultSmsValue(organization?.hazard_reporting_statement, DEFAULT_HAZARD_REPORTING_STATEMENT),
+    emergencyProceduresSummary: defaultSmsValue(organization?.emergency_procedures_summary, DEFAULT_EMERGENCY_PROCEDURES_SUMMARY),
     logoPath: String(organization?.logo_path ?? ''),
     logoUrl: String(organization?.logo_url ?? '')
   };
