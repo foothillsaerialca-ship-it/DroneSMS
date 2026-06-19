@@ -44,6 +44,8 @@ type ProposalFormState = {
   laancRequired: string;
   additionalAuthorizationRequired: string;
   proposalAmount: string;
+  estimatedDuration: string;
+  paymentTerms: string;
   validUntil: string;
   status: string;
 };
@@ -66,6 +68,8 @@ const initialFormState: ProposalFormState = {
   laancRequired: 'No',
   additionalAuthorizationRequired: 'No',
   proposalAmount: '',
+  estimatedDuration: '',
+  paymentTerms: '',
   validUntil: '',
   status: proposalStatuses[0]
 };
@@ -96,6 +100,8 @@ type ProposalRecord = {
   hazard_assessment: unknown;
   proposal_equipment: unknown;
   proposal_amount: number | string | null;
+  estimated_duration: string | null;
+  payment_terms: string | null;
   valid_until: string | null;
   status: string | null;
 };
@@ -117,6 +123,7 @@ type RepositoryEquipment = {
   make: string | null;
   model: string | null;
   status: string;
+  purpose: string | null;
 };
 
 type RpicSnapshot = {
@@ -243,6 +250,8 @@ function mapProposalToFormState(proposal: ProposalRecord) {
     laancRequired: fromBoolean(proposal.laanc_required),
     additionalAuthorizationRequired: fromBoolean(proposal.additional_authorization_required),
     proposalAmount: proposal.proposal_amount === null || proposal.proposal_amount === undefined ? '' : String(proposal.proposal_amount),
+    estimatedDuration: proposal.estimated_duration ?? '',
+    paymentTerms: proposal.payment_terms ?? '',
     validUntil: toDateInputValue(proposal.valid_until),
     status: proposal.status || proposalStatuses[0]
   };
@@ -286,7 +295,12 @@ export function NewProposalPage() {
         }
 
         const settings = await loadOrganizationSettingsForUser(userId);
-        if (isMounted) setOrganizationSettings(settings);
+        if (isMounted) {
+          setOrganizationSettings(settings);
+          if (!proposalId && settings?.defaultPaymentTerms) {
+            setFormData((current) => current.paymentTerms.trim() ? current : { ...current, paymentTerms: settings.defaultPaymentTerms });
+          }
+        }
       } catch {
         if (isMounted) setOrganizationSettings(null);
       } finally {
@@ -319,7 +333,7 @@ export function NewProposalPage() {
       try {
         const { data, error: equipmentError } = await supabase
           .from('equipment')
-          .select('id, name, equipment_type, make, model, status')
+          .select('id, name, equipment_type, make, model, status, purpose')
           .not('status', 'in', '(Archived,Retired,Out-of-Service,"Out of Service")')
           .order('name', { ascending: true });
 
@@ -343,7 +357,7 @@ export function NewProposalPage() {
       try {
         const { data, error: proposalLoadError } = await supabase
           .from('proposals')
-          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, deliverables, exclusions, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard_assessment, proposal_equipment, proposal_amount, valid_until, status')
+          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, deliverables, exclusions, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard_assessment, proposal_equipment, proposal_amount, estimated_duration, payment_terms, valid_until, status')
           .eq('id', proposalId)
           .is('deleted_at', null)
           .single();
@@ -518,7 +532,7 @@ export function NewProposalPage() {
               make: selected.make,
               model: selected.model,
               status: selected.status,
-              purpose: getDefaultEquipmentPurpose(selected.equipment_type, formData.serviceType)
+              purpose: selected.equipment_type === 'Chemical / Material' ? (selected.purpose ?? '') : getDefaultEquipmentPurpose(selected.equipment_type, formData.serviceType)
             }
           ]
     );
@@ -634,6 +648,8 @@ export function NewProposalPage() {
           purpose: purpose.trim()
         })),
         proposal_amount: formData.proposalAmount ? Number(formData.proposalAmount) : null,
+        estimated_duration: formData.estimatedDuration.trim() || null,
+        payment_terms: formData.paymentTerms.trim() || null,
         valid_until: formData.validUntil || null,
         status: formData.status,
         updated_at: new Date().toISOString()
@@ -720,6 +736,7 @@ export function NewProposalPage() {
           <SelectField label="Service Type" value={formData.serviceType} options={serviceTypes} onChange={(value) => updateField('serviceType', value)} disabled={isFormDisabled} />
           <TextField label="Site Address" value={formData.siteAddress} onChange={(value) => updateField('siteAddress', value)} disabled={isFormDisabled} required />
           <TextAreaField label="Description" value={formData.description} onChange={(value) => updateField('description', value)} disabled={isFormDisabled} />
+          <TextField label="Estimated Duration" value={formData.estimatedDuration} onChange={(value) => updateField('estimatedDuration', value)} disabled={isFormDisabled} placeholder="2 Hours, Half Day, 1 Day, 2 Days" />
           <TextAreaField label="Deliverables" value={formData.deliverables} onChange={(value) => updateField('deliverables', value)} disabled={isFormDisabled} helperText="Describe what the client will receive when the work is complete." />
           <TextAreaField label="Exclusions" value={formData.exclusions} onChange={(value) => updateField('exclusions', value)} disabled={isFormDisabled} helperText="Clarify work, services, or responsibilities not included in this proposal." />
         </FormSection>
@@ -767,6 +784,7 @@ export function NewProposalPage() {
 
         <FormSection title="Pricing">
           <TextField label="Proposal Amount" type="number" value={formData.proposalAmount} onChange={(value) => updateField('proposalAmount', value)} disabled={isFormDisabled} />
+          <TextField label="Payment Terms" value={formData.paymentTerms} onChange={(value) => updateField('paymentTerms', value)} disabled={isFormDisabled} placeholder="Due Upon Completion, Net 15, Net 30" />
           <TextField label="Proposal Valid Until Date" type="date" value={formData.validUntil} onChange={(value) => updateField('validUntil', value)} disabled={isFormDisabled} />
           <SelectField label="Status" value={formData.status} options={proposalStatuses} onChange={(value) => updateField('status', value)} disabled={isFormDisabled} />
         </FormSection>
@@ -1245,7 +1263,8 @@ function TextField({
   onChange,
   disabled,
   type = 'text',
-  required = false
+  required = false,
+  placeholder
 }: {
   label: string;
   value: string;
@@ -1253,6 +1272,7 @@ function TextField({
   disabled: boolean;
   type?: string;
   required?: boolean;
+  placeholder?: string;
 }) {
   return (
     <label className="block text-sm font-medium text-slate-700">
@@ -1264,6 +1284,7 @@ function TextField({
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
         required={required}
+        placeholder={placeholder}
         step={type === 'number' ? '0.01' : undefined}
       />
     </label>

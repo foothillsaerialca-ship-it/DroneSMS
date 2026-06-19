@@ -64,6 +64,8 @@ type ProposalPdfRecord = {
   hazard_assessment: unknown;
   proposal_equipment: unknown;
   proposal_amount: number | string | null;
+  estimated_duration: string | null;
+  payment_terms: string | null;
   valid_until: string | null;
   created_at: string | null;
 };
@@ -317,16 +319,23 @@ class ProposalPdfRenderer {
     this.renderProposalContent();
   }
 
-  renderProposalContent(options: { sectionTitle?: string } = {}) {
+  renderProposalContent(options: { sectionTitle?: string; includeProposalEnhancements?: boolean } = {}) {
+    const includeProposalEnhancements = options.includeProposalEnhancements ?? true;
     this.startContentPage();
     if (options.sectionTitle) this.section(options.sectionTitle);
     this.section('EXECUTIVE SUMMARY');
     this.paragraph(buildExecutiveSummary(this.proposal, this.organization), 12);
+    const credentials = includeProposalEnhancements ? buildCompanyCredentials(this.organization) : '';
+    if (credentials) {
+      this.section('COMPANY CREDENTIALS');
+      this.paragraph(credentials, 8);
+    }
     this.section('SCOPE OF WORK');
     this.keyValueTable([
       ['Services', buildServiceDescription(this.proposal)],
       ['Site Setup', 'Establish staging area, verify equipment readiness, conduct crew briefing, and implement site controls appropriate to the operating environment.'],
       ['Operations', 'Operations will be conducted in accordance with applicable FAA regulations, the accepted scope of work, and the operator’s documented Safety Management System. Identified hazards and operational controls will be reviewed before work begins.'],
+      ...buildEstimatedDurationRows(includeProposalEnhancements ? this.proposal : null),
       ['Site Restoration', 'Upon completion, equipment, staging materials, and temporary site controls will be removed and the work area will be returned to its pre-operation condition.'],
       ['Deliverables', buildDeliverables(this.proposal)],
       ['Exclusions', buildExclusions(this.proposal)],
@@ -350,6 +359,12 @@ class ProposalPdfRenderer {
       ],
       [250, 237],
     );
+    const materialRows = includeProposalEnhancements ? buildMaterialRows(this.proposal) : [];
+    if (materialRows.length) {
+      this.section('MATERIALS USED');
+      this.table([['Material', 'Purpose'], ...materialRows], [250, 237]);
+      this.paragraph('Safety Data Sheets (SDS) and product documentation are available upon request and are automatically included with the completed job record, when applicable.', 8);
+    }
     this.section('PRELIMINARY HAZARD ASSESSMENT', 'Final site-specific hazards are verified before flight.');
     this.table(
       [
@@ -384,12 +399,20 @@ class ProposalPdfRenderer {
       [237, 50, 100, 100],
       { totalRowIndex: 2 },
     );
+    if (includeProposalEnhancements && clean(this.proposal.payment_terms)) {
+      this.section('PAYMENT TERMS');
+      this.paragraph(clean(this.proposal.payment_terms), 8);
+    }
     this.section('ASSUMPTIONS');
     this.bullets([
       'Weather, safe site access, and client coordination are required.',
       'Airspace authorization availability is assumed when applicable.',
       'Scope changes or additional site requirements may require written authorization.',
     ]);
+    if (includeProposalEnhancements && clean(this.organization?.warranty)) {
+      this.section('WARRANTY');
+      this.paragraph(clean(this.organization?.warranty), 8);
+    }
     this.section('ACCEPTANCE');
     this.paragraph('Signature constitutes acceptance of the scope, pricing, and conditions in this proposal.', 8);
     this.signatureBlock();
@@ -689,7 +712,7 @@ export async function generateJobPacketPdf(jobId: string) {
 
   renderer.renderCloseoutCover(buildCloseoutCoverRows(packet, proposal, organization));
   renderer.renderTableOfContents(toc);
-  renderer.renderProposalContent({ sectionTitle: 'PROPOSAL DOCUMENTATION' });
+  renderer.renderProposalContent({ sectionTitle: 'PROPOSAL DOCUMENTATION', includeProposalEnhancements: false });
 
   renderer.section('JOB INFORMATION');
   renderer.keyValueTable([
@@ -984,7 +1007,7 @@ function buildEnvironmentalRows(jha: JobPacketJha | null): Array<[string, string
   return [['Runoff Planning', jha.runoff_risk ? 'Documented as applicable' : 'Not marked applicable'], ['Containment Plan', clean(jha.containment_plan) || 'Not recorded'], ['Water Body Proximity', jha.water_body_proximity ? `Yes${jha.water_body_distance ? ` - ${jha.water_body_distance} feet` : ''}${jha.water_body_type ? ` (${jha.water_body_type})` : ''}` : 'Not marked applicable'], ['Secondary Containment', jha.secondary_containment_in_place ? 'In place' : 'Not recorded'], ['Reclamation Method', clean(jha.reclamation_method) || 'Not recorded'], ['Estimated Volume', jha.reclamation_volume_estimate ? `${jha.reclamation_volume_estimate} gallons` : 'Not recorded'], ['Vendor / Contact', clean(jha.disposal_vendor_name_contact) || 'Not recorded']];
 }
 
-function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_amount: null, valid_until: null, created_at: null }; }
+function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_amount: null, estimated_duration: null, payment_terms: null, valid_until: null, created_at: null }; }
 function buildJobPacketStorageFileName(job: JobPacketRecord, userId: string) { const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); return `job_packet_pdf-user_${sanitizeFileName(userId)}-${timestamp}-${crypto.randomUUID()}-${sanitizeFileName(job.name)}.pdf`; }
 function buildJobPacketDisplayFileName(job: JobPacketRecord) { const jobNumber = clean(job.source_proposal_number); const jobName = sanitizeFileName(job.name).replace(/-/g, ' '); return jobNumber ? `JOB-${jobNumber} - ${jobName} - Closeout Packet.pdf` : `${jobName} - Closeout Packet.pdf`; }
 function getPacketDocumentLabel(type: string) { return type === 'proposal_pdf' ? 'Proposal PDF' : type === 'job_packet_pdf' ? 'Job Packet PDF' : type.replace(/_/g, ' '); }
@@ -1039,7 +1062,7 @@ async function retainProposalPdf(
 async function loadProposalForPdf(proposalId: string) {
   const { data, error } = await supabase
     .from('proposals')
-    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, deliverables, exclusions, proposed_rpic, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_amount, valid_until, created_at')
+    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, deliverables, exclusions, proposed_rpic, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_amount, estimated_duration, payment_terms, valid_until, created_at')
     .eq('id', proposalId)
     .is('deleted_at', null)
     .single();
@@ -1126,6 +1149,23 @@ function buildExclusions(proposal: ProposalPdfRecord) {
   return clean(proposal.exclusions) || getProposalScopeDefaults(proposal.service_type).exclusions;
 }
 
+
+
+function buildCompanyCredentials(organization: OrganizationSettings | null) {
+  const credentials = [organization?.isLicensed ? 'Licensed' : '', organization?.isInsured ? 'Insured' : '', organization?.isBonded ? 'Bonded' : ''].filter(Boolean);
+  return credentials.join(' • ');
+}
+
+function buildEstimatedDurationRows(proposal: ProposalPdfRecord | null): Array<[string, string]> {
+  const duration = clean(proposal?.estimated_duration);
+  return duration ? [['Estimated Duration', duration]] : [];
+}
+
+function buildMaterialRows(proposal: ProposalPdfRecord): TableCell[][] {
+  return normalizeProposalEquipment(proposal.proposal_equipment)
+    .filter((item) => item.equipment_type === 'Chemical / Material')
+    .map((item) => [item.equipment_name, clean(item.purpose)]);
+}
 
 function normalizeProposalEquipment(value: unknown): ProposalEquipmentAssignment[] {
   if (!Array.isArray(value)) return [];
