@@ -305,6 +305,7 @@ class ProposalPdfRenderer {
   private currentPage: PageState;
   private pageNumber = 0;
   private y = PAGE_HEIGHT - 118;
+  private includeProposalEnhancements = true;
 
   constructor(
     private readonly pdf: PdfBuilder,
@@ -321,15 +322,11 @@ class ProposalPdfRenderer {
 
   renderProposalContent(options: { sectionTitle?: string; includeProposalEnhancements?: boolean } = {}) {
     const includeProposalEnhancements = options.includeProposalEnhancements ?? true;
+    this.includeProposalEnhancements = includeProposalEnhancements;
     this.startContentPage();
     if (options.sectionTitle) this.section(options.sectionTitle);
     this.section('EXECUTIVE SUMMARY');
     this.paragraph(buildExecutiveSummary(this.proposal, this.organization), 12);
-    const credentials = includeProposalEnhancements ? buildCompanyCredentials(this.organization) : '';
-    if (credentials) {
-      this.section('COMPANY CREDENTIALS');
-      this.paragraph(credentials, 8);
-    }
     this.section('SCOPE OF WORK');
     this.keyValueTable([
       ['Services', buildServiceDescription(this.proposal)],
@@ -382,12 +379,6 @@ class ProposalPdfRenderer {
       ['LAANC Requirement', booleanDisplay(this.proposal.laanc_required)],
       ['Preliminary Operational Finding', buildAirspaceFindings(this.proposal)],
     ]);
-    this.section('SAFETY COMMITMENT');
-    this.bullets([
-      'Work is planned around site access, weather, airspace, people, property, and mission constraints.',
-      'The crew verifies current conditions before flight and coordinates with the client when conditions change.',
-      'Operations may be delayed, modified, or stopped when safety or quality conditions require it.',
-    ]);
     this.section('PRICING');
     const amount = currency(this.proposal.proposal_amount);
     this.table(
@@ -403,19 +394,18 @@ class ProposalPdfRenderer {
       this.section('PAYMENT TERMS');
       this.paragraph(clean(this.proposal.payment_terms), 8);
     }
-    this.section('ASSUMPTIONS');
+    this.section('PROJECT ASSUMPTIONS & SAFETY CONDITIONS');
     this.bullets([
+      'Work is planned around site access, weather, airspace, people, property, and mission constraints.',
+      'The crew verifies current conditions before flight and coordinates with the client when conditions change.',
+      'Operations may be delayed, modified, or stopped when safety or quality conditions require it.',
       'Weather, safe site access, and client coordination are required.',
       'Airspace authorization availability is assumed when applicable.',
       'Scope changes or additional site requirements may require written authorization.',
     ]);
-    if (includeProposalEnhancements && clean(this.organization?.warranty)) {
-      this.section('WARRANTY');
-      this.paragraph(clean(this.organization?.warranty), 8);
-    }
     this.section('ACCEPTANCE');
     this.paragraph('Signature constitutes acceptance of the scope, pricing, and conditions in this proposal.', 8);
-    this.signatureBlock();
+    this.signatureBlock(includeProposalEnhancements ? clean(this.organization?.warranty) : '');
   }
 
   renderCloseoutCover(rows: Array<[string, string]>) {
@@ -495,12 +485,15 @@ class ProposalPdfRenderer {
 
   private header(page: PageState) {
     const companyName = companyNameFor(this.organization);
+    const credentials = this.includeProposalEnhancements ? buildCompanyCredentials(this.organization) : '';
     this.pdf.drawText(page, companyName, MARGIN, PAGE_HEIGHT - 30, { size: 10.5, font: 'bold', color: NAVY });
-    this.pdf.drawWrappedText(page, organizationAddress(this.organization), MARGIN, PAGE_HEIGHT - 41, 330, { size: 6, color: GRAY, lineHeight: 7.4 });
-    this.pdf.drawText(page, organizationContact(this.organization), MARGIN, PAGE_HEIGHT - 53, { size: 6, color: GRAY });
+    const addressY = credentials ? PAGE_HEIGHT - 48 : PAGE_HEIGHT - 41;
+    if (credentials) this.pdf.drawText(page, credentials, MARGIN, PAGE_HEIGHT - 39, { size: 6.4, color: GRAY });
+    this.pdf.drawWrappedText(page, organizationAddress(this.organization), MARGIN, addressY, 330, { size: 6, color: GRAY, lineHeight: 7.4 });
+    this.pdf.drawText(page, organizationContact(this.organization), MARGIN, credentials ? PAGE_HEIGHT - 60 : PAGE_HEIGHT - 53, { size: 6, color: GRAY });
     const logo = this.pdf.getLogo();
     if (logo) this.pdf.drawImage(page, PAGE_WIDTH - 88, PAGE_HEIGHT - 54, 31, (31 * logo.height) / logo.width);
-    this.pdf.drawLine(page, MARGIN, PAGE_HEIGHT - 64, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 64, BLUE, 0.9);
+    this.pdf.drawLine(page, MARGIN, credentials ? PAGE_HEIGHT - 69 : PAGE_HEIGHT - 64, PAGE_WIDTH - MARGIN, credentials ? PAGE_HEIGHT - 69 : PAGE_HEIGHT - 64, BLUE, 0.9);
   }
 
   private footer(page: PageState, pageNumber: number) {
@@ -634,19 +627,31 @@ class ProposalPdfRenderer {
     });
   }
 
-  private signatureBlock() {
-    this.ensureSpace(128);
-    const panelHeight = 116;
+  private signatureBlock(warranty = '') {
+    const warrantyLines = warranty ? wrapText(warranty, PAGE_WIDTH - MARGIN * 2 - 36, 8.4) : [];
+    const warrantyHeight = warrantyLines.length ? 28 + warrantyLines.length * 10 : 0;
+    const panelHeight = 116 + warrantyHeight;
+    this.ensureSpace(panelHeight + 12);
     const panelY = this.y - panelHeight;
     const panelWidth = PAGE_WIDTH - MARGIN * 2;
     this.pdf.drawRect(this.currentPage, MARGIN, panelY, panelWidth, panelHeight, { fill: SOFT_PANEL, stroke: LIGHT_GRAY, strokeWidth: 0.6, opacity: PANEL_OPACITY });
     this.pdf.drawText(this.currentPage, 'Client Authorization', MARGIN + 18, this.y - 17, { size: 11.5, font: 'bold', color: NAVY });
 
+    let signatureOffset = 0;
+    if (warrantyLines.length) {
+      const warrantyTitleY = this.y - 39;
+      this.pdf.drawText(this.currentPage, 'Warranty', MARGIN + 18, warrantyTitleY, { size: 8.8, font: 'bold', color: BLUE });
+      warrantyLines.forEach((line, index) => {
+        this.pdf.drawText(this.currentPage, line, MARGIN + 18, warrantyTitleY - 13 - index * 10, { size: 8.4, color: NAVY });
+      });
+      signatureOffset = warrantyHeight;
+    }
+
     const leftX = MARGIN + 18;
     const rightX = PAGE_WIDTH / 2 + 14;
     const lineWidth = 190;
-    const firstRowY = this.y - 49;
-    const secondRowY = this.y - 88;
+    const firstRowY = this.y - 49 - signatureOffset;
+    const secondRowY = this.y - 88 - signatureOffset;
     this.signatureField('Authorized Name', leftX, firstRowY, lineWidth);
     this.signatureField('Title', rightX, firstRowY, lineWidth);
     this.signatureField('Signature', leftX, secondRowY, lineWidth);
