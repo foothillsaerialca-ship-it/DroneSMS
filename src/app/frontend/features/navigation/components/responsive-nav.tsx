@@ -137,7 +137,7 @@ export function MobileTopBar() {
           <Link
             to="/settings/profile"
             className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600 transition hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2"
-            aria-label="Open profile"
+            aria-label="Open account settings"
           >
             DS
           </Link>

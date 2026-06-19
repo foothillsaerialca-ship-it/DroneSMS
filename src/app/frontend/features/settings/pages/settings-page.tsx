@@ -3,9 +3,6 @@ import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../auth/components/use-auth';
 
 type SettingsForm = {
-  firstName: string;
-  lastName: string;
-  faaPartNumber: string;
   companyName: string;
   phoneNumber: string;
   emailAddress: string;
@@ -26,12 +23,9 @@ type SettingsForm = {
   logoUrl: string;
 };
 
-type EditableSection = 'user' | 'organization' | 'safety';
+type EditableSection = 'organization' | 'safety';
 
 const emptySettingsForm: SettingsForm = {
-  firstName: '',
-  lastName: '',
-  faaPartNumber: '',
   companyName: '',
   phoneNumber: '',
   emailAddress: '',
@@ -52,12 +46,6 @@ const emptySettingsForm: SettingsForm = {
   logoUrl: ''
 };
 
-const userFields = [
-  { key: 'firstName', label: 'First Name', type: 'text', autoComplete: 'given-name' },
-  { key: 'lastName', label: 'Last Name', type: 'text', autoComplete: 'family-name' },
-  { key: 'faaPartNumber', label: 'FAA Part 107 License Number', type: 'text', autoComplete: 'off' }
-] as const;
-
 const organizationFields = [
   { key: 'companyName', label: 'Company Name', type: 'text', autoComplete: 'organization' },
   { key: 'phoneNumber', label: 'Phone Number', type: 'tel', autoComplete: 'tel' },
@@ -77,18 +65,31 @@ const safetyFields = [
   { key: 'emergencyProceduresSummary', label: 'Emergency Procedures Summary', type: 'textarea' }
 ] as const;
 
+const smsCapabilityGroups = [
+  {
+    title: 'Safety Policy & Objectives',
+    items: ['Safety Policy Statement', 'Safety Objectives']
+  },
+  {
+    title: 'Safety Risk Management',
+    items: ['Risk Acceptance Criteria', 'Risk Matrix Configuration']
+  },
+  {
+    title: 'Safety Assurance',
+    items: ['Internal Audit Program', 'Corrective Action Process']
+  },
+  {
+    title: 'Safety Promotion',
+    items: ['Training Program Summary', 'Safety Meeting Frequency']
+  }
+] as const;
+
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-function normalizeSettings(
-  organization: Record<string, unknown> | null | undefined,
-  profile: Record<string, unknown> | null | undefined
-): SettingsForm {
+function normalizeSettings(organization: Record<string, unknown> | null | undefined): SettingsForm {
   return {
-    firstName: String(profile?.first_name ?? ''),
-    lastName: String(profile?.last_name ?? ''),
-    faaPartNumber: String(profile?.faa_part_number ?? ''),
     companyName: String(organization?.name ?? ''),
     phoneNumber: String(organization?.phone_number ?? ''),
     emailAddress: String(organization?.email_address ?? ''),
@@ -128,6 +129,16 @@ function FieldDisplay({ label, value }: { label: string; value: string }) {
       <dd className={`mt-1 whitespace-pre-wrap text-sm ${isEmpty ? 'text-slate-400' : 'text-slate-800'}`}>
         {displayValue(value)}
       </dd>
+    </div>
+  );
+}
+
+
+function ComingSoonRow({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3">
+      <span className="text-sm font-medium text-slate-600">{label}</span>
+      <span className="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Coming Soon</span>
     </div>
   );
 }
@@ -214,7 +225,7 @@ export function SettingsPage() {
       try {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('organization_id, first_name, last_name, company_name, faa_part_number')
+          .select('organization_id')
           .eq('id', session.user.id)
           .maybeSingle();
 
@@ -234,7 +245,7 @@ export function SettingsPage() {
 
         if (!isMounted) return;
 
-        const normalizedSettings = normalizeSettings(organization, profile);
+        const normalizedSettings = normalizeSettings(organization);
         setOrganizationId(organization.id as string);
         setSettings(normalizedSettings);
         setDraft(normalizedSettings);
@@ -291,48 +302,7 @@ export function SettingsPage() {
     try {
       let updatedSettings = draft;
 
-      if (editingSection === 'user') {
-        if (!session?.user.id) throw new Error('User session not found. Please log in again.');
-
-        const { data, error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            first_name: draft.firstName.trim() || null,
-            last_name: draft.lastName.trim() || null,
-            faa_part_number: draft.faaPartNumber.trim() || null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', session.user.id)
-          .select('organization_id, first_name, last_name, company_name, faa_part_number')
-          .single();
-
-        if (updateError) throw updateError;
-
-        updatedSettings = normalizeSettings(
-          {
-            id: organizationId,
-            name: settings.companyName,
-            phone_number: settings.phoneNumber,
-            email_address: settings.emailAddress,
-            website_url: settings.websiteUrl,
-            physical_address: settings.physicalAddress,
-            primary_contact: settings.primaryContact,
-            company_statement: settings.companyStatement,
-            is_licensed: settings.isLicensed === 'Yes',
-            is_insured: settings.isInsured === 'Yes',
-            is_bonded: settings.isBonded === 'Yes',
-            default_payment_terms: settings.defaultPaymentTerms,
-            warranty: settings.warranty,
-            safety_manager: settings.safetyManager,
-            stop_work_authority_statement: settings.stopWorkAuthorityStatement,
-            hazard_reporting_statement: settings.hazardReportingStatement,
-            emergency_procedures_summary: settings.emergencyProceduresSummary,
-            logo_path: settings.logoPath,
-            logo_url: settings.logoUrl
-          },
-          data
-        );
-      } else {
+      {
         const changes =
           editingSection === 'organization'
             ? {
@@ -369,11 +339,7 @@ export function SettingsPage() {
 
         if (updateError) throw updateError;
 
-        updatedSettings = normalizeSettings(data, {
-          first_name: settings.firstName,
-          last_name: settings.lastName,
-          faa_part_number: settings.faaPartNumber
-        });
+        updatedSettings = normalizeSettings(data);
       }
 
       setSettings(updatedSettings);
@@ -429,11 +395,7 @@ export function SettingsPage() {
         await supabase.storage.from('organization-logos').remove([settings.logoPath]);
       }
 
-      const updatedSettings = normalizeSettings(data, {
-        first_name: settings.firstName,
-        last_name: settings.lastName,
-        faa_part_number: settings.faaPartNumber
-      });
+      const updatedSettings = normalizeSettings(data);
       setSettings(updatedSettings);
       setDraft(updatedSettings);
       setMessage('Logo updated.');
@@ -449,7 +411,7 @@ export function SettingsPage() {
       <div>
         <p className="text-sm font-medium uppercase tracking-wide text-brand-700">Settings</p>
         <h1 className="mt-1 text-2xl font-semibold text-brand-900">Organization Settings</h1>
-        <p className="mt-2 text-sm text-slate-600">Manage company details, safety program language, and branding.</p>
+        <p className="mt-2 text-sm text-slate-600">Manage organization details, account access, SMS language, and branding.</p>
       </div>
 
       {error ? (
@@ -575,69 +537,32 @@ export function SettingsPage() {
           </article>
 
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-brand-900">User Profile</h2>
-                <p className="mt-1 text-sm text-slate-600">Manage your personal and professional information.</p>
-              </div>
-              {editingSection !== 'user' ? (
-                <button
-                  type="button"
-                  className="rounded-lg border border-brand-700 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
-                  onClick={() => beginEdit('user')}
-                  disabled={Boolean(editingSection)}
-                >
-                  Edit
-                </button>
-              ) : null}
+            <div>
+              <h2 className="text-lg font-semibold text-brand-900">Account Settings</h2>
+              <p className="mt-1 text-sm text-slate-600">Manage the authenticated user’s account access and security.</p>
             </div>
-
-            {editingSection === 'user' ? (
-              <form className="mt-4 space-y-4" onSubmit={handleSave}>
-                {userFields.map((field) => (
-                  <SettingsInput
-                    key={field.key}
-                    label={field.label}
-                    name={field.key}
-                    value={draft[field.key]}
-                    type={field.type}
-                    autoComplete={field.autoComplete}
-                    disabled={isSaving}
-                    onChange={updateDraft}
-                  />
-                ))}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <button
-                    type="submit"
-                    className="min-h-11 rounded-lg bg-brand-700 px-3 py-3 text-sm font-medium text-white transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-                    disabled={isSaving}
-                  >
-                    {isSaving ? 'Saving...' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    className="min-h-11 rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 sm:py-2"
-                    onClick={cancelEdit}
-                    disabled={isSaving}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {userFields.map((field) => (
-                  <FieldDisplay key={field.key} label={field.label} value={settings[field.key]} />
-                ))}
-              </dl>
-            )}
+            <dl className="mt-4 grid grid-cols-1 gap-3">
+              <FieldDisplay label="Email Address" value={session?.user.email ?? ''} />
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Change Password</dt>
+                <dd className="mt-1 text-sm text-slate-500">Coming soon: self-service password management.</dd>
+              </div>
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Multi-Factor Authentication</dt>
+                <dd className="mt-1 text-sm text-slate-500">Coming soon.</dd>
+              </div>
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active Sessions</dt>
+                <dd className="mt-1 text-sm text-slate-500">Coming soon.</dd>
+              </div>
+            </dl>
           </article>
 
           <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold text-brand-900">Safety Program</h2>
-                <p className="mt-1 text-sm text-slate-600">Published safety responsibilities and response summaries.</p>
+                <h2 className="text-lg font-semibold text-brand-900">Safety Management System (SMS)</h2>
+                <p className="mt-1 text-sm text-slate-600">Manage organization-wide safety policies, responsibilities, and operational standards.</p>
               </div>
               {editingSection !== 'safety' ? (
                 <button
@@ -683,11 +608,31 @@ export function SettingsPage() {
                 </div>
               </form>
             ) : (
-              <dl className="mt-4 grid grid-cols-1 gap-3">
-                {safetyFields.map((field) => (
-                  <FieldDisplay key={field.key} label={field.label} value={settings[field.key]} />
-                ))}
-              </dl>
+              <>
+                <dl className="mt-4 grid grid-cols-1 gap-3">
+                  {safetyFields.map((field) => (
+                    <FieldDisplay key={field.key} label={field.label} value={settings[field.key]} />
+                  ))}
+                </dl>
+                <div className="mt-6 space-y-4 border-t border-slate-200 pt-5">
+                  <div>
+                    <h3 className="text-base font-semibold text-brand-900">Future SMS Capabilities</h3>
+                    <p className="mt-1 text-sm text-slate-600">Planned SMS modules are shown as placeholders and do not affect current settings.</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {smsCapabilityGroups.map((group) => (
+                      <section key={group.title} className="rounded-lg border border-slate-200 bg-white p-3">
+                        <h4 className="text-sm font-semibold text-slate-800">{group.title}</h4>
+                        <div className="mt-3 space-y-2">
+                          {group.items.map((item) => (
+                            <ComingSoonRow key={item} label={item} />
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
           </article>
         </>
