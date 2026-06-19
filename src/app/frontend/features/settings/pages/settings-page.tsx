@@ -13,6 +13,11 @@ type SettingsForm = {
   physicalAddress: string;
   primaryContact: string;
   companyStatement: string;
+  isLicensed: string;
+  isInsured: string;
+  isBonded: string;
+  defaultPaymentTerms: string;
+  warranty: string;
   safetyManager: string;
   stopWorkAuthorityStatement: string;
   hazardReportingStatement: string;
@@ -34,6 +39,11 @@ const emptySettingsForm: SettingsForm = {
   physicalAddress: '',
   primaryContact: '',
   companyStatement: '',
+  isLicensed: 'No',
+  isInsured: 'No',
+  isBonded: 'No',
+  defaultPaymentTerms: '',
+  warranty: '',
   safetyManager: '',
   stopWorkAuthorityStatement: '',
   hazardReportingStatement: '',
@@ -55,7 +65,9 @@ const organizationFields = [
   { key: 'websiteUrl', label: 'Website', type: 'url', autoComplete: 'url' },
   { key: 'physicalAddress', label: 'Physical Address', type: 'text', autoComplete: 'street-address' },
   { key: 'primaryContact', label: 'Primary Contact', type: 'text', autoComplete: 'name' },
-  { key: 'companyStatement', label: 'Company Statement', type: 'textarea', autoComplete: 'off' }
+  { key: 'companyStatement', label: 'Company Statement', type: 'textarea', autoComplete: 'off' },
+  { key: 'defaultPaymentTerms', label: 'Default Payment Terms', type: 'text', autoComplete: 'off' },
+  { key: 'warranty', label: 'Warranty', type: 'textarea', autoComplete: 'off' }
 ] as const;
 
 const safetyFields = [
@@ -84,6 +96,11 @@ function normalizeSettings(
     physicalAddress: String(organization?.physical_address ?? ''),
     primaryContact: String(organization?.primary_contact ?? ''),
     companyStatement: String(organization?.company_statement ?? ''),
+    isLicensed: organization?.is_licensed ? 'Yes' : 'No',
+    isInsured: organization?.is_insured ? 'Yes' : 'No',
+    isBonded: organization?.is_bonded ? 'Yes' : 'No',
+    defaultPaymentTerms: String(organization?.default_payment_terms ?? ''),
+    warranty: String(organization?.warranty ?? ''),
     safetyManager: String(organization?.safety_manager ?? ''),
     stopWorkAuthorityStatement: String(organization?.stop_work_authority_statement ?? ''),
     hazardReportingStatement: String(organization?.hazard_reporting_statement ?? ''),
@@ -160,6 +177,16 @@ function SettingsInput({
   );
 }
 
+
+function CheckboxField({ label, name, value, disabled, onChange }: { label: string; name: keyof SettingsForm; value: string; disabled: boolean; onChange: (name: keyof SettingsForm, value: string) => void }) {
+  return (
+    <label className="flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+      <input className="h-5 w-5 rounded border-slate-300 text-brand-700 focus:ring-brand-100" type="checkbox" checked={value === 'Yes'} onChange={(event) => onChange(name, event.target.checked ? 'Yes' : 'No')} disabled={disabled} />
+      {label}
+    </label>
+  );
+}
+
 export function SettingsPage() {
   const { session } = useAuth();
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -197,7 +224,7 @@ export function SettingsPage() {
         const { data: organization, error: organizationError } = await supabase
           .from('organizations')
           .select(
-            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, warranty, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
           )
           .eq('id', profile.organization_id)
           .maybeSingle();
@@ -291,6 +318,11 @@ export function SettingsPage() {
             physical_address: settings.physicalAddress,
             primary_contact: settings.primaryContact,
             company_statement: settings.companyStatement,
+            is_licensed: settings.isLicensed === 'Yes',
+            is_insured: settings.isInsured === 'Yes',
+            is_bonded: settings.isBonded === 'Yes',
+            default_payment_terms: settings.defaultPaymentTerms,
+            warranty: settings.warranty,
             safety_manager: settings.safetyManager,
             stop_work_authority_statement: settings.stopWorkAuthorityStatement,
             hazard_reporting_statement: settings.hazardReportingStatement,
@@ -311,6 +343,11 @@ export function SettingsPage() {
                 physical_address: draft.physicalAddress.trim() || null,
                 primary_contact: draft.primaryContact.trim() || null,
                 company_statement: draft.companyStatement.trim() || null,
+                is_licensed: draft.isLicensed === 'Yes',
+                is_insured: draft.isInsured === 'Yes',
+                is_bonded: draft.isBonded === 'Yes',
+                default_payment_terms: draft.defaultPaymentTerms.trim() || null,
+                warranty: draft.warranty.trim() || null,
                 updated_at: new Date().toISOString()
               }
             : {
@@ -326,7 +363,7 @@ export function SettingsPage() {
           .update(changes)
           .eq('id', organizationId)
           .select(
-            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, warranty, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
           )
           .single();
 
@@ -382,7 +419,7 @@ export function SettingsPage() {
         .update({ logo_path: logoPath, logo_url: logoUrl, updated_at: new Date().toISOString() })
         .eq('id', organizationId)
         .select(
-          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, warranty, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
         )
         .single();
 
@@ -492,6 +529,14 @@ export function SettingsPage() {
                         />
                       </div>
                     ))}
+                    <div className="sm:col-span-2">
+                      <p className="text-sm font-medium text-slate-700">Company Credentials</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                        <CheckboxField label="Licensed" name="isLicensed" value={draft.isLicensed} disabled={isSaving} onChange={updateDraft} />
+                        <CheckboxField label="Insured" name="isInsured" value={draft.isInsured} disabled={isSaving} onChange={updateDraft} />
+                        <CheckboxField label="Bonded" name="isBonded" value={draft.isBonded} disabled={isSaving} onChange={updateDraft} />
+                      </div>
+                    </div>
                   </div>
                   <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <button
@@ -521,6 +566,9 @@ export function SettingsPage() {
                       <FieldDisplay label={field.label} value={settings[field.key]} />
                     </div>
                   ))}
+                  <div className="sm:col-span-2">
+                    <FieldDisplay label="Company Credentials" value={[settings.isLicensed === 'Yes' ? 'Licensed' : '', settings.isInsured === 'Yes' ? 'Insured' : '', settings.isBonded === 'Yes' ? 'Bonded' : ''].filter(Boolean).join(' • ')} />
+                  </div>
                 </dl>
               )}
             </div>

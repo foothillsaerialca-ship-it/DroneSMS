@@ -21,6 +21,7 @@ const initialFormState = {
   productCategory: '',
   typicalMixRatio: '',
   applicationNotes: '',
+  purpose: '',
   epaRegistrationNumber: '',
   signalWord: '',
   restrictedUseProduct: 'No'
@@ -41,6 +42,7 @@ type Equipment = {
   product_category: string | null;
   typical_mix_ratio: string | null;
   application_notes: string | null;
+  purpose: string | null;
   epa_registration_number: string | null;
   signal_word: string | null;
   restricted_use_product: boolean | null;
@@ -167,6 +169,7 @@ function toFormState(equipment: Equipment): EquipmentFormState {
     productCategory: equipment.product_category ?? '',
     typicalMixRatio: equipment.typical_mix_ratio ?? '',
     applicationNotes: equipment.application_notes ?? '',
+    purpose: equipment.purpose ?? '',
     epaRegistrationNumber: equipment.epa_registration_number ?? '',
     signalWord: equipment.signal_word ?? '',
     restrictedUseProduct: equipment.restricted_use_product ? 'Yes' : 'No'
@@ -205,6 +208,7 @@ function buildEquipmentPayload(formData: EquipmentFormState) {
     product_category: chemical ? formData.productCategory.trim() || null : null,
     typical_mix_ratio: chemical ? formData.typicalMixRatio.trim() || null : null,
     application_notes: chemical ? formData.applicationNotes.trim() || null : null,
+    purpose: chemical ? formData.purpose.trim() || null : null,
     epa_registration_number: chemical ? formData.epaRegistrationNumber.trim() || null : null,
     signal_word: chemical ? formData.signalWord.trim() || null : null,
     restricted_use_product: chemical ? formData.restrictedUseProduct === 'Yes' : null,
@@ -233,7 +237,7 @@ export function EquipmentPage() {
     try {
       const { data, error: equipmentError } = await supabase
         .from('equipment')
-        .select('id, name, equipment_type, make, model, serial_number, faa_registration_number, assigned_location, status, maintenance_due_date, notes, product_category, typical_mix_ratio, application_notes, epa_registration_number, signal_word, restricted_use_product, updated_at, equipment_reference_documents(id, equipment_id, document_type, file_name, display_file_name, storage_path, created_at)')
+        .select('id, name, equipment_type, make, model, serial_number, faa_registration_number, assigned_location, status, maintenance_due_date, notes, product_category, typical_mix_ratio, application_notes, epa_registration_number, signal_word, restricted_use_product, purpose, updated_at, equipment_reference_documents(id, equipment_id, document_type, file_name, display_file_name, storage_path, created_at)')
         .order('status', { ascending: true })
         .order('name', { ascending: true });
 
@@ -579,6 +583,7 @@ export function EquipmentPage() {
                 <label className="block text-sm font-medium text-slate-700">Manufacturer<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.make} onChange={(event) => updateField('make', event.target.value)} disabled={isSaving} /></label>
                 <label className="block text-sm font-medium text-slate-700">Product Category<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.productCategory} onChange={(event) => updateField('productCategory', event.target.value)} placeholder="Cleaner, carrier water, pesticide, surfactant" disabled={isSaving} /></label>
                 <label className="block text-sm font-medium text-slate-700">Typical Mix Ratio<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.typicalMixRatio} onChange={(event) => updateField('typicalMixRatio', event.target.value)} placeholder="Optional" disabled={isSaving} /></label>
+                <label className="block text-sm font-medium text-slate-700 sm:col-span-2">Purpose<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.purpose} onChange={(event) => updateField('purpose', event.target.value)} placeholder="Exterior window cleaning detergent, rinse water, herbicide" disabled={isSaving} /></label>
                 <label className="block text-sm font-medium text-slate-700 sm:col-span-2">Application Notes<textarea className="mt-1 min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.applicationNotes} onChange={(event) => updateField('applicationNotes', event.target.value)} placeholder="Optional" disabled={isSaving} /></label>
                 <label className="block text-sm font-medium text-slate-700">EPA Registration Number<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.epaRegistrationNumber} onChange={(event) => updateField('epaRegistrationNumber', event.target.value)} disabled={isSaving} /></label>
                 <label className="block text-sm font-medium text-slate-700">Signal Word<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.signalWord} onChange={(event) => updateField('signalWord', event.target.value)} placeholder="Caution, Warning, Danger" disabled={isSaving} /></label>
@@ -722,6 +727,7 @@ export function EquipmentPage() {
                     <dd className="text-slate-800">{item.assigned_location || 'Not assigned'}</dd>
                   </div>
                   {isChemicalMaterial(item) ? (<>
+                    <div><dt className="font-medium text-slate-500">Purpose</dt><dd className="text-slate-800">{item.purpose || 'Not provided'}</dd></div>
                     <div><dt className="font-medium text-slate-500">EPA Reg. No.</dt><dd className="text-slate-800">{item.epa_registration_number || 'Not tracked'}</dd></div>
                     <div><dt className="font-medium text-slate-500">Signal Word</dt><dd className="text-slate-800">{item.signal_word || 'Not tracked'}</dd></div>
                     <div><dt className="font-medium text-slate-500">Restricted Use</dt><dd className="text-slate-800">{item.restricted_use_product ? 'Yes' : 'No'}</dd></div>
