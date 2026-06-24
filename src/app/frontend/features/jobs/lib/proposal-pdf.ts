@@ -717,7 +717,10 @@ export async function generateJobPacketPdf(jobId: string) {
 
   renderer.renderCloseoutCover(buildCloseoutCoverRows(packet, proposal, organization));
   renderer.renderTableOfContents(toc);
-  renderer.renderProposalContent({ sectionTitle: 'PROPOSAL DOCUMENTATION', includeProposalEnhancements: false });
+  renderer.renderProposalContent({ sectionTitle: 'PROPOSAL', includeProposalEnhancements: false });
+
+  renderer.startContentPage();
+  renderer.section('COMPLETED JOB RECORD');
 
   renderer.section('JOB INFORMATION');
   renderer.keyValueTable([
@@ -736,20 +739,20 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.table([['Equipment', 'Type / Purpose'], ...(packet.equipmentAssignments.length ? packet.equipmentAssignments.map((a) => [clean(a.equipment?.name) || 'Equipment record unavailable', clean(a.equipment?.equipment_type) || 'Unknown type']) : [['Not assigned', 'Equipment was not assigned in the job record.']])], [220, 267]);
   renderer.section('JHA SUMMARY');
   renderJhaSummary(renderer, pdf, packet.jha, packetPhotos);
+  renderer.startContentPage();
+  renderer.section('CLOSEOUT & SUPPORTING DOCUMENTATION');
+  const environmentalRows = buildEnvironmentalRows(packet.jha);
+  if (environmentalRows.length) { renderer.section('ENVIRONMENTAL CONTROLS'); renderer.keyValueTable(environmentalRows); }
   renderer.section('AIRSPACE REVIEW');
   renderer.keyValueTable([['Airspace Class', clean(packet.jha?.faa_airspace_class) || PLACEHOLDER], ['Nearby Airport', PLACEHOLDER], ['LAANC Required', clean(packet.jha?.laanc_required) || PLACEHOLDER], ['Operational Finding', packet.jha ? `JHA status: ${clean(packet.jha.status) || 'Draft'}. Controls in place: ${packet.jha.controls_in_place ? 'Yes' : 'No'}.` : 'Airspace review not started.']]);
-  const documentationPhotos = packetPhotos.filter((photo) => !photo.hazardId);
-  if (documentationPhotos.length) renderPhotoDocumentation(renderer, pdf, documentationPhotos);
   renderer.section('PREFLIGHT CHECKLIST');
   renderer.table([['Checklist Item', 'State'], ...buildPreflightRows(packet.preflight)], [300, 187]);
   renderer.section('SAFETY EVENTS');
   renderer.table([['Category', 'Outcome', 'Details'], ...(packet.safetyEvents.length ? packet.safetyEvents.map((e) => [clean(e.category) || 'Safety Event', clean(e.outcome) || 'Recorded', `${clean(e.description) || 'No description.'}${e.immediate_actions_taken ? ` Immediate actions: ${e.immediate_actions_taken}` : ''}`]) : [['None', 'None', 'No safety events recorded.']])], [95, 105, 287]);
-  const environmentalRows = buildEnvironmentalRows(packet.jha);
-  if (environmentalRows.length) { renderer.section('ENVIRONMENTAL CONTROLS'); renderer.keyValueTable(environmentalRows); }
+  const documentationPhotos = packetPhotos.filter((photo) => !photo.hazardId);
+  if (documentationPhotos.length) renderPhotoDocumentation(renderer, pdf, documentationPhotos);
   renderer.section('CLOSEOUT SUMMARY');
   renderer.keyValueTable([['Operation Result', clean(packet.closeout?.operation_result) || 'Not completed'], ['Closeout Narrative', clean(packet.closeout?.deviation_narrative) || 'No closeout narrative was provided.'], ['Completion Date', formatDate(packet.closeout?.updated_at) || 'Not recorded']]);
-  renderer.section('PERSONNEL QUALIFICATION SUMMARY');
-  renderer.table([['Name', 'Role', 'Part 107', 'Training', 'Status'], ...(packet.assignments.length ? packet.assignments.map((a) => [clean(a.personnel?.full_name) || 'Unavailable', clean(a.assigned_role) || clean(a.personnel?.role) || 'Crew', formatDate(a.personnel?.part_107_expiration_date) || 'Not tracked', formatDate(a.personnel?.training_expiration_date) || 'Not tracked', clean(a.personnel?.status) || 'Missing']) : [['No assigned crew', '-', '-', '-', '-']])], [130, 85, 88, 88, 96]);
   if (packet.documents.length) { renderer.section('GENERATED DOCUMENTS / ATTACHMENTS SUMMARY'); renderer.bullets(packet.documents.map((d) => `${getPacketDocumentLabel(d.document_type)} - ${d.display_file_name || d.file_name || 'Generated document'}`)); }
   await renderChemicalReferenceAppendix(renderer, packet.equipmentAssignments, pdf);
 
@@ -941,12 +944,9 @@ function readJpegDimensions(bytes: Uint8Array): Pick<PdfImage, 'width' | 'height
 function buildCloseoutTableOfContents(packet: Awaited<ReturnType<typeof loadJobPacketForPdf>>, photos: PacketPhotoImage[]): TocGroup[] {
   const environmentalRows = buildEnvironmentalRows(packet.jha);
   return [
-    { title: 'PROPOSAL DOCUMENTATION', items: ['Executive Summary', 'Scope of Work', 'Personnel', 'Equipment', 'Preliminary Hazard Assessment', 'Airspace Review', 'Pricing', 'Acceptance'] },
-    { title: 'JOB RECORD', items: ['Job Information', 'Crew Assignment', 'Equipment Assignment', ...(getJobHazardEntries(packet.jha).length ? ['JHA Summary'] : [])] },
-    { title: 'CONTROL VERIFICATION', items: photos.some((photo) => photo.hazardId) ? ['Hazard Mitigation Verification'] : [] },
-    { title: 'OPERATIONAL EVIDENCE', items: photos.some((photo) => !photo.hazardId) ? ['Photo Documentation'] : [] },
-    { title: 'COMPLIANCE RECORDS', items: [...(environmentalRows.length ? ['Environmental Controls'] : []), 'Preflight Checklist', 'Safety Events'] },
-    { title: 'CLOSEOUT', items: ['Closeout Summary', 'Personnel Qualification Summary', ...(packet.equipmentAssignments.some((assignment) => assignment.equipment?.equipment_type === 'Chemical / Material' && assignment.equipment.equipment_reference_documents?.some((document) => document.document_type === 'Safety Data Sheet (SDS)')) ? ['Chemical Documentation'] : [])] },
+    { title: 'PROPOSAL', items: ['Executive Summary', 'Scope of Work', 'Personnel', 'Equipment', 'Preliminary Hazard Assessment', 'Airspace Review', 'Pricing', 'Acceptance'] },
+    { title: 'COMPLETED JOB RECORD', items: ['Job Information', 'Crew Assignment', 'Equipment Assignment', ...(getJobHazardEntries(packet.jha).length ? ['JHA Summary'] : []), ...(photos.some((photo) => photo.hazardId) ? ['Hazard Mitigation Verification Photos'] : [])] },
+    { title: 'CLOSEOUT & SUPPORTING DOCUMENTATION', items: [...(environmentalRows.length ? ['Environmental Controls'] : []), 'Airspace Review', 'Preflight Checklist', 'Safety Events', ...(photos.some((photo) => !photo.hazardId) ? ['Photo Documentation'] : []), 'Closeout Summary', ...(packet.documents.length ? ['Generated Documents / Attachments Summary'] : []), ...(packet.equipmentAssignments.some((assignment) => assignment.equipment?.equipment_type === 'Chemical / Material' && assignment.equipment.equipment_reference_documents?.some((document) => document.document_type === 'Safety Data Sheet (SDS)')) ? ['Chemical Documentation'] : [])] },
   ];
 }
 
