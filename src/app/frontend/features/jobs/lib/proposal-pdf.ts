@@ -33,11 +33,13 @@ const SECTION_HEADING_LAYOUT = {
   fontSize: 12.5,
   textColor: NAVY,
   x: MARGIN,
-  topSpacing: 16,
+  topSpacing: 0,
   dividerOffset: 7,
   dividerColor: BLUE,
   dividerWidth: 1.05,
   spacingBelow: 20,
+  firstHeadingTopOffset: 10,
+  meaningfulContentSpace: 28,
   subtitleSpacingBelow: 3,
 };
 
@@ -336,7 +338,7 @@ class ProposalPdfRenderer {
   renderProposalContent(options: { sectionTitle?: string; includeProposalEnhancements?: boolean } = {}) {
     const includeProposalEnhancements = options.includeProposalEnhancements ?? true;
     this.includeProposalEnhancements = includeProposalEnhancements;
-    this.startContentPage();
+    this.startContentPage(true, true);
     if (options.sectionTitle) this.section(options.sectionTitle);
     this.section('EXECUTIVE SUMMARY');
     this.paragraph(buildExecutiveSummary(this.proposal, this.organization), 12);
@@ -486,26 +488,33 @@ class ProposalPdfRenderer {
     this.footer(this.currentPage, this.pageNumber);
   }
 
-  startContentPage(showPageNumber = true) {
+  startContentPage(showPageNumber = true, fullHeader = false) {
     this.pageNumber += 1;
     this.currentPage = this.pdf.addPage();
     this.watermark(this.currentPage);
-    this.header(this.currentPage);
+    this.header(this.currentPage, fullHeader);
     this.footer(this.currentPage, showPageNumber ? this.pageNumber : 1);
     this.y = PAGE_HEIGHT - 78;
   }
 
-  private header(page: PageState) {
+  private header(page: PageState, fullHeader: boolean) {
     const companyName = companyNameFor(this.organization);
     const credentials = this.includeProposalEnhancements ? buildCompanyCredentials(this.organization) : '';
     this.pdf.drawText(page, companyName, MARGIN, PAGE_HEIGHT - 30, { size: 10.5, font: 'bold', color: NAVY });
-    const addressY = credentials ? PAGE_HEIGHT - 48 : PAGE_HEIGHT - 41;
-    if (credentials) this.pdf.drawText(page, credentials, MARGIN, PAGE_HEIGHT - 39, { size: 6.4, color: GRAY });
-    this.pdf.drawWrappedText(page, organizationAddress(this.organization), MARGIN, addressY, 330, { size: 6, color: GRAY, lineHeight: 7.4 });
-    this.pdf.drawText(page, organizationContact(this.organization), MARGIN, credentials ? PAGE_HEIGHT - 60 : PAGE_HEIGHT - 53, { size: 6, color: GRAY });
     const logo = this.pdf.getLogo();
-    if (logo) this.pdf.drawImage(page, PAGE_WIDTH - 88, PAGE_HEIGHT - 54, 31, (31 * logo.height) / logo.width);
-    this.pdf.drawLine(page, MARGIN, credentials ? PAGE_HEIGHT - 69 : PAGE_HEIGHT - 64, PAGE_WIDTH - MARGIN, credentials ? PAGE_HEIGHT - 69 : PAGE_HEIGHT - 64, BLUE, 0.9);
+    if (fullHeader) {
+      const addressY = credentials ? PAGE_HEIGHT - 48 : PAGE_HEIGHT - 41;
+      if (credentials) this.pdf.drawText(page, credentials, MARGIN, PAGE_HEIGHT - 39, { size: 6.4, color: GRAY });
+      this.pdf.drawWrappedText(page, organizationAddress(this.organization), MARGIN, addressY, 330, { size: 6, color: GRAY, lineHeight: 7.4 });
+      this.pdf.drawText(page, organizationContact(this.organization), MARGIN, credentials ? PAGE_HEIGHT - 60 : PAGE_HEIGHT - 53, { size: 6, color: GRAY });
+      if (logo) this.pdf.drawImage(page, PAGE_WIDTH - 88, PAGE_HEIGHT - 54, 31, (31 * logo.height) / logo.width);
+      this.pdf.drawLine(page, MARGIN, credentials ? PAGE_HEIGHT - 69 : PAGE_HEIGHT - 64, PAGE_WIDTH - MARGIN, credentials ? PAGE_HEIGHT - 69 : PAGE_HEIGHT - 64, BLUE, 0.9);
+      return;
+    }
+    const compactCredentials = buildCompanyCredentials(this.organization);
+    if (compactCredentials) this.pdf.drawText(page, compactCredentials, MARGIN, PAGE_HEIGHT - 43, { size: 6.4, color: GRAY });
+    if (logo) this.pdf.drawImage(page, PAGE_WIDTH - 88, PAGE_HEIGHT - 48, 26, (26 * logo.height) / logo.width);
+    this.pdf.drawLine(page, MARGIN, PAGE_HEIGHT - 54, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 54, BLUE, 0.9);
   }
 
   private footer(page: PageState, pageNumber: number) {
@@ -530,9 +539,11 @@ class ProposalPdfRenderer {
 
   private drawSectionHeading(title: string, options: { subtitle?: string } = {}) {
     const { subtitle } = options;
-    const requiredSpace = SECTION_HEADING_LAYOUT.topSpacing + SECTION_HEADING_LAYOUT.spacingBelow + (subtitle ? 28 : 14);
-    this.ensureSpace(requiredSpace);
-    this.y -= SECTION_HEADING_LAYOUT.topSpacing;
+    const headingSpace = SECTION_HEADING_LAYOUT.topSpacing + SECTION_HEADING_LAYOUT.spacingBelow + (subtitle ? 28 : 14);
+    const requiredSpace = headingSpace + SECTION_HEADING_LAYOUT.meaningfulContentSpace;
+    if (this.y < PAGE_HEIGHT / 2 || this.y - requiredSpace <= 52) this.startContentPage();
+    const isFirstHeadingOnPage = this.y >= PAGE_HEIGHT - 80;
+    this.y -= isFirstHeadingOnPage ? SECTION_HEADING_LAYOUT.firstHeadingTopOffset : SECTION_HEADING_LAYOUT.topSpacing;
     this.pdf.drawText(this.currentPage, title, SECTION_HEADING_LAYOUT.x, this.y, {
       size: SECTION_HEADING_LAYOUT.fontSize,
       font: SECTION_HEADING_LAYOUT.font,
@@ -751,7 +762,7 @@ export async function generateJobPacketPdf(jobId: string) {
 
   renderer.renderCloseoutCover(buildCloseoutCoverRows(packet, proposal, organization));
   renderer.renderTableOfContents(toc);
-  renderer.renderProposalContent({ sectionTitle: 'PROPOSAL DOCUMENTATION', includeProposalEnhancements: false });
+  renderer.renderProposalContent({ includeProposalEnhancements: false });
 
   renderer.section('JOB INFORMATION');
   renderer.keyValueTable([
@@ -770,21 +781,21 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.table([['Equipment', 'Type / Purpose'], ...(packet.equipmentAssignments.length ? packet.equipmentAssignments.map((a) => [clean(a.equipment?.name) || 'Equipment record unavailable', clean(a.equipment?.equipment_type) || 'Unknown type']) : [['Not assigned', 'Equipment was not assigned in the job record.']])], [220, 267]);
   renderer.section('JHA SUMMARY');
   renderJhaSummary(renderer, pdf, packet.jha, packetPhotos);
-  renderer.section('AIRSPACE REVIEW');
-  renderer.keyValueTable([['Airspace Class', clean(packet.jha?.faa_airspace_class) || PLACEHOLDER], ['Nearby Airport', PLACEHOLDER], ['LAANC Required', clean(packet.jha?.laanc_required) || PLACEHOLDER], ['Operational Finding', packet.jha ? `JHA status: ${clean(packet.jha.status) || 'Draft'}. Controls in place: ${packet.jha.controls_in_place ? 'Yes' : 'No'}.` : 'Airspace review not started.']]);
   const documentationPhotos = packetPhotos.filter((photo) => !photo.hazardId);
   if (documentationPhotos.length) renderPhotoDocumentation(renderer, pdf, documentationPhotos);
+  renderer.section('AIRSPACE REVIEW');
+  renderer.keyValueTable([['Airspace Class', clean(packet.jha?.faa_airspace_class) || PLACEHOLDER], ['Nearby Airport', PLACEHOLDER], ['LAANC Required', clean(packet.jha?.laanc_required) || PLACEHOLDER], ['Operational Finding', packet.jha ? `JHA status: ${clean(packet.jha.status) || 'Draft'}. Controls in place: ${packet.jha.controls_in_place ? 'Yes' : 'No'}.` : 'Airspace review not started.']]);
   renderer.section('PREFLIGHT CHECKLIST');
   renderer.table([['Checklist Item', 'State'], ...buildPreflightRows(packet.preflight)], [300, 187]);
   renderer.section('SAFETY EVENTS');
   renderer.table([['Category', 'Outcome', 'Details'], ...(packet.safetyEvents.length ? packet.safetyEvents.map((e) => [clean(e.category) || 'Safety Event', clean(e.outcome) || 'Recorded', `${clean(e.description) || 'No description.'}${e.immediate_actions_taken ? ` Immediate actions: ${e.immediate_actions_taken}` : ''}`]) : [['None', 'None', 'No safety events recorded.']])], [95, 105, 287]);
   const environmentalRows = buildEnvironmentalRows(packet.jha);
   if (environmentalRows.length) { renderer.section('ENVIRONMENTAL CONTROLS'); renderer.keyValueTable(environmentalRows); }
-  renderer.section('CLOSEOUT SUMMARY');
-  renderer.keyValueTable([['Operation Result', clean(packet.closeout?.operation_result) || 'Not completed'], ['Closeout Narrative', clean(packet.closeout?.deviation_narrative) || 'No closeout narrative was provided.'], ['Completion Date', formatDate(packet.closeout?.updated_at) || 'Not recorded']]);
   renderer.section('PERSONNEL QUALIFICATION SUMMARY');
   renderer.table([['Name', 'Role', 'Part 107', 'Training', 'Status'], ...(packet.assignments.length ? packet.assignments.map((a) => [clean(a.personnel?.full_name) || 'Unavailable', clean(a.assigned_role) || clean(a.personnel?.role) || 'Crew', formatDate(a.personnel?.part_107_expiration_date) || 'Not tracked', formatDate(a.personnel?.training_expiration_date) || 'Not tracked', clean(a.personnel?.status) || 'Missing']) : [['No assigned crew', '-', '-', '-', '-']])], [130, 85, 88, 88, 96]);
   if (packet.documents.length) { renderer.section('GENERATED DOCUMENTS / ATTACHMENTS SUMMARY'); renderer.bullets(packet.documents.map((d) => `${getPacketDocumentLabel(d.document_type)} - ${d.display_file_name || d.file_name || 'Generated document'}`)); }
+  renderer.section('CLOSEOUT SUMMARY');
+  renderer.keyValueTable([['Operation Result', clean(packet.closeout?.operation_result) || 'Not completed'], ['Closeout Narrative', clean(packet.closeout?.deviation_narrative) || 'No closeout narrative was provided.'], ['Completion Date', formatDate(packet.closeout?.updated_at) || 'Not recorded']]);
   await renderChemicalReferenceAppendix(renderer, packet.equipmentAssignments, pdf);
 
   const blob = pdf.save();
@@ -980,7 +991,7 @@ function buildCloseoutTableOfContents(packet: Awaited<ReturnType<typeof loadJobP
     { title: 'CONTROL VERIFICATION', items: photos.some((photo) => photo.hazardId) ? ['Hazard Mitigation Verification'] : [] },
     { title: 'OPERATIONAL EVIDENCE', items: photos.some((photo) => !photo.hazardId) ? ['Photo Documentation'] : [] },
     { title: 'COMPLIANCE RECORDS', items: [...(environmentalRows.length ? ['Environmental Controls'] : []), 'Preflight Checklist', 'Safety Events'] },
-    { title: 'CLOSEOUT', items: ['Closeout Summary', 'Personnel Qualification Summary', ...(packet.equipmentAssignments.some((assignment) => assignment.equipment?.equipment_type === 'Chemical / Material' && assignment.equipment.equipment_reference_documents?.some((document) => document.document_type === 'Safety Data Sheet (SDS)')) ? ['Chemical Documentation'] : [])] },
+    { title: 'CLOSEOUT', items: ['Personnel Qualification Summary', 'Closeout Summary', ...(packet.equipmentAssignments.some((assignment) => assignment.equipment?.equipment_type === 'Chemical / Material' && assignment.equipment.equipment_reference_documents?.some((document) => document.document_type === 'Safety Data Sheet (SDS)')) ? ['Chemical Documentation'] : [])] },
   ];
 }
 
@@ -1042,8 +1053,16 @@ function buildPreflightRows(preflight: JobPacketPreflight | null) {
 }
 
 function buildEnvironmentalRows(jha: JobPacketJha | null): Array<[string, string]> {
-  if (!jha || (!jha.runoff_risk && !jha.water_body_proximity && !clean(jha.containment_plan))) return [];
-  return [['Runoff Planning', jha.runoff_risk ? 'Documented as applicable' : 'Not marked applicable'], ['Containment Plan', clean(jha.containment_plan) || 'Not recorded'], ['Water Body Proximity', jha.water_body_proximity ? `Yes${jha.water_body_distance ? ` - ${jha.water_body_distance} feet` : ''}${jha.water_body_type ? ` (${jha.water_body_type})` : ''}` : 'Not marked applicable'], ['Secondary Containment', jha.secondary_containment_in_place ? 'In place' : 'Not recorded'], ['Reclamation Method', clean(jha.reclamation_method) || 'Not recorded'], ['Estimated Volume', jha.reclamation_volume_estimate ? `${jha.reclamation_volume_estimate} gallons` : 'Not recorded'], ['Vendor / Contact', clean(jha.disposal_vendor_name_contact) || 'Not recorded']];
+  if (!jha || (!jha.runoff_risk && !jha.water_body_proximity && !clean(jha.containment_plan) && !jha.secondary_containment_in_place && !clean(jha.reclamation_method) && !jha.reclamation_volume_estimate && !clean(jha.disposal_vendor_name_contact))) return [];
+  const rows: Array<[string, string]> = [];
+  if (jha.runoff_risk) rows.push(['Runoff Planning', 'Runoff planning was documented as applicable to this operation.']);
+  if (clean(jha.containment_plan)) rows.push(['Containment Plan', clean(jha.containment_plan)]);
+  if (jha.water_body_proximity) rows.push(['Water Body Proximity', `Water body proximity was identified${jha.water_body_distance ? ` within ${jha.water_body_distance} feet` : ''}${jha.water_body_type ? ` (${jha.water_body_type})` : ''}.`]);
+  if (jha.secondary_containment_in_place) rows.push(['Secondary Containment', 'Secondary containment was documented as in place.']);
+  if (clean(jha.reclamation_method)) rows.push(['Reclamation Method', clean(jha.reclamation_method)]);
+  if (jha.reclamation_volume_estimate) rows.push(['Estimated Reclamation Volume', `${jha.reclamation_volume_estimate} gallons`]);
+  if (clean(jha.disposal_vendor_name_contact)) rows.push(['Disposal Vendor / Contact', clean(jha.disposal_vendor_name_contact)]);
+  return rows;
 }
 
 function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_amount: null, estimated_duration: null, payment_terms: null, valid_until: null, created_at: null }; }
