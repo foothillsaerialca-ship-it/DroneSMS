@@ -38,8 +38,8 @@ const SECTION_HEADING_LAYOUT = {
   dividerColor: BLUE,
   dividerWidth: 1.05,
   spacingBelow: 20,
-  firstHeadingTopOffset: 10,
-  meaningfulContentSpace: 28,
+  firstHeadingTopOffset: 7,
+  defaultMeaningfulContentSpace: 28,
   subtitleSpacingBelow: 3,
 };
 
@@ -418,7 +418,7 @@ class ProposalPdfRenderer {
       'Airspace authorization availability is assumed when applicable.',
       'Scope changes or additional site requirements may require written authorization.',
     ]);
-    this.section('ACCEPTANCE');
+    this.section('ACCEPTANCE', undefined, 150);
     this.paragraph('Signature constitutes acceptance of the scope, pricing, and conditions in this proposal.', 8);
     this.signatureBlock(includeProposalEnhancements ? clean(this.organization?.warranty) : '');
   }
@@ -452,7 +452,6 @@ class ProposalPdfRenderer {
   renderTableOfContents(groups: TocGroup[]) {
     this.startContentPage(false);
     this.section('TABLE OF CONTENTS');
-    this.y -= 14;
     groups.filter((group) => group.items.length > 0).forEach((group) => {
       this.ensureSpace(32 + group.items.length * 15);
       this.pdf.drawText(this.currentPage, group.title, MARGIN, this.y, { size: 10.5, font: 'bold', color: BLUE });
@@ -533,15 +532,15 @@ class ProposalPdfRenderer {
     this.pdf.drawText(page, companyNameFor(this.organization), PAGE_WIDTH / 2, PAGE_HEIGHT / 2, { size: 36, font: 'bold', color: LIGHT_GRAY, align: 'center' });
   }
 
-  section(title: string, subtitle?: string) {
-    this.drawSectionHeading(title, { subtitle });
+  section(title: string, subtitle?: string, meaningfulContentSpace = SECTION_HEADING_LAYOUT.defaultMeaningfulContentSpace) {
+    this.drawSectionHeading(title, { subtitle, meaningfulContentSpace });
   }
 
-  private drawSectionHeading(title: string, options: { subtitle?: string } = {}) {
-    const { subtitle } = options;
+  private drawSectionHeading(title: string, options: { subtitle?: string; meaningfulContentSpace?: number } = {}) {
+    const { subtitle, meaningfulContentSpace = SECTION_HEADING_LAYOUT.defaultMeaningfulContentSpace } = options;
     const headingSpace = SECTION_HEADING_LAYOUT.topSpacing + SECTION_HEADING_LAYOUT.spacingBelow + (subtitle ? 28 : 14);
-    const requiredSpace = headingSpace + SECTION_HEADING_LAYOUT.meaningfulContentSpace;
-    if (this.y < PAGE_HEIGHT / 2 || this.y - requiredSpace <= 52) this.startContentPage();
+    const requiredSpace = headingSpace + meaningfulContentSpace;
+    if (this.y - requiredSpace <= 52) this.startContentPage();
     const isFirstHeadingOnPage = this.y >= PAGE_HEIGHT - 80;
     this.y -= isFirstHeadingOnPage ? SECTION_HEADING_LAYOUT.firstHeadingTopOffset : SECTION_HEADING_LAYOUT.topSpacing;
     this.pdf.drawText(this.currentPage, title, SECTION_HEADING_LAYOUT.x, this.y, {
@@ -764,7 +763,7 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.renderTableOfContents(toc);
   renderer.renderProposalContent({ includeProposalEnhancements: false });
 
-  renderer.section('JOB INFORMATION');
+  renderer.section('JOB INFORMATION', undefined, 45);
   renderer.keyValueTable([
     ['Job Name', clean(packet.job.name)],
     ['Client', clean(packet.job.client_name) || clean(packet.proposal?.client_name) || PLACEHOLDER],
