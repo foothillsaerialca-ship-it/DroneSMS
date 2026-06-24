@@ -220,6 +220,7 @@ export function EquipmentPage() {
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [formData, setFormData] = useState<EquipmentFormState>(initialFormState);
   const [editingEquipmentId, setEditingEquipmentId] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
@@ -297,7 +298,18 @@ export function EquipmentPage() {
   function resetForm() {
     setFormData(initialFormState);
     setEditingEquipmentId(null);
+    setIsFormOpen(false);
     setPendingDocuments([]);
+    setError(null);
+    setSaveMessage(null);
+  }
+
+  function handleAdd() {
+    setFormData(initialFormState);
+    setEditingEquipmentId(null);
+    setIsFormOpen(true);
+    setPendingDocuments([]);
+    setError(null);
     setSaveMessage(null);
   }
 
@@ -405,6 +417,7 @@ export function EquipmentPage() {
 
   function handleEdit(item: Equipment) {
     setEditingEquipmentId(item.id);
+    setIsFormOpen(true);
     setFormData(toFormState(item));
     setPendingDocuments([]);
     setError(null);
@@ -446,17 +459,16 @@ export function EquipmentPage() {
         </div>
       </div>
 
+      {isFormOpen ? (
       <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" onSubmit={handleSubmit}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-brand-900">{editingEquipmentId ? 'Edit Equipment' : 'Add Equipment'}</h2>
             <p className="mt-1 text-sm text-slate-600">Capture required equipment details first, then add maintenance, tracking, and chemical/material reference fields when applicable.</p>
           </div>
-          {editingEquipmentId ? (
-            <button type="button" className="text-sm font-medium text-brand-700 hover:text-brand-900" onClick={resetForm} disabled={isSaving}>
-              Cancel edit
-            </button>
-          ) : null}
+          <button type="button" className="text-sm font-medium text-brand-700 hover:text-brand-900" onClick={resetForm} disabled={isSaving}>
+            Cancel
+          </button>
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -616,6 +628,25 @@ export function EquipmentPage() {
           {isSaving ? 'Saving...' : editingEquipmentId ? 'Update Equipment' : 'Add Equipment'}
         </button>
       </form>
+      ) : (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-brand-900">Equipment Records</h2>
+              <p className="mt-1 text-sm text-slate-600">Review current equipment readiness, then add or edit a record when needed.</p>
+            </div>
+            <button
+              type="button"
+              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
+              onClick={handleAdd}
+            >
+              + Add Equipment
+            </button>
+          </div>
+          {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+          {saveMessage ? <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{saveMessage}</p> : null}
+        </div>
+      )}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">

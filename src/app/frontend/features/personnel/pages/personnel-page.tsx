@@ -177,6 +177,7 @@ export function PersonnelPage() {
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
   const [formData, setFormData] = useState<PersonnelFormState>(initialFormState);
   const [editingPersonId, setEditingPersonId] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -237,6 +238,16 @@ export function PersonnelPage() {
   function resetForm() {
     setFormData(initialFormState);
     setEditingPersonId(null);
+    setIsFormOpen(false);
+    setError(null);
+    setSaveMessage(null);
+  }
+
+  function handleAdd() {
+    setFormData(initialFormState);
+    setEditingPersonId(null);
+    setIsFormOpen(true);
+    setError(null);
     setSaveMessage(null);
   }
 
@@ -301,6 +312,7 @@ export function PersonnelPage() {
 
   function handleEdit(person: Personnel) {
     setEditingPersonId(person.id);
+    setIsFormOpen(true);
     setFormData(toFormState(person));
     setError(null);
     setSaveMessage(null);
@@ -339,17 +351,16 @@ export function PersonnelPage() {
         </div>
       </div>
 
+      {isFormOpen ? (
       <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" onSubmit={handleSubmit}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-brand-900">{editingPersonId ? 'Edit Personnel' : 'Add Personnel'}</h2>
             <p className="mt-1 text-sm text-slate-600">Start with required identity fields, then add optional certification and emergency details.</p>
           </div>
-          {editingPersonId ? (
-            <button type="button" className="text-sm font-medium text-brand-700 hover:text-brand-900" onClick={resetForm} disabled={isSaving}>
-              Cancel edit
-            </button>
-          ) : null}
+          <button type="button" className="text-sm font-medium text-brand-700 hover:text-brand-900" onClick={resetForm} disabled={isSaving}>
+            Cancel
+          </button>
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -537,6 +548,25 @@ export function PersonnelPage() {
           {isSaving ? 'Saving...' : editingPersonId ? 'Update Personnel' : 'Add Personnel'}
         </button>
       </form>
+      ) : (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-brand-900">Personnel Records</h2>
+              <p className="mt-1 text-sm text-slate-600">Review current crew readiness, then add or edit a record when needed.</p>
+            </div>
+            <button
+              type="button"
+              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
+              onClick={handleAdd}
+            >
+              + Add Personnel
+            </button>
+          </div>
+          {error ? <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p> : null}
+          {saveMessage ? <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{saveMessage}</p> : null}
+        </div>
+      )}
 
       <div className="space-y-3">
         {isLoading ? (
