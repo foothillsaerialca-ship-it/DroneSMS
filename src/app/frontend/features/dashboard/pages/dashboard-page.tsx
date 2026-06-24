@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/components/use-auth';
 import { supabase } from '@frontend/lib/supabase';
+import { loadOrganizationSettingsForUser } from '@frontend/features/settings/lib/organization-settings';
 
 type DashboardJob = {
   id: string;
@@ -249,7 +250,7 @@ function countRowsByJobId(rows: Array<{ job_id: string }>) {
 }
 
 async function loadDashboardData(userId: string): Promise<DashboardData> {
-  const profileQuery = supabase.from('profiles').select('company_name').eq('id', userId).maybeSingle();
+  const organizationSettingsPromise = loadOrganizationSettingsForUser(userId);
   const jobsQuery = supabase
     .from('jobs')
     .select('id, name, client_name, service_type, planned_date, status, created_at, updated_at')
@@ -272,8 +273,8 @@ async function loadDashboardData(userId: string): Promise<DashboardData> {
     .order('created_at', { ascending: false })
     .limit(10);
 
-  const [profileResult, jobsResult, proposalsResult, jhaResult, personnelResult, equipmentResult, photosResult] = await Promise.all([
-    profileQuery,
+  const [organizationSettings, jobsResult, proposalsResult, jhaResult, personnelResult, equipmentResult, photosResult] = await Promise.all([
+    organizationSettingsPromise,
     jobsQuery,
     proposalsQuery,
     jhaQuery,
@@ -282,7 +283,6 @@ async function loadDashboardData(userId: string): Promise<DashboardData> {
     photosQuery
   ]);
 
-  if (profileResult.error) throw profileResult.error;
   if (jobsResult.error) throw jobsResult.error;
   if (proposalsResult.error) throw proposalsResult.error;
   if (jhaResult.error) throw jhaResult.error;
@@ -299,7 +299,7 @@ async function loadDashboardData(userId: string): Promise<DashboardData> {
   const currentOperation = getCurrentOperation(jobs);
 
   return {
-    companyName: profileResult.data?.company_name ?? null,
+    companyName: organizationSettings?.companyName.trim() || null,
     currentOperation,
     currentWorkflowStage: getWorkflowStage(currentOperation, jhaByJobId, crewCounts, equipmentCounts),
     attentionItems: buildAttentionItems(jobs, proposals, jhaByJobId, crewCounts, equipmentCounts),
