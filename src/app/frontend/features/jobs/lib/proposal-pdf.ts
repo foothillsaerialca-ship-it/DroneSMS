@@ -28,6 +28,19 @@ const TABLE_ROW_OPACITY = 0.34;
 const TOTAL_ROW_OPACITY = 0.48;
 const WATERMARK_OPACITY = 0.03;
 
+const SECTION_HEADING_LAYOUT = {
+  font: 'bold' as const,
+  fontSize: 12.5,
+  textColor: NAVY,
+  x: MARGIN,
+  topSpacing: 16,
+  dividerOffset: 7,
+  dividerColor: BLUE,
+  dividerWidth: 1.05,
+  spacingBelow: 20,
+  subtitleSpacingBelow: 3,
+};
+
 export type ProposalDocumentKind = 'proposal' | 'operational-packet';
 
 export const documentTypes: Record<ProposalDocumentKind, { label: string; implemented: boolean }> = {
@@ -436,9 +449,8 @@ class ProposalPdfRenderer {
 
   renderTableOfContents(groups: TocGroup[]) {
     this.startContentPage(false);
-    this.pdf.drawText(this.currentPage, 'TABLE OF CONTENTS', MARGIN, this.y, { size: 15, font: 'bold', color: NAVY });
-    this.pdf.drawLine(this.currentPage, MARGIN, this.y - 8, PAGE_WIDTH - MARGIN, this.y - 8, BLUE, 1.05);
-    this.y -= 34;
+    this.section('TABLE OF CONTENTS');
+    this.y -= 14;
     groups.filter((group) => group.items.length > 0).forEach((group) => {
       this.ensureSpace(32 + group.items.length * 15);
       this.pdf.drawText(this.currentPage, group.title, MARGIN, this.y, { size: 10.5, font: 'bold', color: BLUE });
@@ -513,11 +525,33 @@ class ProposalPdfRenderer {
   }
 
   section(title: string, subtitle?: string) {
-    this.ensureSpace(subtitle ? 48 : 34);
-    this.pdf.drawText(this.currentPage, title, MARGIN, this.y, { size: 12.5, font: 'bold', color: NAVY });
-    this.pdf.drawLine(this.currentPage, MARGIN, this.y - 7, PAGE_WIDTH - MARGIN, this.y - 7, BLUE, 1.05);
-    this.y -= 20;
-    if (subtitle) this.y = this.pdf.drawWrappedText(this.currentPage, subtitle, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 8.6, font: 'oblique', color: GRAY, lineHeight: 11 }) - 3;
+    this.drawSectionHeading(title, { subtitle });
+  }
+
+  private drawSectionHeading(title: string, options: { subtitle?: string } = {}) {
+    const { subtitle } = options;
+    const requiredSpace = SECTION_HEADING_LAYOUT.topSpacing + SECTION_HEADING_LAYOUT.spacingBelow + (subtitle ? 28 : 14);
+    this.ensureSpace(requiredSpace);
+    this.y -= SECTION_HEADING_LAYOUT.topSpacing;
+    this.pdf.drawText(this.currentPage, title, SECTION_HEADING_LAYOUT.x, this.y, {
+      size: SECTION_HEADING_LAYOUT.fontSize,
+      font: SECTION_HEADING_LAYOUT.font,
+      color: SECTION_HEADING_LAYOUT.textColor,
+    });
+    const dividerY = this.y - SECTION_HEADING_LAYOUT.dividerOffset;
+    this.pdf.drawLine(
+      this.currentPage,
+      SECTION_HEADING_LAYOUT.x,
+      dividerY,
+      PAGE_WIDTH - MARGIN,
+      dividerY,
+      SECTION_HEADING_LAYOUT.dividerColor,
+      SECTION_HEADING_LAYOUT.dividerWidth,
+    );
+    this.y -= SECTION_HEADING_LAYOUT.spacingBelow;
+    if (subtitle) {
+      this.y = this.pdf.drawWrappedText(this.currentPage, subtitle, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 8.6, font: 'oblique', color: GRAY, lineHeight: 11 }) - SECTION_HEADING_LAYOUT.subtitleSpacingBelow;
+    }
   }
 
   paragraph(text: string, spacing = 16) {
