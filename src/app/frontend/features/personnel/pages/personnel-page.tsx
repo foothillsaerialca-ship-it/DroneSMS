@@ -49,6 +49,12 @@ type ReadinessState = {
   sortOrder: number;
 };
 
+type TrainingStatus = {
+  label: string;
+  detail: string;
+  className: string;
+};
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to load personnel. Please try again.';
 }
@@ -70,22 +76,63 @@ function daysUntil(date: string) {
   return Math.ceil((expirationDate.getTime() - today.getTime()) / 86_400_000);
 }
 
+function getTrainingStatus(person: Personnel): TrainingStatus | null {
+  if (!person.training_expiration_date) {
+    return null;
+  }
+
+  const remainingDays = daysUntil(person.training_expiration_date);
+
+  if (remainingDays < 0) {
+    return {
+      label: 'Training Expired',
+      detail: `Training expired ${Math.abs(remainingDays)} day${Math.abs(remainingDays) === 1 ? '' : 's'} ago.`,
+      className: 'border-red-200 bg-red-50 text-red-700'
+    };
+  }
+
+  if (remainingDays <= 30) {
+    return {
+      label: 'Training Due Soon',
+      detail: `Training expires in ${remainingDays} day${remainingDays === 1 ? '' : 's'}.`,
+      className: 'border-amber-200 bg-amber-50 text-amber-700'
+    };
+  }
+
+  return null;
+}
+
 function getReadinessState(person: Personnel): ReadinessState {
   if (person.status !== 'Active') {
     return {
       label: person.status,
       detail: 'Not counted as an active flight-ready crew member.',
       className: 'border-slate-200 bg-slate-100 text-slate-700',
-      sortOrder: 4
+      sortOrder: 5
+    };
+  }
+
+  // Check training expiration for all roles
+  const trainingStatus = getTrainingStatus(person);
+  if (trainingStatus && trainingStatus.label === 'Training Expired') {
+    return {
+      label: 'Training Expired',
+      detail: trainingStatus.detail,
+      className: 'border-red-200 bg-red-50 text-red-700',
+      sortOrder: 0
     };
   }
 
   if (person.role !== 'Remote Pilot in Command') {
+    const crewReadinessDetail = trainingStatus
+      ? trainingStatus.detail
+      : 'Active crew record with emergency contact tracking.';
+    
     return {
-      label: 'Crew Ready',
-      detail: 'Active crew record with emergency contact tracking.',
-      className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-      sortOrder: 3
+      label: trainingStatus ? 'Training Due Soon' : 'Crew Ready',
+      detail: crewReadinessDetail,
+      className: trainingStatus?.className || 'border-emerald-200 bg-emerald-50 text-emerald-700',
+      sortOrder: trainingStatus ? 2 : 4
     };
   }
 
@@ -110,10 +157,22 @@ function getReadinessState(person: Personnel): ReadinessState {
   }
 
   if (remainingDays <= 60) {
+    const part107Detail = `Part 107 expires in ${remainingDays} day${remainingDays === 1 ? '' : 's'}.`;
+    const finalDetail = trainingStatus ? `${part107Detail} ${trainingStatus.detail}` : part107Detail;
+    
     return {
-      label: 'Renew Soon',
-      detail: `Part 107 expires in ${remainingDays} day${remainingDays === 1 ? '' : 's'}.`,
-      className: 'border-amber-200 bg-amber-50 text-amber-700',
+      label: trainingStatus ? 'Renew Soon' : 'Renew Soon',
+      detail: finalDetail,
+      className: trainingStatus?.className || 'border-amber-200 bg-amber-50 text-amber-700',
+      sortOrder: trainingStatus ? 2 : 3
+    };
+  }
+
+  if (trainingStatus) {
+    return {
+      label: 'Training Due Soon',
+      detail: trainingStatus.detail,
+      className: trainingStatus.className,
       sortOrder: 2
     };
   }
@@ -122,7 +181,7 @@ function getReadinessState(person: Personnel): ReadinessState {
     label: 'Pilot Ready',
     detail: `Part 107 current through ${formatDate(person.part_107_expiration_date)}.`,
     className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    sortOrder: 3
+    sortOrder: 4
   };
 }
 
@@ -212,13 +271,16 @@ export function PersonnelPage() {
     return personnel.reduce(
       (counts, person) => {
         const readiness = getReadinessState(person);
+        const trainingStatus = getTrainingStatus(person);
         if (person.status === 'Active') counts.active += 1;
         if (person.role === 'Remote Pilot in Command') counts.pilots += 1;
-        if (readiness.label === 'Cert Expired' || readiness.label === 'Cert Missing') counts.blocked += 1;
-        if (readiness.label === 'Renew Soon') counts.renewSoon += 1;
+        if (readiness.label === 'Cert Expired' || readiness.label === 'Cert Missing') counts.certBlocked += 1;
+        if (trainingStatus?.label === 'Training Expired') counts.trainingExpired += 1;
+        if (readiness.label === 'Renew Soon' && !readiness.label.includes('Training')) counts.renewSoon += 1;
+        if (trainingStatus?.label === 'Training Due Soon') counts.trainingSoon += 1;
         return counts;
       },
-      { active: 0, pilots: 0, blocked: 0, renewSoon: 0 }
+      { active: 0, pilots: 0, certBlocked: 0, trainingSoon: 0, trainingExpired: 0, renewSoon: 0 }
     );
   }, [personnel]);
 
@@ -327,10 +389,10 @@ export function PersonnelPage() {
             <p className="text-sm font-medium text-slate-500">Repository</p>
             <h1 className="mt-1 text-2xl font-semibold text-brand-900">Personnel</h1>
             <p className="mt-2 text-sm text-slate-600">
-              Maintain pilots, observers, crew contact details, emergency contacts, and Part 107 readiness.
+              Maintain pilots, observers, crew contact details, emergency contacts, and certification readiness.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-center sm:min-w-64">
+          <div className="grid grid-cols-2 gap-2 text-center sm:min-w-80">
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <p className="text-lg font-semibold text-brand-900">{readinessCounts.active}</p>
               <p className="text-xs text-slate-500">Active</p>
@@ -341,11 +403,19 @@ export function PersonnelPage() {
             </div>
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
               <p className="text-lg font-semibold text-amber-700">{readinessCounts.renewSoon}</p>
-              <p className="text-xs text-amber-700">Renew Soon</p>
+              <p className="text-xs text-amber-700">Cert Renew Soon</p>
             </div>
             <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-              <p className="text-lg font-semibold text-red-700">{readinessCounts.blocked}</p>
-              <p className="text-xs text-red-700">Blocked</p>
+              <p className="text-lg font-semibold text-red-700">{readinessCounts.certBlocked}</p>
+              <p className="text-xs text-red-700">Cert Blocked</p>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-lg font-semibold text-amber-700">{readinessCounts.trainingSoon}</p>
+              <p className="text-xs text-amber-700">Training Soon</p>
+            </div>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+              <p className="text-lg font-semibold text-red-700">{readinessCounts.trainingExpired}</p>
+              <p className="text-xs text-red-700">Training Expired</p>
             </div>
           </div>
         </div>
@@ -582,6 +652,7 @@ export function PersonnelPage() {
 
         {!isLoading && sortedPersonnel.map((person) => {
           const readiness = getReadinessState(person);
+          const trainingStatus = getTrainingStatus(person);
 
           return (
             <article key={person.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -612,9 +683,12 @@ export function PersonnelPage() {
                   <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Part 107</dt>
                   <dd className="mt-1 text-slate-700">{person.part_107_certificate_number || 'No certificate'} • {formatDate(person.part_107_expiration_date)}</dd>
                 </div>
-                <div className="rounded-lg bg-slate-50 p-3">
+                <div className={`rounded-lg p-3 ${trainingStatus ? trainingStatus.className.replace('border', 'bg').split(' ').slice(1).join(' ') : 'bg-slate-50'}`}>
                   <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Training</dt>
-                  <dd className="mt-1 text-slate-700">{formatDate(person.training_expiration_date)}</dd>
+                  <dd className="mt-1 text-slate-700">
+                    {formatDate(person.training_expiration_date)}
+                    {trainingStatus ? <p className="mt-1 text-xs font-semibold">{trainingStatus.label}</p> : null}
+                  </dd>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
                   <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Emergency / Status</dt>
