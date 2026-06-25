@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { useAuth } from '../components/use-auth';
+import { DEFAULT_SERVICE_COMMITMENT } from '@frontend/features/settings/lib/organization-settings';
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to save company details. Please try again.';
@@ -64,7 +65,8 @@ async function saveOrganization({
     .insert({
       name,
       part_107_number: part107Number,
-      owner_user_id: userId
+      owner_user_id: userId,
+      service_commitment: DEFAULT_SERVICE_COMMITMENT
     })
     .select('id')
     .single();

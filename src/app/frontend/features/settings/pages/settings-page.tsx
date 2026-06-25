@@ -1,5 +1,6 @@
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { DEFAULT_SERVICE_COMMITMENT } from '../lib/organization-settings';
 import { useAuth } from '../../auth/components/use-auth';
 import {
   DEFAULT_EMERGENCY_PROCEDURES_SUMMARY,
@@ -20,7 +21,11 @@ type SettingsForm = {
   isInsured: string;
   isBonded: string;
   defaultPaymentTerms: string;
-  warranty: string;
+  serviceCommitment: string;
+  includePaymentTermsInProposal: string;
+  includeServiceCommitmentInProposal: string;
+  includeCompanyCredentialsInProposal: string;
+  includeMaterialsUsedInProposal: string;
   safetyManager: string;
   stopWorkAuthorityStatement: string;
   hazardReportingStatement: string;
@@ -43,7 +48,11 @@ const emptySettingsForm: SettingsForm = {
   isInsured: 'No',
   isBonded: 'No',
   defaultPaymentTerms: '',
-  warranty: '',
+  serviceCommitment: DEFAULT_SERVICE_COMMITMENT,
+  includePaymentTermsInProposal: 'Yes',
+  includeServiceCommitmentInProposal: 'Yes',
+  includeCompanyCredentialsInProposal: 'Yes',
+  includeMaterialsUsedInProposal: 'Yes',
   safetyManager: '',
   stopWorkAuthorityStatement: '',
   hazardReportingStatement: '',
@@ -61,7 +70,7 @@ const organizationFields = [
   { key: 'primaryContact', label: 'Primary Contact', type: 'text', autoComplete: 'name' },
   { key: 'companyStatement', label: 'Company Statement', type: 'textarea', autoComplete: 'off' },
   { key: 'defaultPaymentTerms', label: 'Default Payment Terms', type: 'text', autoComplete: 'off' },
-  { key: 'warranty', label: 'Warranty', type: 'textarea', autoComplete: 'off' }
+  { key: 'serviceCommitment', label: 'Service Commitment', type: 'textarea', autoComplete: 'off' }
 ] as const;
 
 const safetyFields = [
@@ -107,7 +116,11 @@ function normalizeSettings(organization: Record<string, unknown> | null | undefi
     isInsured: organization?.is_insured ? 'Yes' : 'No',
     isBonded: organization?.is_bonded ? 'Yes' : 'No',
     defaultPaymentTerms: String(organization?.default_payment_terms ?? ''),
-    warranty: String(organization?.warranty ?? ''),
+    serviceCommitment: String(organization?.service_commitment ?? organization?.warranty ?? DEFAULT_SERVICE_COMMITMENT),
+    includePaymentTermsInProposal: organization?.include_payment_terms_in_proposal === false ? 'No' : 'Yes',
+    includeServiceCommitmentInProposal: organization?.include_service_commitment_in_proposal === false ? 'No' : 'Yes',
+    includeCompanyCredentialsInProposal: organization?.include_company_credentials_in_proposal === false ? 'No' : 'Yes',
+    includeMaterialsUsedInProposal: organization?.include_materials_used_in_proposal === false ? 'No' : 'Yes',
     safetyManager: String(organization?.safety_manager ?? ''),
     stopWorkAuthorityStatement: defaultSmsValue(organization?.stop_work_authority_statement, DEFAULT_STOP_WORK_AUTHORITY_STATEMENT),
     hazardReportingStatement: defaultSmsValue(organization?.hazard_reporting_statement, DEFAULT_HAZARD_REPORTING_STATEMENT),
@@ -241,7 +254,7 @@ export function SettingsPage() {
         const { data: organization, error: organizationError } = await supabase
           .from('organizations')
           .select(
-            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, warranty, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
           )
           .eq('id', profile.organization_id)
           .maybeSingle();
@@ -323,7 +336,11 @@ export function SettingsPage() {
                 is_insured: draft.isInsured === 'Yes',
                 is_bonded: draft.isBonded === 'Yes',
                 default_payment_terms: draft.defaultPaymentTerms.trim() || null,
-                warranty: draft.warranty.trim() || null,
+                service_commitment: draft.serviceCommitment.trim() || null,
+                include_payment_terms_in_proposal: draft.includePaymentTermsInProposal === 'Yes',
+                include_service_commitment_in_proposal: draft.includeServiceCommitmentInProposal === 'Yes',
+                include_company_credentials_in_proposal: draft.includeCompanyCredentialsInProposal === 'Yes',
+                include_materials_used_in_proposal: draft.includeMaterialsUsedInProposal === 'Yes',
                 updated_at: new Date().toISOString()
               }
             : {
@@ -339,7 +356,7 @@ export function SettingsPage() {
           .update(changes)
           .eq('id', organizationId)
           .select(
-            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, warranty, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
           )
           .single();
 
@@ -391,7 +408,7 @@ export function SettingsPage() {
         .update({ logo_path: logoPath, logo_url: logoUrl, updated_at: new Date().toISOString() })
         .eq('id', organizationId)
         .select(
-          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, warranty, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
         )
         .single();
 
@@ -484,7 +501,7 @@ export function SettingsPage() {
                     {organizationFields.map((field) => (
                       <div
                         key={field.key}
-                        className={field.key === 'companyStatement' ? 'sm:col-span-2' : ''}
+                        className={field.key === 'companyStatement' || field.key === 'serviceCommitment' ? 'sm:col-span-2' : ''}
                       >
                         <SettingsInput
                           label={field.label}
@@ -503,6 +520,16 @@ export function SettingsPage() {
                         <CheckboxField label="Licensed" name="isLicensed" value={draft.isLicensed} disabled={isSaving} onChange={updateDraft} />
                         <CheckboxField label="Insured" name="isInsured" value={draft.isInsured} disabled={isSaving} onChange={updateDraft} />
                         <CheckboxField label="Bonded" name="isBonded" value={draft.isBonded} disabled={isSaving} onChange={updateDraft} />
+                      </div>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-sm font-medium text-slate-700">Proposal Inclusion Controls</p>
+                      <p className="mt-1 text-xs text-slate-500">Suppress optional proposal sections even when settings or assigned materials are available.</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <CheckboxField label="Include Payment Terms in Proposal" name="includePaymentTermsInProposal" value={draft.includePaymentTermsInProposal} disabled={isSaving} onChange={updateDraft} />
+                        <CheckboxField label="Include Service Commitment in Proposal" name="includeServiceCommitmentInProposal" value={draft.includeServiceCommitmentInProposal} disabled={isSaving} onChange={updateDraft} />
+                        <CheckboxField label="Include Company Credentials in Proposal" name="includeCompanyCredentialsInProposal" value={draft.includeCompanyCredentialsInProposal} disabled={isSaving} onChange={updateDraft} />
+                        <CheckboxField label="Include Materials Used in Proposal" name="includeMaterialsUsedInProposal" value={draft.includeMaterialsUsedInProposal} disabled={isSaving} onChange={updateDraft} />
                       </div>
                     </div>
                   </div>
@@ -529,13 +556,14 @@ export function SettingsPage() {
                   {organizationFields.map((field) => (
                     <div
                       key={field.key}
-                      className={field.key === 'companyStatement' ? 'sm:col-span-2' : ''}
+                      className={field.key === 'companyStatement' || field.key === 'serviceCommitment' ? 'sm:col-span-2' : ''}
                     >
                       <FieldDisplay label={field.label} value={settings[field.key]} />
                     </div>
                   ))}
                   <div className="sm:col-span-2">
                     <FieldDisplay label="Company Credentials" value={[settings.isLicensed === 'Yes' ? 'Licensed' : '', settings.isInsured === 'Yes' ? 'Insured' : '', settings.isBonded === 'Yes' ? 'Bonded' : ''].filter(Boolean).join(' • ')} />
+                    <FieldDisplay label="Proposal Inclusion Controls" value={[settings.includePaymentTermsInProposal === 'Yes' ? 'Payment Terms' : '', settings.includeServiceCommitmentInProposal === 'Yes' ? 'Service Commitment' : '', settings.includeCompanyCredentialsInProposal === 'Yes' ? 'Company Credentials' : '', settings.includeMaterialsUsedInProposal === 'Yes' ? 'Materials Used' : ''].filter(Boolean).join(' • ')} />
                   </div>
                 </dl>
               )}
