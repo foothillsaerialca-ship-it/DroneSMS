@@ -356,7 +356,7 @@ class ProposalPdfRenderer {
       ],
       [250, 237],
     );
-    const materialRows = includeProposalEnhancements ? buildMaterialRows(this.proposal) : [];
+    const materialRows = includeProposalEnhancements && this.organization?.includeMaterialsUsedInProposal !== false ? buildMaterialRows(this.proposal) : [];
     if (materialRows.length) {
       this.section('MATERIALS USED');
       this.table([['Material', 'Purpose'], ...materialRows], [250, 237]);
@@ -390,9 +390,13 @@ class ProposalPdfRenderer {
       [237, 50, 100, 100],
       { totalRowIndex: 2 },
     );
-    if (includeProposalEnhancements && clean(this.proposal.payment_terms)) {
+    if (includeProposalEnhancements && this.organization?.includePaymentTermsInProposal !== false && clean(this.proposal.payment_terms)) {
       this.section('PAYMENT TERMS');
       this.paragraph(clean(this.proposal.payment_terms), 8);
+    }
+    if (includeProposalEnhancements && this.organization?.includeServiceCommitmentInProposal !== false && clean(this.organization?.serviceCommitment)) {
+      this.section('SERVICE COMMITMENT');
+      this.paragraph(clean(this.organization?.serviceCommitment), 8);
     }
     this.section('PROJECT ASSUMPTIONS & SAFETY CONDITIONS');
     this.bullets([
@@ -405,7 +409,7 @@ class ProposalPdfRenderer {
     ]);
     this.section('ACCEPTANCE');
     this.paragraph('Signature constitutes acceptance of the scope, pricing, and conditions in this proposal.', 8);
-    this.signatureBlock(includeProposalEnhancements ? clean(this.organization?.warranty) : '');
+    this.signatureBlock();
   }
 
   renderCloseoutCover(rows: Array<[string, string]>) {
@@ -485,7 +489,7 @@ class ProposalPdfRenderer {
 
   private header(page: PageState) {
     const companyName = companyNameFor(this.organization);
-    const credentials = this.includeProposalEnhancements ? buildCompanyCredentials(this.organization) : '';
+    const credentials = this.includeProposalEnhancements && this.organization?.includeCompanyCredentialsInProposal !== false ? buildCompanyCredentials(this.organization) : '';
     this.pdf.drawText(page, companyName, MARGIN, PAGE_HEIGHT - 30, { size: 10.5, font: 'bold', color: NAVY });
     const addressY = credentials ? PAGE_HEIGHT - 48 : PAGE_HEIGHT - 41;
     if (credentials) this.pdf.drawText(page, credentials, MARGIN, PAGE_HEIGHT - 39, { size: 6.4, color: GRAY });
@@ -627,31 +631,19 @@ class ProposalPdfRenderer {
     });
   }
 
-  private signatureBlock(warranty = '') {
-    const warrantyLines = warranty ? wrapText(warranty, PAGE_WIDTH - MARGIN * 2 - 36, 8.4) : [];
-    const warrantyHeight = warrantyLines.length ? 28 + warrantyLines.length * 10 : 0;
-    const panelHeight = 116 + warrantyHeight;
+  private signatureBlock() {
+    const panelHeight = 116;
     this.ensureSpace(panelHeight + 12);
     const panelY = this.y - panelHeight;
     const panelWidth = PAGE_WIDTH - MARGIN * 2;
     this.pdf.drawRect(this.currentPage, MARGIN, panelY, panelWidth, panelHeight, { fill: SOFT_PANEL, stroke: LIGHT_GRAY, strokeWidth: 0.6, opacity: PANEL_OPACITY });
     this.pdf.drawText(this.currentPage, 'Client Authorization', MARGIN + 18, this.y - 17, { size: 11.5, font: 'bold', color: NAVY });
 
-    let signatureOffset = 0;
-    if (warrantyLines.length) {
-      const warrantyTitleY = this.y - 39;
-      this.pdf.drawText(this.currentPage, 'Warranty', MARGIN + 18, warrantyTitleY, { size: 8.8, font: 'bold', color: BLUE });
-      warrantyLines.forEach((line, index) => {
-        this.pdf.drawText(this.currentPage, line, MARGIN + 18, warrantyTitleY - 13 - index * 10, { size: 8.4, color: NAVY });
-      });
-      signatureOffset = warrantyHeight;
-    }
-
     const leftX = MARGIN + 18;
     const rightX = PAGE_WIDTH / 2 + 14;
     const lineWidth = 190;
-    const firstRowY = this.y - 49 - signatureOffset;
-    const secondRowY = this.y - 88 - signatureOffset;
+    const firstRowY = this.y - 49;
+    const secondRowY = this.y - 88;
     this.signatureField('Authorized Name', leftX, firstRowY, lineWidth);
     this.signatureField('Title', rightX, firstRowY, lineWidth);
     this.signatureField('Signature', leftX, secondRowY, lineWidth);

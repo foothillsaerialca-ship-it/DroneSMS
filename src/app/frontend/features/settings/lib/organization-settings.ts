@@ -2,6 +2,8 @@ import { supabase } from '@frontend/lib/supabase';
 
 export const SETTINGS_NOT_PROVIDED = 'Not provided in Settings';
 
+export const DEFAULT_SERVICE_COMMITMENT = 'We are committed to delivering the services described in this proposal safely, professionally, and in accordance with the agreed scope of work. If you believe any portion of the completed work does not reflect the agreed scope or was not performed to a professional standard, please contact us promptly. We will review the concern and, when appropriate, schedule corrective work. This commitment applies to workmanship only and does not extend to normal environmental conditions, weather, airborne contaminants, irrigation, construction activity, or conditions occurring after the completion of the work.';
+
 export type OrganizationSettings = {
   id: string;
   companyName: string;
@@ -15,7 +17,11 @@ export type OrganizationSettings = {
   isInsured: boolean;
   isBonded: boolean;
   defaultPaymentTerms: string;
-  warranty: string;
+  serviceCommitment: string;
+  includePaymentTermsInProposal: boolean;
+  includeServiceCommitmentInProposal: boolean;
+  includeCompanyCredentialsInProposal: boolean;
+  includeMaterialsUsedInProposal: boolean;
   logoPath: string;
   logoUrl: string;
 };
@@ -36,7 +42,11 @@ export function normalizeOrganizationSettings(data: Record<string, unknown> | nu
     isInsured: Boolean(data.is_insured),
     isBonded: Boolean(data.is_bonded),
     defaultPaymentTerms: String(data.default_payment_terms ?? ''),
-    warranty: String(data.warranty ?? ''),
+    serviceCommitment: String(data.service_commitment ?? data.warranty ?? DEFAULT_SERVICE_COMMITMENT),
+    includePaymentTermsInProposal: data.include_payment_terms_in_proposal !== false,
+    includeServiceCommitmentInProposal: data.include_service_commitment_in_proposal !== false,
+    includeCompanyCredentialsInProposal: data.include_company_credentials_in_proposal !== false,
+    includeMaterialsUsedInProposal: data.include_materials_used_in_proposal !== false,
     logoPath: String(data.logo_path ?? ''),
     logoUrl: String(data.logo_url ?? '')
   };
@@ -65,7 +75,7 @@ export async function loadOrganizationSettingsForUser(userId: string) {
 
   const { data: organization, error: organizationError } = await supabase
     .from('organizations')
-    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, warranty, logo_path, logo_url')
+    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, logo_path, logo_url')
     .eq('id', profile.organization_id)
     .maybeSingle();
 
@@ -77,7 +87,7 @@ export async function loadOrganizationSettingsForUser(userId: string) {
 export async function loadOrganizationSettingsById(organizationId: string) {
   const { data: organization, error } = await supabase
     .from('organizations')
-    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, warranty, logo_path, logo_url')
+    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, logo_path, logo_url')
     .eq('id', organizationId)
     .maybeSingle();
 
