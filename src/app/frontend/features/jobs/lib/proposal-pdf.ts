@@ -540,9 +540,8 @@ class ProposalPdfRenderer {
     const topLineY = this.y;
     const bottomLineY = topLineY - SECTION_HEADER_LINE_GAP;
     const titleY = topLineY - SECTION_HEADER_TITLE_BASELINE_OFFSET;
-    const centerX = MARGIN + (PAGE_WIDTH - MARGIN * 2) / 2;
     this.pdf.drawLine(this.currentPage, MARGIN, topLineY, PAGE_WIDTH - MARGIN, topLineY, BLUE, 1.05);
-    this.pdf.drawText(this.currentPage, title, centerX, titleY, { size: SECTION_HEADER_TITLE_SIZE, font: 'bold', color: NAVY, align: 'center' });
+    this.pdf.drawText(this.currentPage, title, MARGIN, titleY, { size: SECTION_HEADER_TITLE_SIZE, font: 'bold', color: NAVY });
     this.pdf.drawLine(this.currentPage, MARGIN, bottomLineY, PAGE_WIDTH - MARGIN, bottomLineY, BLUE, 1.05);
     this.y = bottomLineY - SECTION_HEADER_BOTTOM_GAP;
   }
