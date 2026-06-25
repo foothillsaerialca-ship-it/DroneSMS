@@ -28,6 +28,14 @@ const PANEL_OPACITY = 0.72;
 const TABLE_ROW_OPACITY = 0.34;
 const TOTAL_ROW_OPACITY = 0.48;
 const WATERMARK_OPACITY = 0.03;
+const SECTION_HEADER_TOP_PADDING = 8;
+const SECTION_HEADER_LINE_GAP = 24;
+const SECTION_HEADER_TITLE_SIZE = 12.5;
+const SECTION_HEADER_TITLE_BASELINE_OFFSET = 14.4;
+const SECTION_HEADER_BOTTOM_GAP = 14;
+const SECTION_SUBTITLE_GAP = 0;
+const SECTION_SUBTITLE_BOTTOM_GAP = 8;
+
 
 export type ProposalDocumentKind = 'proposal' | 'operational-packet';
 
@@ -518,7 +526,33 @@ class ProposalPdfRenderer {
   }
 
   section(title: string, subtitle?: string, firstContentHeight = 0) {
-    this.ensureSpace((subtitle ? 48 : 34) + firstContentHeight);
+    const subtitleHeight = subtitle ? SECTION_SUBTITLE_GAP + 11 + SECTION_SUBTITLE_BOTTOM_GAP : 0;
+    this.ensureSpace(this.sectionHeaderHeight() + subtitleHeight + firstContentHeight);
+    this.drawSectionHeader(title);
+    if (subtitle) {
+      this.y -= SECTION_SUBTITLE_GAP;
+      this.y = this.pdf.drawWrappedText(this.currentPage, subtitle, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 8.6, font: 'oblique', color: GRAY, lineHeight: 11 }) - SECTION_SUBTITLE_BOTTOM_GAP;
+    }
+  }
+
+  private drawSectionHeader(title: string) {
+    this.y -= SECTION_HEADER_TOP_PADDING;
+    const topLineY = this.y;
+    const bottomLineY = topLineY - SECTION_HEADER_LINE_GAP;
+    const titleY = topLineY - SECTION_HEADER_TITLE_BASELINE_OFFSET;
+    const centerX = MARGIN + (PAGE_WIDTH - MARGIN * 2) / 2;
+    this.pdf.drawLine(this.currentPage, MARGIN, topLineY, PAGE_WIDTH - MARGIN, topLineY, BLUE, 1.05);
+    this.pdf.drawText(this.currentPage, title, centerX, titleY, { size: SECTION_HEADER_TITLE_SIZE, font: 'bold', color: NAVY, align: 'center' });
+    this.pdf.drawLine(this.currentPage, MARGIN, bottomLineY, PAGE_WIDTH - MARGIN, bottomLineY, BLUE, 1.05);
+    this.y = bottomLineY - SECTION_HEADER_BOTTOM_GAP;
+  }
+
+  private sectionHeaderHeight() {
+    return SECTION_HEADER_TOP_PADDING + SECTION_HEADER_LINE_GAP + SECTION_HEADER_BOTTOM_GAP;
+  }
+
+  private legacySection(title: string, subtitle?: string) {
+    this.ensureSpace(subtitle ? 48 : 34);
     this.pdf.drawText(this.currentPage, title, MARGIN, this.y, { size: 12.5, font: 'bold', color: NAVY });
     this.pdf.drawLine(this.currentPage, MARGIN, this.y - 7, PAGE_WIDTH - MARGIN, this.y - 7, BLUE, 1.05);
     this.y -= 20;
@@ -556,7 +590,7 @@ class ProposalPdfRenderer {
 
   imageDocumentPage(title: string, rows: Array<[string, string]>, image: PdfImage) {
     this.startContentPage();
-    this.section(title);
+    this.legacySection(title);
     this.keyValueTable(rows);
     const maxWidth = PAGE_WIDTH - MARGIN * 2;
     const maxHeight = Math.max(120, this.y - 44);
