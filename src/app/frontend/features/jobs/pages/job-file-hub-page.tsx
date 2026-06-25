@@ -1517,16 +1517,17 @@ export function JobFileHubPage() {
           </button>
         </div>
         <ul className="mt-4 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+          <li>• Proposal</li>
+          <li>• Completed Job Record</li>
           <li>• Job Information</li>
           <li>• Crew Assignment</li>
           <li>• Equipment Assignment</li>
           <li>• JHA</li>
+          <li>• Closeout & Supporting Documentation</li>
           <li>• Airspace Review (from JHA)</li>
-          <li>• Crew Briefing (from JHA)</li>
           <li>• Preflight Checklist</li>
           <li>• Safety Events</li>
           <li>• Closeout Summary</li>
-          <li>• Personnel Qualification Summary (from Personnel records)</li>
         </ul>
       </div>
 
