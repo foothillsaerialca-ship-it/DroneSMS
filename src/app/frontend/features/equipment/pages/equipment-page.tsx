@@ -3,6 +3,7 @@ import { supabase } from '@frontend/lib/supabase';
 
 const typeOptions = ['Drone', 'Controller', 'Battery', 'Payload', 'Ground Support', 'Filtration / Water System', 'Camera / Sensor', 'Charger', 'Safety Kit', 'Chemical / Material', 'Other'];
 const statusOptions = ['Available', 'In Use', 'Maintenance', 'Inactive', 'Retired'];
+const maintenanceFilterOptions = ['All', 'Not Scheduled', 'Due Soon', 'Overdue'];
 const chemicalMaterialType = 'Chemical / Material';
 const chemicalDocumentTypes = ['Safety Data Sheet (SDS)', 'Product Label', 'Technical Data Sheet (TDS)'] as const;
 type ChemicalDocumentType = (typeof chemicalDocumentTypes)[number];
@@ -92,6 +93,17 @@ function daysUntil(date: string) {
   today.setHours(0, 0, 0, 0);
 
   return Math.ceil((targetDate.getTime() - today.getTime()) / 86_400_000);
+}
+
+function getMaintenanceStatus(equipment: Equipment): 'not-scheduled' | 'due-soon' | 'overdue' {
+  if (!equipment.maintenance_due_date) return 'not-scheduled';
+
+  const remainingDays = daysUntil(equipment.maintenance_due_date);
+
+  if (remainingDays < 0) return 'overdue';
+  if (remainingDays <= 30) return 'due-soon';
+
+  return 'not-scheduled';
 }
 
 function getReadinessState(equipment: Equipment): ReadinessState {
@@ -224,6 +236,7 @@ export function EquipmentPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
+  const [maintenanceFilter, setMaintenanceFilter] = useState('All');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingEquipmentId, setDeletingEquipmentId] = useState<string | null>(null);
@@ -273,22 +286,55 @@ export function EquipmentPage() {
   const filteredEquipment = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
 
-    return equipment
+    let filtered = equipment
       .filter((item) => statusFilter === 'All' || item.status === statusFilter)
       .filter((item) => typeFilter === 'All' || item.equipment_type === typeFilter)
+      .filter((item) => {
+        if (maintenanceFilter === 'All') return true;
+        const maintenanceStatus = getMaintenanceStatus(item);
+        return maintenanceStatus === maintenanceFilter.toLowerCase().replace(' ', '-');
+      })
       .filter((item) => {
         if (!normalizedSearch) return true;
 
         return [item.name, item.equipment_type, item.make, item.model, item.serial_number, item.faa_registration_number, item.assigned_location]
           .filter(Boolean)
           .some((value) => value?.toLowerCase().includes(normalizedSearch));
-      })
-      .sort((left, right) => {
+      });
+
+    // Custom sorting when maintenance filter is active
+    if (maintenanceFilter !== 'All') {
+      filtered.sort((left, right) => {
+        if (!left.maintenance_due_date && !right.maintenance_due_date) return left.name.localeCompare(right.name);
+        if (!left.maintenance_due_date) return 1;
+        if (!right.maintenance_due_date) return -1;
+
+        const leftDays = daysUntil(left.maintenance_due_date);
+        const rightDays = daysUntil(right.maintenance_due_date);
+
+        // For "Due Soon", sort by soonest first (ascending days)
+        if (maintenanceFilter === 'Due Soon') {
+          return leftDays - rightDays;
+        }
+
+        // For "Overdue", sort by furthest past first (most negative first)
+        if (maintenanceFilter === 'Overdue') {
+          return leftDays - rightDays;
+        }
+
+        return left.name.localeCompare(right.name);
+      });
+    } else {
+      // Default sorting when no maintenance filter
+      filtered.sort((left, right) => {
         const readinessDifference = getReadinessState(left).sortOrder - getReadinessState(right).sortOrder;
         if (readinessDifference !== 0) return readinessDifference;
         return left.name.localeCompare(right.name);
       });
-  }, [equipment, searchQuery, statusFilter, typeFilter]);
+    }
+
+    return filtered;
+  }, [equipment, searchQuery, statusFilter, typeFilter, maintenanceFilter]);
 
   function updateField(field: keyof EquipmentFormState, value: string) {
     setFormData((current) => ({ ...current, [field]: value }));
@@ -654,8 +700,8 @@ export function EquipmentPage() {
             <h2 className="text-lg font-semibold text-brand-900">Equipment Records</h2>
             <p className="mt-1 text-sm text-slate-600">Search by name, serial, registration, make, model, type, or location.</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[42rem]">
-            <label className="block text-sm font-medium text-slate-700 sm:col-span-3 lg:col-span-1">
+          <div className="grid gap-3 sm:grid-cols-4 lg:min-w-[52rem]">
+            <label className="block text-sm font-medium text-slate-700 sm:col-span-2 lg:col-span-1">
               Search
               <input
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100"
@@ -691,6 +737,20 @@ export function EquipmentPage() {
                 {typeOptions.map((type) => (
                   <option key={type} value={type}>
                     {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Maintenance
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100"
+                value={maintenanceFilter}
+                onChange={(event) => setMaintenanceFilter(event.target.value)}
+              >
+                {maintenanceFilterOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
                   </option>
                 ))}
               </select>
