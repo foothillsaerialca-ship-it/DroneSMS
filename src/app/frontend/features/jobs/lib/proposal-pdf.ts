@@ -2,6 +2,7 @@ import { supabase } from '@frontend/lib/supabase';
 import { saveGeneratedDocument } from '@frontend/features/jobs/lib/generated-documents';
 import {
   getOrganizationLogoUrl,
+  DEFAULT_SERVICE_COMMITMENT,
   loadOrganizationSettingsById,
   type OrganizationSettings,
 } from '@frontend/features/settings/lib/organization-settings';
@@ -84,7 +85,7 @@ type PacketPhotoImage = PdfImage & { id: string; caption: string | null; timesta
 type TocGroup = { title: string; items: string[] };
 type TableColumn = { header: string; width: number; align?: 'left' | 'right' | 'center' };
 type TableCell = string | number | null | undefined;
-type TableOptions = { totalRowIndex?: number; minRowHeight?: number };
+type TableOptions = { totalRowIndex?: number; minRowHeight?: number; avoidSingleRowContinuation?: boolean };
 type PageState = { commands: string[]; contentId: number; pageId: number };
 type PdfObjectValue = string | Uint8Array;
 
@@ -325,9 +326,9 @@ class ProposalPdfRenderer {
     this.includeProposalEnhancements = includeProposalEnhancements;
     this.startContentPage();
     if (options.sectionTitle) this.section(options.sectionTitle);
-    this.section('EXECUTIVE SUMMARY');
+    this.section('EXECUTIVE SUMMARY', undefined, 80);
     this.paragraph(buildExecutiveSummary(this.proposal, this.organization), 12);
-    this.section('SCOPE OF WORK');
+    this.section('SCOPE OF WORK', undefined, 69);
     this.keyValueTable([
       ['Services', buildServiceDescription(this.proposal)],
       ['Site Setup', 'Establish staging area, verify equipment readiness, conduct crew briefing, and implement site controls appropriate to the operating environment.'],
@@ -339,7 +340,7 @@ class ProposalPdfRenderer {
     ]);
 
     this.startContentPage();
-    this.section('PERSONNEL', 'Crew assignments are confirmed before scheduling and matched to the site requirements.');
+    this.section('PERSONNEL', 'Crew assignments are confirmed before scheduling and matched to the site requirements.', 69);
     this.table(
       [
         ['Role', 'Assigned Individual', 'Credentials / Notes'],
@@ -348,7 +349,7 @@ class ProposalPdfRenderer {
       ],
       [130, 170, 187],
     );
-    this.section('EQUIPMENT', 'Equipment may be adjusted before deployment to match site conditions and deliverable requirements.');
+    this.section('EQUIPMENT', 'Equipment may be adjusted before deployment to match site conditions and deliverable requirements.', 69);
     this.table(
       [
         ['Equipment', 'Purpose'],
@@ -358,28 +359,29 @@ class ProposalPdfRenderer {
     );
     const materialRows = includeProposalEnhancements && this.organization?.includeMaterialsUsedInProposal !== false ? buildMaterialRows(this.proposal) : [];
     if (materialRows.length) {
-      this.section('MATERIALS USED');
+      this.section('MATERIALS USED', undefined, 69);
       this.table([['Material', 'Purpose'], ...materialRows], [250, 237]);
       this.paragraph('Safety Data Sheets (SDS) and product documentation are available upon request and are automatically included with the completed job record, when applicable.', 8);
     }
-    this.section('PRELIMINARY HAZARD ASSESSMENT', 'Final site-specific hazards are verified before flight.');
+    this.section('PRELIMINARY HAZARD ASSESSMENT', 'Final site-specific hazards are verified before flight.', 69);
     this.table(
       [
         ['Hazard', 'Category', 'Mitigation'],
         ...buildHazardRows(this.proposal),
       ],
       [150, 95, 242],
+      { avoidSingleRowContinuation: true },
     );
 
     this.startContentPage();
-    this.section('AIRSPACE REVIEW', 'Airspace conditions are rechecked before flight.');
+    this.section('AIRSPACE REVIEW', 'Airspace conditions are rechecked before flight.', 69);
     this.keyValueTable([
       ['Airspace Classification', clean(this.proposal.airspace_class) || PLACEHOLDER],
       ['Nearby Airport', PLACEHOLDER],
       ['LAANC Requirement', booleanDisplay(this.proposal.laanc_required)],
       ['Preliminary Operational Finding', buildAirspaceFindings(this.proposal)],
     ]);
-    this.section('PRICING');
+    this.section('PRICING', undefined, 69);
     const amount = currency(this.proposal.proposal_amount);
     this.table(
       [
@@ -391,14 +393,15 @@ class ProposalPdfRenderer {
       { totalRowIndex: 2 },
     );
     if (includeProposalEnhancements && this.organization?.includePaymentTermsInProposal !== false && clean(this.proposal.payment_terms)) {
-      this.section('PAYMENT TERMS');
+      this.section('PAYMENT TERMS', undefined, 80);
       this.paragraph(clean(this.proposal.payment_terms), 8);
     }
-    if (includeProposalEnhancements && this.organization?.includeServiceCommitmentInProposal !== false && clean(this.organization?.serviceCommitment)) {
-      this.section('SERVICE COMMITMENT');
-      this.paragraph(clean(this.organization?.serviceCommitment), 8);
+    const serviceCommitment = proposalServiceCommitment(this.organization);
+    if (includeProposalEnhancements && this.organization?.includeServiceCommitmentInProposal !== false && serviceCommitment) {
+      this.section('SERVICE COMMITMENT', undefined, 80);
+      this.paragraph(serviceCommitment, 8);
     }
-    this.section('PROJECT ASSUMPTIONS & SAFETY CONDITIONS');
+    this.section('PROJECT ASSUMPTIONS & SAFETY CONDITIONS', undefined, 21);
     this.bullets([
       'Work is planned around site access, weather, airspace, people, property, and mission constraints.',
       'The crew verifies current conditions before flight and coordinates with the client when conditions change.',
@@ -407,9 +410,7 @@ class ProposalPdfRenderer {
       'Airspace authorization availability is assumed when applicable.',
       'Scope changes or additional site requirements may require written authorization.',
     ]);
-    this.section('ACCEPTANCE');
-    this.paragraph('Signature constitutes acceptance of the scope, pricing, and conditions in this proposal.', 8);
-    this.signatureBlock();
+    this.acceptanceBlock();
   }
 
   renderCloseoutCover(rows: Array<[string, string]>) {
@@ -516,8 +517,8 @@ class ProposalPdfRenderer {
     this.pdf.drawText(page, companyNameFor(this.organization), PAGE_WIDTH / 2, PAGE_HEIGHT / 2, { size: 36, font: 'bold', color: LIGHT_GRAY, align: 'center' });
   }
 
-  section(title: string, subtitle?: string) {
-    this.ensureSpace(subtitle ? 48 : 34);
+  section(title: string, subtitle?: string, firstContentHeight = 0) {
+    this.ensureSpace((subtitle ? 48 : 34) + firstContentHeight);
     this.pdf.drawText(this.currentPage, title, MARGIN, this.y, { size: 12.5, font: 'bold', color: NAVY });
     this.pdf.drawLine(this.currentPage, MARGIN, this.y - 7, PAGE_WIDTH - MARGIN, this.y - 7, BLUE, 1.05);
     this.y -= 20;
@@ -573,29 +574,46 @@ class ProposalPdfRenderer {
     const x = MARGIN;
     const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
     const headerHeight = 20;
-    this.ensureSpace(headerHeight + 28);
-    this.pdf.drawRect(this.currentPage, x, this.y - headerHeight + 6, tableWidth, headerHeight, { fill: NAVY });
-    let currentX = x;
-    columns.forEach((column) => {
-      this.pdf.drawText(this.currentPage, column.header, currentX + 6, this.y - 8, { size: 8, font: 'bold', color: WHITE });
-      currentX += column.width;
-    });
-    this.pdf.drawLine(this.currentPage, x, this.y - headerHeight + 6, x + tableWidth, this.y - headerHeight + 6, BLUE, 0.9);
-    this.y -= headerHeight;
+    const rowLineSets = rows.map((row) => row.map((cell, cellIndex) => wrapText(normalizeTableCellText(cell), columns[cellIndex].width - 12, 8)));
+    const rowHeights = rowLineSets.map((cellLines) => Math.max(options.minRowHeight ?? 21, ...cellLines.map((lines) => lines.length * 10 + 10)));
 
-    rows.forEach((row, rowIndex) => {
-      const cellLines = row.map((cell, cellIndex) => wrapText(normalizeTableCellText(cell), columns[cellIndex].width - 12, 8));
-      const rowHeight = Math.max(options.minRowHeight ?? 21, ...cellLines.map((lines) => lines.length * 10 + 10));
-      this.ensureSpace(rowHeight + 10);
+    const drawHeader = () => {
+      this.ensureSpace(headerHeight + Math.min(rowHeights[0] ?? 21, 42) + 10);
+      this.pdf.drawRect(this.currentPage, x, this.y - headerHeight + 6, tableWidth, headerHeight, { fill: NAVY });
+      let headerX = x;
+      columns.forEach((column) => {
+        this.pdf.drawText(this.currentPage, column.header, headerX + 6, this.y - 8, { size: 8, font: 'bold', color: WHITE });
+        headerX += column.width;
+      });
+      this.pdf.drawLine(this.currentPage, x, this.y - headerHeight + 6, x + tableWidth, this.y - headerHeight + 6, BLUE, 0.9);
+      this.y -= headerHeight;
+    };
+
+    drawHeader();
+
+    rows.forEach((_row, rowIndex) => {
+      const rowHeight = rowHeights[rowIndex];
+      const followingRowHeight = rowHeights[rowIndex + 1] ?? 0;
+      const remainingRows = rows.length - rowIndex;
+      const wouldLeaveSingleFinalRow = options.avoidSingleRowContinuation && remainingRows === 2 && this.y - (rowHeight + followingRowHeight + 10) <= 52 && this.y - (rowHeight + 10) > 52;
+
+      if (wouldLeaveSingleFinalRow) {
+        this.startContentPage();
+        drawHeader();
+      } else if (this.y - (rowHeight + 10) <= 52) {
+        this.startContentPage();
+        drawHeader();
+      }
+
       const rowY = this.y - rowHeight + 6;
       const isTotal = options.totalRowIndex === rowIndex + 1;
       const fill = isTotal ? LIGHT_BLUE : rowIndex % 2 === 1 ? ZEBRA : undefined;
       const opacity = isTotal ? TOTAL_ROW_OPACITY : fill ? TABLE_ROW_OPACITY : undefined;
       this.pdf.drawRect(this.currentPage, x, rowY, tableWidth, rowHeight, { fill, stroke: LIGHT_GRAY, strokeWidth: 0.35, opacity });
-      currentX = x;
+      let currentX = x;
       columns.forEach((column, cellIndex) => {
         if (cellIndex > 0) this.pdf.drawLine(this.currentPage, currentX, rowY, currentX, rowY + rowHeight, LIGHT_GRAY, 0.35);
-        const lines = cellLines[cellIndex];
+        const lines = rowLineSets[rowIndex][cellIndex];
         lines.forEach((line, lineIndex) => {
           const textX = column.align === 'right' ? currentX + column.width - 6 : currentX + 6;
           this.pdf.drawText(this.currentPage, line, textX, this.y - 8 - lineIndex * 10, { size: 8, font: isTotal ? 'bold' : 'regular', color: NAVY, align: column.align });
@@ -629,6 +647,18 @@ class ProposalPdfRenderer {
       this.pdf.drawWrappedText(this.currentPage, row[1], blockX + 164, y, blockWidth - 198, { size: 9.5, color: NAVY, lineHeight: 11.8 });
       y -= rowHeight;
     });
+  }
+
+
+  private acceptanceBlock() {
+    const acceptanceText = 'Signature constitutes acceptance of the scope, pricing, and conditions in this proposal.';
+    const headingHeight = 34;
+    const paragraphHeight = wrapText(acceptanceText, PAGE_WIDTH - MARGIN * 2, 9.6).length * 12.8 + 8;
+    const signatureHeight = 128;
+    this.ensureSpace(headingHeight + paragraphHeight + signatureHeight);
+    this.section('ACCEPTANCE');
+    this.paragraph(acceptanceText, 8);
+    this.signatureBlock();
   }
 
   private signatureBlock() {
@@ -1147,6 +1177,11 @@ function buildExclusions(proposal: ProposalPdfRecord) {
 }
 
 
+
+function proposalServiceCommitment(organization: OrganizationSettings | null) {
+  const value = clean(organization?.serviceCommitment);
+  return /warranty/i.test(value) ? DEFAULT_SERVICE_COMMITMENT : value;
+}
 
 function buildCompanyCredentials(organization: OrganizationSettings | null) {
   const credentials = [organization?.isLicensed ? 'Licensed' : '', organization?.isInsured ? 'Insured' : '', organization?.isBonded ? 'Bonded' : ''].filter(Boolean);
