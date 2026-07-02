@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './frontend/shell';
 import { DashboardPage } from './frontend/features/dashboard/pages/dashboard-page';
 import { JobsPage } from './frontend/features/jobs/pages/jobs-page';
@@ -14,14 +14,42 @@ import { LoginPage } from './frontend/features/auth/pages/login-page';
 import { RegisterPage } from './frontend/features/auth/pages/register-page';
 import { CompanyOnboardingPage } from './frontend/features/auth/pages/company-onboarding-page';
 import { SettingsPage } from './frontend/features/settings/pages/settings-page';
-import { ProfilePage } from './frontend/features/settings/pages/profile-page';
 import { ReportsPage } from './frontend/features/reports/pages/reports-page';
 import { ProtectedRoute } from './frontend/features/auth/components/protected-route';
+
+function LandingPage() {
+  return (
+    <section className="mx-auto w-full max-w-xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <div className="space-y-4 text-center">
+        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-brand-700">Welcome to</p>
+        <h1 className="text-4xl font-bold tracking-tight text-slate-900">DroneSMS</h1>
+        <p className="mx-auto max-w-lg text-sm leading-6 text-slate-600">
+          A practical operational safety system for drone operators, helping teams identify hazards, document mitigations, capture evidence, generate operational records, and demonstrate due diligence throughout every stage of flight operations.
+        </p>
+      </div>
+
+      <div className="mt-8 grid gap-3 sm:grid-cols-2">
+        <Link
+          to="/login"
+          className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-800"
+        >
+          Sign In
+        </Link>
+        <Link
+          to="/register"
+          className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
+        >
+          Register
+        </Link>
+      </div>
+    </section>
+  );
+}
 
 export function AppRouter() {
   return (
     <Routes>
-      <Route index element={<Navigate to="/dashboard" replace />} />
+      <Route index element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
@@ -41,11 +69,10 @@ export function AppRouter() {
           <Route path="/equipment" element={<EquipmentPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/settings/profile" element={<ProfilePage />} />
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
