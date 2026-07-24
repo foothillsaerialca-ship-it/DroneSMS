@@ -1,15 +1,13 @@
-1. remove the profile page entirely if it is unused and clean up other unused pages and routes. 
-delete the unused pages associated with the profile. 
-make everything use the src/app router, and remove frontend router
-merge all supabase migrations into 1 file
-2. user email and password change support
-3. email verification for registration, and email and password changes
-4. have non-displayed backup email support
+1. user email and password change support
+2. email verification for registration, and email and password changes
+3. have non-displayed backup email support
+4. dev bio and image display (ref 648 design)
+5. 
 
 Eventual:
-    Subscription Paywall info
-    session safety and middleware for user verification
-
+    Subscription Paywall info (ref saved video - Nico)
+    sql scheduled events for refreshing / checking account activity / login timestamps
+    
 
 Suggest getting it out on market locally 
 make sure no other competitors

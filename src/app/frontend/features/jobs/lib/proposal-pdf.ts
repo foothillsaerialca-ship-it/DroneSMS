@@ -493,7 +493,7 @@ class ProposalPdfRenderer {
     this.watermark(this.currentPage);
     this.header(this.currentPage);
     this.footer(this.currentPage, showPageNumber ? this.pageNumber : 1);
-    this.y = PAGE_HEIGHT - 78;
+    this.y = PAGE_HEIGHT - (68 - SECTION_HEADER_BOTTOM_GAP);
   }
 
   private header(page: PageState) {
@@ -503,10 +503,9 @@ class ProposalPdfRenderer {
     const addressY = credentials ? PAGE_HEIGHT - 48 : PAGE_HEIGHT - 41;
     if (credentials) this.pdf.drawText(page, credentials, MARGIN, PAGE_HEIGHT - 39, { size: 6.4, color: GRAY });
     this.pdf.drawWrappedText(page, organizationAddress(this.organization), MARGIN, addressY, 330, { size: 6, color: GRAY, lineHeight: 7.4 });
-    this.pdf.drawText(page, organizationContact(this.organization), MARGIN, credentials ? PAGE_HEIGHT - 60 : PAGE_HEIGHT - 53, { size: 6, color: GRAY });
+    this.pdf.drawText(page, organizationContact(this.organization), MARGIN, credentials ? PAGE_HEIGHT - 50 : PAGE_HEIGHT - 51, { size: 6, color: GRAY });
     const logo = this.pdf.getLogo();
     if (logo) this.pdf.drawImage(page, PAGE_WIDTH - 88, PAGE_HEIGHT - 54, 31, (31 * logo.height) / logo.width);
-    this.pdf.drawLine(page, MARGIN, credentials ? PAGE_HEIGHT - 69 : PAGE_HEIGHT - 64, PAGE_WIDTH - MARGIN, credentials ? PAGE_HEIGHT - 69 : PAGE_HEIGHT - 64, BLUE, 0.9);
   }
 
   private footer(page: PageState, pageNumber: number) {
