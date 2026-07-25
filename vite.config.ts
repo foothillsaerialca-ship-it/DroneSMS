@@ -3,6 +3,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import license from 'rollup-plugin-license';
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 const backendRoot = path.resolve('src/app/backend');
 const frontendRoot = path.resolve('src/app/frontend');
 const vendorLicenseFile = path.resolve('dist/vendor-licenses.txt');
@@ -28,7 +30,8 @@ export default defineConfig({
           }
         }
       }
-    })
+    }),
+    cloudflare()
   ],
   build: {
     outDir: 'dist',
