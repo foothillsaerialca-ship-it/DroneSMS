@@ -1,15 +1,24 @@
 1. user email and password change support
+    supported in supabase??
 2. email verification for registration, and email and password changes
+    supported in supabase?
 3. have non-displayed backup email support
+    supported in supabase?
 4. dev bio and image display (ref 648 design)
-5. 
+5. separate propasals from jobs tab to make them entirely independent in function
+6. organization website restrictions "www."
+7. implementing database roles and an admin page for admin users to reference metadate
+8. look into translating the pdf info into json packages searchable by username / email, date, and/or job and using existing pdf printing to output json as pdf
+    remove saving the pdfs outwright to save in json instead (review if this is worth it)
 
 Eventual:
     Subscription Paywall info (ref saved video - Nico)
     sql scheduled events for refreshing / checking account activity / login timestamps
+    User based multiple companies to support 1099 work / sub contractors
     
 
 Suggest getting it out on market locally 
+    review contacts from pollianna sourced LA
 make sure no other competitors
     Alloft
     Others

@@ -9,6 +9,21 @@ import {
   defaultSmsValue
 } from '../lib/sms-defaults';
 
+// Defines valid endings/domain structures
+type DomainFormat = `www.${string}.${string}`;
+
+// Allows pure domains, or domains prefixed with http:// or https://
+type FlexibleUrl = DomainFormat | `https://${DomainFormat}` | `http://${DomainFormat}`;
+
+// Type guard to validate the URL pattern at runtime
+function isValidFlexibleUrl(url: string): url is FlexibleUrl {
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl) return true;
+
+  const urlRegex = /^(?:https?:\/\/)?(?:[\w-]+\.)+[\w]{2,}(?:\/\S*)?$/i;
+  return urlRegex.test(trimmedUrl);
+}
+
 type SettingsForm = {
   companyName: string;
   phoneNumber: string;
@@ -65,7 +80,8 @@ const organizationFields = [
   { key: 'companyName', label: 'Company Name', type: 'text', autoComplete: 'organization' },
   { key: 'phoneNumber', label: 'Phone Number', type: 'tel', autoComplete: 'tel' },
   { key: 'emailAddress', label: 'Email Address', type: 'email', autoComplete: 'email' },
-  { key: 'websiteUrl', label: 'Website', type: 'url', autoComplete: 'url' },
+  //{ key: 'websiteUrl', label: 'Website', type: 'url', autoComplete: 'url' },
+  { key: 'websiteUrl', label: 'Website', type: 'text', autoComplete: 'url' },
   { key: 'physicalAddress', label: 'Physical Address', type: 'text', autoComplete: 'street-address' },
   { key: 'primaryContact', label: 'Primary Contact', type: 'text', autoComplete: 'name' },
   { key: 'companyStatement', label: 'Company Statement', type: 'textarea', autoComplete: 'off' },
@@ -306,8 +322,15 @@ export function SettingsPage() {
     if (!editingSection) return;
 
     const companyName = draft.companyName.trim();
+    const websiteUrl = draft.websiteUrl.trim();
+
     if (editingSection === 'organization' && !companyName) {
       setError('Company name is required.');
+      return;
+    }
+
+    if (editingSection === 'organization' && websiteUrl && !isValidFlexibleUrl(websiteUrl)) {
+      setError('Website must be a valid domain, such as example.com or https://example.com.');
       return;
     }
 
@@ -328,7 +351,7 @@ export function SettingsPage() {
                 name: companyName,
                 phone_number: draft.phoneNumber.trim() || null,
                 email_address: draft.emailAddress.trim() || null,
-                website_url: draft.websiteUrl.trim() || null,
+                website_url: websiteUrl || null,
                 physical_address: draft.physicalAddress.trim() || null,
                 primary_contact: draft.primaryContact.trim() || null,
                 company_statement: draft.companyStatement.trim() || null,
