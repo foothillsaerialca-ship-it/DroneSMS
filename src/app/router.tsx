@@ -15,6 +15,7 @@ import { RegisterPage } from './frontend/features/auth/pages/register-page';
 import { CompanyOnboardingPage } from './frontend/features/auth/pages/company-onboarding-page';
 import { SettingsPage } from './frontend/features/settings/pages/settings-page';
 import { ReportsPage } from './frontend/features/reports/pages/reports-page';
+import { AboutPage } from './frontend/features/information/team';
 import { ProtectedRoute } from './frontend/features/auth/components/protected-route';
 
 function LandingPage() {
@@ -58,6 +59,7 @@ export function AppRouter() {
           <Route path="/onboarding/company" element={<CompanyOnboardingPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/jobs/proposals" element={<JobsPage mode="proposals" />} />
           <Route path="/jobs/new" element={<NewJobPage />} />
           <Route path="/jobs/proposals/new" element={<NewProposalPage />} />
           <Route path="/jobs/proposals/:proposalId/edit" element={<NewProposalPage />} />
@@ -68,6 +70,7 @@ export function AppRouter() {
           <Route path="/personnel" element={<PersonnelPage />} />
           <Route path="/equipment" element={<EquipmentPage />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/about" element={<AboutPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>

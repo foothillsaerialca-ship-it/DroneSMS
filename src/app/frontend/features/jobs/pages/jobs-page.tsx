@@ -63,6 +63,7 @@ type Proposal = {
 };
 
 type JobsTab = "proposals" | "active" | "completed";
+type JobsPageProps = { mode?: "jobs" | "proposals" };
 
 const proposalStatuses: ProposalStatus[] = [
   "Draft",
@@ -71,8 +72,7 @@ const proposalStatuses: ProposalStatus[] = [
   "Accepted",
   "Declined",
 ];
-const tabs: { id: JobsTab; label: string }[] = [
-  { id: "proposals", label: "Proposals" },
+const jobsTabs: { id: Exclude<JobsTab, "proposals">; label: string }[] = [
   { id: "active", label: "Active Jobs" },
   { id: "completed", label: "Completed Jobs" },
 ];
@@ -115,11 +115,11 @@ function getInitialTab(tab: string | null): JobsTab {
   return "active";
 }
 
-export function JobsPage() {
+export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<JobsTab>(() =>
-    getInitialTab(searchParams.get("tab")),
+    mode === "proposals" ? "proposals" : getInitialTab(searchParams.get("tab")),
   );
   const [jobs, setJobs] = useState<Job[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -275,11 +275,14 @@ export function JobsPage() {
     () => proposals.filter((proposal) => proposal.converted_to_job),
     [proposals],
   );
-  const isLoadingCurrentTab =
-    activeTab === "proposals" ? isLoadingProposals : isLoadingJobs;
-  const currentError = activeTab === "proposals" ? proposalsError : jobsError;
+  const showProposalsView = mode === "proposals" || activeTab === "proposals";
+  const showJobsView = mode !== "proposals" && activeTab !== "proposals";
+  const isLoadingCurrentTab = showProposalsView ? isLoadingProposals : isLoadingJobs;
+  const currentError = showProposalsView ? proposalsError : jobsError;
+  const tabs = mode === "proposals" ? [{ id: "proposals" as JobsTab, label: "Proposals" }] : jobsTabs;
 
   function selectTab(tab: JobsTab) {
+    if (mode === "proposals") return;
     setActiveTab(tab);
     setSearchParams(tab === "active" ? {} : { tab });
   }
@@ -822,9 +825,13 @@ export function JobsPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-brand-900">Jobs</h1>
+            <h1 className="text-xl font-semibold text-brand-900">
+              {mode === "proposals" ? "Proposals" : "Jobs"}
+            </h1>
             <p className="mt-2 text-sm text-slate-600">
-              Track proposals, active operations, and completed DroneSMS work.
+              {mode === "proposals"
+                ? "Review proposal records separately from operations and keep sales activity organized."
+                : "Track active operations, completed work, and proposal records in separate views."}
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -834,40 +841,44 @@ export function JobsPage() {
             >
               + New Proposal
             </Link>
-            <Link
-              to="/jobs/new"
-              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-3 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
-            >
-              New Job
-            </Link>
+            {mode === "jobs" ? (
+              <Link
+                to="/jobs/new"
+                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-3 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
+              >
+                New Job
+              </Link>
+            ) : null}
           </div>
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
-        <div
-          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
-          role="tablist"
-          aria-label="Jobs sections"
-        >
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`min-h-11 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                activeTab === tab.id
-                  ? "bg-brand-700 text-white shadow-sm"
-                  : "bg-white text-slate-600 hover:bg-slate-50 hover:text-brand-900"
-              }`}
-              onClick={() => selectTab(tab.id)}
-              role="tab"
-              aria-selected={activeTab === tab.id}
-            >
-              {tab.label}
-            </button>
-          ))}
+      {mode === "jobs" ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
+          <div
+            className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+            role="tablist"
+            aria-label="Jobs sections"
+          >
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`min-h-11 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  activeTab === tab.id
+                    ? "bg-brand-700 text-white shadow-sm"
+                    : "bg-white text-slate-600 hover:bg-slate-50 hover:text-brand-900"
+                }`}
+                onClick={() => selectTab(tab.id)}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {isLoadingCurrentTab ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
@@ -915,7 +926,7 @@ export function JobsPage() {
         </div>
       ) : null}
 
-      {activeTab === "proposals" ? (
+      {showProposalsView ? (
         <OrganizationIdentityCard
           organization={organizationSettings}
           title="Proposal Company Information"
@@ -924,7 +935,7 @@ export function JobsPage() {
         />
       ) : null}
 
-      {activeTab === "proposals" &&
+      {showProposalsView &&
       !isLoadingProposals &&
       !proposalsError &&
       proposals.length > 0 ? (
@@ -988,7 +999,7 @@ export function JobsPage() {
         </div>
       ) : null}
 
-      {activeTab !== "proposals" &&
+      {showJobsView &&
       !isLoadingJobs &&
       !jobsError &&
       visibleJobs.length > 0 ? (
@@ -1047,7 +1058,7 @@ export function JobsPage() {
         </div>
       ) : null}
 
-      {activeTab === "proposals" &&
+      {showProposalsView &&
       !isLoadingProposals &&
       !proposalsError &&
       proposals.length === 0 ? (
@@ -1067,7 +1078,7 @@ export function JobsPage() {
         </div>
       ) : null}
 
-      {activeTab !== "proposals" &&
+      {showJobsView &&
       !isLoadingJobs &&
       !jobsError &&
       visibleJobs.length === 0 ? (

@@ -9,18 +9,15 @@ import {
   defaultSmsValue
 } from '../lib/sms-defaults';
 
-// Defines valid endings/domain structures
+// Requires a www-prefixed website, with optional http:// or https:// and a standard domain suffix.
 type DomainFormat = `www.${string}.${string}`;
-
-// Allows pure domains, or domains prefixed with http:// or https://
 type FlexibleUrl = DomainFormat | `https://${DomainFormat}` | `http://${DomainFormat}`;
 
-// Type guard to validate the URL pattern at runtime
 function isValidFlexibleUrl(url: string): url is FlexibleUrl {
   const trimmedUrl = url.trim();
   if (!trimmedUrl) return true;
 
-  const urlRegex = /^(?:https?:\/\/)?(?:[\w-]+\.)+[\w]{2,}(?:\/\S*)?$/i;
+  const urlRegex = /^(?:(?:https?:\/\/)?www\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?:\/[^\s]*)?)$/i;
   return urlRegex.test(trimmedUrl);
 }
 
@@ -330,7 +327,7 @@ export function SettingsPage() {
     }
 
     if (editingSection === 'organization' && websiteUrl && !isValidFlexibleUrl(websiteUrl)) {
-      setError('Website must be a valid domain, such as example.com or https://example.com.');
+      setError('Website must start with www and may optionally use http:// or https://, for example www.example.com or https://www.example.com.');
       return;
     }
 

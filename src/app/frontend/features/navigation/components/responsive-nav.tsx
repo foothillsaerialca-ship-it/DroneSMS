@@ -4,21 +4,22 @@ import { supabase } from '@frontend/lib/supabase';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', end: true },
-  { to: '/jobs?tab=proposals', label: 'Proposals' },
+  { to: '/jobs/proposals', label: 'Proposals' },
   { to: '/jobs', label: 'Jobs', end: true },
+  { to: '/about', label: 'About', end: true },
   { to: '/personnel', label: 'Personnel', end: true },
   { to: '/equipment', label: 'Equipment', end: true },
   { to: '/reports', label: 'Reports', end: true },
   { to: '/settings', label: 'Settings' }
 ];
 
-function isProposalsActive(pathname: string, search: string) {
-  return pathname === '/jobs' && new URLSearchParams(search).get('tab') === 'proposals';
+function isProposalsActive(pathname: string) {
+  return pathname === '/jobs/proposals' || pathname.startsWith('/jobs/proposals/');
 }
 
-function isJobsActive(pathname: string, search: string) {
+function isJobsActive(pathname: string) {
   if (!pathname.startsWith('/jobs')) return false;
-  return !isProposalsActive(pathname, search);
+  return pathname === '/jobs' || (pathname.startsWith('/jobs/') && !isProposalsActive(pathname));
 }
 
 type NavigationLinksProps = {
@@ -39,9 +40,9 @@ function NavigationLinks({ onNavigate, layout }: NavigationLinksProps) {
         const isProposals = item.label === 'Proposals';
         const isJobs = item.label === 'Jobs';
         const activeOverride = isProposals
-          ? isProposalsActive(location.pathname, location.search)
+          ? isProposalsActive(location.pathname)
           : isJobs
-            ? isJobsActive(location.pathname, location.search)
+            ? isJobsActive(location.pathname)
             : undefined;
 
         return (
