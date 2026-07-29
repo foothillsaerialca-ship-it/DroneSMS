@@ -111,16 +111,17 @@ function isCompletedJob(job: Job) {
 }
 
 function getInitialTab(tab: string | null): JobsTab {
-  if (tab === "proposals" || tab === "completed") return tab;
+  if (tab === "completed") return "completed";
   return "active";
 }
 
 export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<JobsTab>(() =>
-    mode === "proposals" ? "proposals" : getInitialTab(searchParams.get("tab")),
-  );
+  const [activeTab, setActiveTab] = useState<JobsTab>(() => {
+    if (mode === "proposals") return "proposals";
+    return getInitialTab(searchParams.get("tab"));
+  });
   const [jobs, setJobs] = useState<Job[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
@@ -228,6 +229,16 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   useEffect(() => {
     void loadDocumentsForProposals(proposals.map((proposal) => proposal.id));
   }, [loadDocumentsForProposals, proposals]);
+
+  useEffect(() => {
+    if (mode !== "proposals") {
+      const tabParam = searchParams.get("tab");
+      if (tabParam === "proposals") {
+        setActiveTab("active");
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [mode, searchParams, setSearchParams]);
 
   useEffect(() => {
     let isMounted = true;
@@ -643,7 +654,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
               {isGeneratingPdf ? "Generating PDF..." : "Generate Proposal PDF"}
             </button>
             <Link
-              to={`/jobs/proposals/${proposal.id}/edit`}
+              to={`/proposals/${proposal.id}/edit`}
               className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-700 bg-white px-3 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 sm:min-h-0 sm:py-2"
             >
               Edit Proposal
@@ -836,7 +847,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Link
-              to="/jobs/proposals/new"
+              to="/proposals/new"
               className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-700 bg-white px-3 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 sm:min-h-0 sm:py-2"
             >
               + New Proposal
@@ -1070,7 +1081,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
             Create the first proposal before work becomes a job.
           </p>
           <Link
-            to="/jobs/proposals/new"
+            to="/proposals/new"
             className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
           >
             + New Proposal

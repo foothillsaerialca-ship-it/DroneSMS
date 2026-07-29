@@ -4,17 +4,17 @@ import { supabase } from '@frontend/lib/supabase';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', end: true },
-  { to: '/jobs/proposals', label: 'Proposals' },
+  { to: '/proposals', label: 'Proposals' },
   { to: '/jobs', label: 'Jobs', end: true },
-  { to: '/about', label: 'About', end: true },
   { to: '/personnel', label: 'Personnel', end: true },
   { to: '/equipment', label: 'Equipment', end: true },
   { to: '/reports', label: 'Reports', end: true },
-  { to: '/settings', label: 'Settings' }
+  { to: '/settings', label: 'Settings' },
+  { to: '/about', label: 'About', end: true }
 ];
 
 function isProposalsActive(pathname: string) {
-  return pathname === '/jobs/proposals' || pathname.startsWith('/jobs/proposals/');
+  return pathname === '/proposals' || pathname.startsWith('/proposals/');
 }
 
 function isJobsActive(pathname: string) {

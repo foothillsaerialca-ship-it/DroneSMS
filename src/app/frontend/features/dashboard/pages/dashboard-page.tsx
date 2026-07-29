@@ -171,7 +171,7 @@ function buildAttentionItems(
   proposals
     .filter((proposal) => !proposal.converted_to_job && ['sent', 'under review'].includes(normalizeStatus(proposal.status)))
     .forEach((proposal) => {
-      items.push({ id: `${proposal.id}-proposal`, label: 'Proposal awaiting review', detail: proposal.proposal_name, to: `/jobs/proposals/${proposal.id}/edit` });
+      items.push({ id: `${proposal.id}-proposal`, label: 'Proposal awaiting review', detail: proposal.proposal_name, to: `/proposals/${proposal.id}/edit` });
     });
 
   return items.slice(0, 5);
@@ -196,7 +196,7 @@ function buildRecentActivity(jobs: DashboardJob[], proposals: DashboardProposal[
       label: 'Proposal Created',
       detail: proposal.proposal_name,
       timestamp: proposal.created_at,
-      to: `/jobs/proposals/${proposal.id}/edit`
+      to: `/proposals/${proposal.id}/edit`
     });
 
     if (proposal.converted_to_job && proposal.converted_job_id && proposal.converted_at) {
@@ -426,7 +426,7 @@ export function DashboardPage() {
                   <ActionLink to={`/jobs/${currentOperation.id}/hub`} variant="primary">Continue Operation</ActionLink>
                 ) : (
                   <>
-                    <ActionLink to="/jobs/proposals/new" variant="primary">Create Proposal</ActionLink>
+                    <ActionLink to="/proposals/new" variant="primary">Create Proposal</ActionLink>
                     <ActionLink to="/jobs/new">Create Job</ActionLink>
                   </>
                 )}
@@ -502,7 +502,7 @@ export function DashboardPage() {
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-labelledby="quick-actions-heading">
             <h2 id="quick-actions-heading" className="text-lg font-semibold text-brand-900">Quick Actions</h2>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <ActionLink to="/jobs/proposals/new" variant="primary">Create Proposal</ActionLink>
+              <ActionLink to="/proposals/new" variant="primary">Create Proposal</ActionLink>
               <ActionLink to="/jobs/new">Create Job</ActionLink>
               <ActionLink to="/personnel">Personnel</ActionLink>
               <ActionLink to="/equipment">Equipment</ActionLink>

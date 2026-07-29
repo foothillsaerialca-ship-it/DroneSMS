@@ -405,7 +405,7 @@ export function JobDetailPage() {
                     {job.source_proposal_number ?? job.source_proposal_id.slice(0, 8).toUpperCase()}
                   </span>
                   <Link
-                    to={`/jobs/proposals/${job.source_proposal_id}/edit`}
+                    to={`/proposals/${job.source_proposal_id}/edit`}
                     className="inline-flex min-h-11 w-fit items-center justify-center rounded-lg border border-brand-700 bg-white px-3 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 sm:min-h-0 sm:py-2"
                   >
                     View Proposal

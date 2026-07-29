@@ -59,10 +59,10 @@ export function AppRouter() {
           <Route path="/onboarding/company" element={<CompanyOnboardingPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/jobs" element={<JobsPage />} />
-          <Route path="/jobs/proposals" element={<JobsPage mode="proposals" />} />
+          <Route path="/proposals" element={<JobsPage mode="proposals" />} />
           <Route path="/jobs/new" element={<NewJobPage />} />
-          <Route path="/jobs/proposals/new" element={<NewProposalPage />} />
-          <Route path="/jobs/proposals/:proposalId/edit" element={<NewProposalPage />} />
+          <Route path="/proposals/new" element={<NewProposalPage />} />
+          <Route path="/proposals/:proposalId/edit" element={<NewProposalPage />} />
           <Route path="/jobs/:jobId" element={<JobDetailPage />} />
           <Route path="/jobs/:jobId/hub" element={<JobFileHubPage />} />
           <Route path="/jobs/:jobId/templates/jha" element={<JobHazardAnalysisPage />} />
