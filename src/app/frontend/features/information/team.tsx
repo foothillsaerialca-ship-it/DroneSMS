@@ -15,13 +15,12 @@ type TeamMember = {
 
 const teamMembers: TeamMember[] = [
   {
-    name: 'Bryce Lastname',
-    role: 'CEO',
-    bio: 'Placeholder',
-    initials: 'BL',
+    name: 'Bryce Finger',
+    role: 'FOUNDER',
+    bio: 'Bryce brings a background spanning aviation safety, occupational safety, regulatory operations, and military leadership to DroneSMS. An FAA certificated Remote Pilot and U.S. Army veteran, he holds a B.S. in Technical Management with a focus in Occupational Safety and Health and Aviation Safety from Embry Riddle Aeronautical University.\n\nDroneSMS grew from his experience exploring commercial UAS operations and recognizing a recurring gap: small operators had access to capable aircraft, but often lacked the structured safety and operational systems common throughout traditional aviation. He founded DroneSMS to help close that gap by translating established Safety Management System principles into practical tools built specifically for commercial drone operations.',
+    initials: 'BF',
     image: placeholderImage,
-    pronouns: 'He/Him',
-    interests: ['Placeholder', 'Placeholder', 'Placeholder'],
+    interests: ['Aviation', 'Drones', 'Safety', 'Family'],
     links: { github: 'Placeholder' }
   },
   {
@@ -61,10 +60,16 @@ export function AboutPage() {
     <section className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="max-w-3xl space-y-3">
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-brand-700">About DroneSMS</p>
-          <h1 className="text-3xl font-semibold tracking-tight text-brand-900">A team-built operations platform with a human-centered approach.</h1>
+          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-brand-700">ABOUT DRONESMS</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-brand-900">Built to bring aviation-grade safety structure to commercial drone operations.</h1>
           <p className="text-sm leading-7 text-slate-600">
-            DroneSMS was created to help operational teams manage planning, safety, document retention, and day-to-day execution in one place. The experience is designed to feel clear and practical, whether a crew is reviewing a proposal, preparing a mission packet, or closing out a completed job.
+            DroneSMS is a Safety Management System and operational documentation platform built for commercial UAS operators. It brings safety planning, risk management, operational workflows, and job documentation together in one structured system, from proposal and preflight planning through execution and closeout.
+          </p>
+          <p className="text-sm leading-7 text-slate-600">
+            Built around the four pillars of Safety Management Systems: Safety Policy, Safety Risk Management, Safety Assurance, and Safety Promotion, DroneSMS is designed to help operators build repeatable processes, document their decisions, and demonstrate a professional approach to safety and compliance.
+          </p>
+          <p className="text-sm leading-7 text-slate-600">
+            DroneSMS was created to make the principles that have shaped safety throughout commercial aviation practical and accessible for the growing UAS industry, giving operators a structured foundation they can build on as their operations grow.
           </p>
         </div>
       </div>
@@ -101,7 +106,7 @@ export function AboutPage() {
                     className="h-20 w-20 rounded-full border border-slate-200 object-cover shadow-sm"
                   />
                 ) : null}
-                <p className="text-sm leading-7 text-slate-700">{member.bio}</p>
+                <p className="whitespace-pre-line text-sm leading-7 text-slate-700">{member.bio}</p>
               </div>
 
               {member.pronouns ? (
