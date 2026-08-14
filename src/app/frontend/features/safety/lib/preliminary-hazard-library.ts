@@ -22,6 +22,20 @@ export type HazardLibraryEntry = {
   is_system_hazard: boolean;
 };
 
+const serviceTypeAliases: Record<string, ServiceType> = {
+  'thermal imaging': 'Thermal Inspection',
+  'mapping/surveying': 'Mapping / Surveying',
+  'mapping and surveying': 'Mapping / Surveying',
+  'real estate/property media': 'Real Estate / Property Media'
+};
+
+/** Resolve persisted and legacy labels before any hazard recommendation is made. */
+export function normalizeServiceType(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  const canonical = serviceTypes.find((serviceType) => serviceType.toLowerCase() === normalized.toLowerCase());
+  return canonical ?? serviceTypeAliases[normalized.toLowerCase()] ?? normalized;
+}
+
 export type SelectedPreliminaryHazard = {
   id: string;
   hazard_name: string;
@@ -120,9 +134,12 @@ export function restoreSystemHazardMappings(library: HazardLibraryEntry[]) {
 }
 
 export function getSuggestedHazards(library: HazardLibraryEntry[], serviceType: string) {
-  if (serviceType === 'Custom Operation') return [];
+  const canonicalServiceType = normalizeServiceType(serviceType);
+  if (canonicalServiceType === 'Custom Operation') return library.filter((hazard) => hazard.is_universal);
 
-  return library.filter((hazard) => hazard.is_universal || hazard.service_types.includes(serviceType));
+  return library.filter(
+    (hazard) => hazard.is_universal || hazard.service_types.some((mappedType) => normalizeServiceType(mappedType) === canonicalServiceType)
+  );
 }
 
 export function searchHazards(library: HazardLibraryEntry[], query: string) {
@@ -132,6 +149,10 @@ export function searchHazards(library: HazardLibraryEntry[], query: string) {
   return library.filter((hazard) =>
     [hazard.hazard_name, hazard.category, hazard.default_mitigation].some((field) => field.toLowerCase().includes(normalizedQuery))
   );
+}
+
+export function getVisibleHazards(library: HazardLibraryEntry[], serviceType: string, view: 'relevant' | 'all') {
+  return view === 'all' ? library : getSuggestedHazards(library, serviceType);
 }
 
 export function selectLibraryHazard(hazard: HazardLibraryEntry): SelectedPreliminaryHazard {
