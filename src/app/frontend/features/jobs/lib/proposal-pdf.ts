@@ -769,7 +769,7 @@ type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: {
 type JobPacketEquipmentReferenceDocument = { document_type: string; file_name: string | null; display_file_name: string | null; storage_path: string | null; mime_type: string | null; created_at: string | null };
 type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipment_type: string | null; status: string | null; make?: string | null; product_category?: string | null; typical_mix_ratio?: string | null; application_notes?: string | null; equipment_reference_documents?: JobPacketEquipmentReferenceDocument[] } | null };
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
-type JobPacketJha = { status: string | null; faa_airspace_class: string | null; laanc_required: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
+type JobPacketJha = { status: string | null; faa_airspace_class: string | null; laanc_required: string | null; nearby_airport_heliport: string | null; nearest_hospital: string | null; emergency_facility_address: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
 type JobPacketPreflight = Record<string, boolean | string | null> & { status: string | null; notes?: string | null; final_rpic_approval?: boolean | null };
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
 type JobPacketPhoto = { id: string; hazard_id: string | null; hazard_name: string | null; photo_url: string; caption: string | null; include_in_packet: boolean; created_at: string | null; category?: string | null };
@@ -808,12 +808,17 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.table([['Equipment', 'Type / Purpose'], ...(packet.equipmentAssignments.length ? packet.equipmentAssignments.map((a) => [clean(a.equipment?.name) || 'Equipment record unavailable', clean(a.equipment?.equipment_type) || 'Unknown type']) : [['Not assigned', 'Equipment was not assigned in the job record.']])], [220, 267]);
   renderer.section('JHA SUMMARY');
   renderJhaSummary(renderer, pdf, packet.jha, packetPhotos);
+  renderer.section('EMERGENCY PLANNING / CREW BRIEFING');
+  renderer.keyValueTable([
+    ['Nearest Hospital / Emergency Facility', clean(packet.jha?.nearest_hospital) || 'Not recorded'],
+    ...(clean(packet.jha?.emergency_facility_address) ? [['Emergency Facility Address', clean(packet.jha?.emergency_facility_address)] as [string, string]] : []),
+  ]);
   renderer.startContentPage();
   renderer.majorSection('CLOSEOUT & SUPPORTING DOCUMENTATION');
   const environmentalRows = buildEnvironmentalRows(packet.jha);
   if (environmentalRows.length) { renderer.section('ENVIRONMENTAL CONTROLS'); renderer.keyValueTable(environmentalRows); }
   renderer.section('AIRSPACE REVIEW');
-  renderer.keyValueTable([['Airspace Class', clean(packet.jha?.faa_airspace_class) || PLACEHOLDER], ['Nearby Airport', PLACEHOLDER], ['LAANC Required', clean(packet.jha?.laanc_required) || PLACEHOLDER], ['Operational Finding', packet.jha ? `JHA status: ${clean(packet.jha.status) || 'Draft'}. Controls in place: ${packet.jha.controls_in_place ? 'Yes' : 'No'}.` : 'Airspace review not started.']]);
+  renderer.keyValueTable([['Airspace Class', clean(packet.jha?.faa_airspace_class) || PLACEHOLDER], ['Nearby Airport / Heliport', clean(packet.jha?.nearby_airport_heliport) || 'Not recorded'], ['LAANC Required', clean(packet.jha?.laanc_required) || PLACEHOLDER], ['Operational Finding', packet.jha ? `JHA status: ${clean(packet.jha.status) || 'Draft'}. Controls in place: ${packet.jha.controls_in_place ? 'Yes' : 'No'}.` : 'Airspace review not started.']]);
   renderer.section('PREFLIGHT CHECKLIST');
   renderer.table([['Checklist Item', 'State'], ...buildPreflightRows(packet.preflight)], [300, 187]);
   renderer.section('SAFETY EVENTS');
@@ -841,7 +846,7 @@ async function loadJobPacketForPdf(jobId: string) {
     supabase.from('job_personnel').select('assigned_role, personnel:personnel_id(full_name, role, part_107_expiration_date, training_expiration_date, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status, make, product_category, typical_mix_ratio, application_notes, equipment_reference_documents(document_type, file_name, display_file_name, storage_path, mime_type, created_at))').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_safety_events').select('category, description, immediate_actions_taken, outcome, created_at').eq('job_id', jobId).order('created_at', { ascending: false }),
-    supabase.from('jha_assessments').select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, hazard_entries, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
+    supabase.from('jha_assessments').select('status, faa_airspace_class, laanc_required, nearby_airport_heliport, nearest_hospital, emergency_facility_address, crew_briefed, controls_in_place, certified_at, hazard_entries, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
     supabase.from('preflight_checklists').select('*').eq('job_id', jobId).maybeSingle(),
     supabase.from('job_operation_closeouts').select('operation_result, deviation_narrative, updated_at').eq('job_id', jobId).maybeSingle(),
     supabase.from('generated_documents').select('document_type, file_name, display_file_name').eq('record_type', 'job').eq('record_id', jobId).is('archived_at', null).neq('document_type', 'job_packet_pdf').order('generated_at', { ascending: false }),
@@ -1014,7 +1019,7 @@ function buildCloseoutTableOfContents(packet: Awaited<ReturnType<typeof loadJobP
   const environmentalRows = buildEnvironmentalRows(packet.jha);
   return [
     { title: 'PROPOSAL', items: ['Executive Summary', 'Scope of Work', 'Personnel', 'Equipment', 'Preliminary Hazard Assessment', 'Airspace Review', 'Pricing', 'Acceptance'] },
-    { title: 'COMPLETED JOB RECORD', items: ['Job Information', 'Crew Assignment', 'Equipment Assignment', ...(getJobHazardEntries(packet.jha).length ? ['JHA Summary'] : []), ...(photos.some((photo) => photo.hazardId) ? ['Hazard Mitigation Verification Photos'] : [])] },
+    { title: 'COMPLETED JOB RECORD', items: ['Job Information', 'Crew Assignment', 'Equipment Assignment', ...(getJobHazardEntries(packet.jha).length ? ['JHA Summary'] : []), 'Emergency Planning / Crew Briefing', ...(photos.some((photo) => photo.hazardId) ? ['Hazard Mitigation Verification Photos'] : [])] },
     { title: 'CLOSEOUT & SUPPORTING DOCUMENTATION', items: [...(environmentalRows.length ? ['Environmental Controls'] : []), 'Airspace Review', 'Preflight Checklist', 'Safety Events', ...(photos.some((photo) => !photo.hazardId) ? ['Photo Documentation'] : []), 'Closeout Summary', ...(packet.documents.length ? ['Generated Documents / Attachments Summary'] : []), ...(packet.equipmentAssignments.some((assignment) => assignment.equipment?.equipment_type === 'Chemical / Material' && assignment.equipment.equipment_reference_documents?.some((document) => document.document_type === 'Safety Data Sheet (SDS)')) ? ['Chemical Documentation'] : [])] },
   ];
 }
