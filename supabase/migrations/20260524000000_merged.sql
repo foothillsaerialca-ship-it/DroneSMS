@@ -179,6 +179,9 @@ create table if not exists public.jha_assessments (
   crew_members text,
   weather_conditions text,
   faa_airspace_class text,
+  relevant_airport_heliport text,
+  known_airspace_restrictions text,
+  additional_authorization_required text,
   surface_type text,
   building_height numeric,
   site_access text,
@@ -1030,6 +1033,8 @@ create table if not exists public.proposals (
   proposed_crew text,
   proposed_aircraft text,
   airspace_class text,
+  relevant_airport_heliport text,
+  known_airspace_restrictions text,
   laanc_required boolean not null default false,
   additional_authorization_required boolean not null default false,
   hazard text,
@@ -2058,4 +2063,3 @@ comment on column public.organizations.include_service_commitment_in_proposal is
 comment on column public.organizations.include_company_credentials_in_proposal is 'Controls whether selected company credentials render in proposal PDF headers.';
 comment on column public.organizations.include_materials_used_in_proposal is 'Controls whether assigned Chemical / Material equipment renders in proposal PDFs.';
 -- END MIGRATION: 20260625000000_replace_warranty_with_service_commitment.sql
-

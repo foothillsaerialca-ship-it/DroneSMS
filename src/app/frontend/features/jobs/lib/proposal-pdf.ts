@@ -69,6 +69,8 @@ type ProposalPdfRecord = {
   proposed_rpic_credentials: string | null;
   proposed_rpic_bio: string | null;
   airspace_class: string | null;
+  relevant_airport_heliport: string | null;
+  known_airspace_restrictions: string | null;
   laanc_required: boolean | null;
   additional_authorization_required: boolean | null;
   hazard: string | null;
@@ -388,8 +390,10 @@ class ProposalPdfRenderer {
     this.section('AIRSPACE REVIEW', 'Airspace conditions are rechecked before flight.', 69);
     this.keyValueTable([
       ['Airspace Classification', clean(this.proposal.airspace_class) || PLACEHOLDER],
-      ['Nearby Airport', PLACEHOLDER],
+      ...(clean(this.proposal.relevant_airport_heliport) ? [['Relevant Airport / Heliport', clean(this.proposal.relevant_airport_heliport)] as [string, string]] : []),
       ['LAANC Requirement', booleanDisplay(this.proposal.laanc_required)],
+      ['Additional Authorization Required', booleanDisplay(this.proposal.additional_authorization_required)],
+      ...(clean(this.proposal.known_airspace_restrictions) ? [['Known Airspace Restrictions / TFR Considerations', clean(this.proposal.known_airspace_restrictions)] as [string, string]] : []),
       ['Preliminary Operational Finding', buildAirspaceFindings(this.proposal)],
     ]);
     this.section('PRICING', undefined, 69);
@@ -769,7 +773,7 @@ type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: {
 type JobPacketEquipmentReferenceDocument = { document_type: string; file_name: string | null; display_file_name: string | null; storage_path: string | null; mime_type: string | null; created_at: string | null };
 type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipment_type: string | null; status: string | null; make?: string | null; product_category?: string | null; typical_mix_ratio?: string | null; application_notes?: string | null; equipment_reference_documents?: JobPacketEquipmentReferenceDocument[] } | null };
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
-type JobPacketJha = { status: string | null; faa_airspace_class: string | null; laanc_required: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
+type JobPacketJha = { status: string | null; faa_airspace_class: string | null; relevant_airport_heliport: string | null; known_airspace_restrictions: string | null; laanc_required: string | null; additional_authorization_required: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
 type JobPacketPreflight = Record<string, boolean | string | null> & { status: string | null; notes?: string | null; final_rpic_approval?: boolean | null };
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
 type JobPacketPhoto = { id: string; hazard_id: string | null; hazard_name: string | null; photo_url: string; caption: string | null; include_in_packet: boolean; created_at: string | null; category?: string | null };
@@ -813,7 +817,7 @@ export async function generateJobPacketPdf(jobId: string) {
   const environmentalRows = buildEnvironmentalRows(packet.jha);
   if (environmentalRows.length) { renderer.section('ENVIRONMENTAL CONTROLS'); renderer.keyValueTable(environmentalRows); }
   renderer.section('AIRSPACE REVIEW');
-  renderer.keyValueTable([['Airspace Class', clean(packet.jha?.faa_airspace_class) || PLACEHOLDER], ['Nearby Airport', PLACEHOLDER], ['LAANC Required', clean(packet.jha?.laanc_required) || PLACEHOLDER], ['Operational Finding', packet.jha ? `JHA status: ${clean(packet.jha.status) || 'Draft'}. Controls in place: ${packet.jha.controls_in_place ? 'Yes' : 'No'}.` : 'Airspace review not started.']]);
+  renderer.keyValueTable([['Airspace Class', clean(packet.jha?.faa_airspace_class) || PLACEHOLDER], ...(clean(packet.jha?.relevant_airport_heliport) ? [['Relevant Airport / Heliport', clean(packet.jha?.relevant_airport_heliport)] as [string, string]] : []), ['LAANC Required', clean(packet.jha?.laanc_required) || PLACEHOLDER], ['Additional Authorization Required', clean(packet.jha?.additional_authorization_required) || PLACEHOLDER], ...(clean(packet.jha?.known_airspace_restrictions) ? [['Known Airspace Restrictions / TFR Considerations', clean(packet.jha?.known_airspace_restrictions)] as [string, string]] : []), ['Operational Finding', packet.jha ? `JHA status: ${clean(packet.jha.status) || 'Draft'}. Controls in place: ${packet.jha.controls_in_place ? 'Yes' : 'No'}.` : 'Airspace review not started.']]);
   renderer.section('PREFLIGHT CHECKLIST');
   renderer.table([['Checklist Item', 'State'], ...buildPreflightRows(packet.preflight)], [300, 187]);
   renderer.section('SAFETY EVENTS');
@@ -841,7 +845,7 @@ async function loadJobPacketForPdf(jobId: string) {
     supabase.from('job_personnel').select('assigned_role, personnel:personnel_id(full_name, role, part_107_expiration_date, training_expiration_date, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status, make, product_category, typical_mix_ratio, application_notes, equipment_reference_documents(document_type, file_name, display_file_name, storage_path, mime_type, created_at))').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_safety_events').select('category, description, immediate_actions_taken, outcome, created_at').eq('job_id', jobId).order('created_at', { ascending: false }),
-    supabase.from('jha_assessments').select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, hazard_entries, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
+    supabase.from('jha_assessments').select('status, faa_airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required, crew_briefed, controls_in_place, certified_at, hazard_entries, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
     supabase.from('preflight_checklists').select('*').eq('job_id', jobId).maybeSingle(),
     supabase.from('job_operation_closeouts').select('operation_result, deviation_narrative, updated_at').eq('job_id', jobId).maybeSingle(),
     supabase.from('generated_documents').select('document_type, file_name, display_file_name').eq('record_type', 'job').eq('record_id', jobId).is('archived_at', null).neq('document_type', 'job_packet_pdf').order('generated_at', { ascending: false }),
@@ -1081,7 +1085,7 @@ function buildEnvironmentalRows(jha: JobPacketJha | null): Array<[string, string
   return [['Runoff Planning', jha.runoff_risk ? 'Documented as applicable' : 'Not marked applicable'], ['Containment Plan', clean(jha.containment_plan) || 'Not recorded'], ['Water Body Proximity', jha.water_body_proximity ? `Yes${jha.water_body_distance ? ` - ${jha.water_body_distance} feet` : ''}${jha.water_body_type ? ` (${jha.water_body_type})` : ''}` : 'Not marked applicable'], ['Secondary Containment', jha.secondary_containment_in_place ? 'In place' : 'Not recorded'], ['Reclamation Method', clean(jha.reclamation_method) || 'Not recorded'], ['Estimated Volume', jha.reclamation_volume_estimate ? `${jha.reclamation_volume_estimate} gallons` : 'Not recorded'], ['Vendor / Contact', clean(jha.disposal_vendor_name_contact) || 'Not recorded']];
 }
 
-function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_amount: null, estimated_duration: null, payment_terms: null, valid_until: null, created_at: null }; }
+function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, relevant_airport_heliport: null, known_airspace_restrictions: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_amount: null, estimated_duration: null, payment_terms: null, valid_until: null, created_at: null }; }
 function buildJobPacketStorageFileName(job: JobPacketRecord, userId: string) { const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); return `job_packet_pdf-user_${sanitizeFileName(userId)}-${timestamp}-${crypto.randomUUID()}-${sanitizeFileName(job.name)}.pdf`; }
 function buildJobPacketDisplayFileName(job: JobPacketRecord) { const jobNumber = clean(job.source_proposal_number); const jobName = sanitizeFileName(job.name).replace(/-/g, ' '); return jobNumber ? `JOB-${jobNumber} - ${jobName} - Closeout Packet.pdf` : `${jobName} - Closeout Packet.pdf`; }
 function getPacketDocumentLabel(type: string) { return type === 'proposal_pdf' ? 'Proposal PDF' : type === 'job_packet_pdf' ? 'Job Packet PDF' : type.replace(/_/g, ' '); }
@@ -1136,7 +1140,7 @@ async function retainProposalPdf(
 async function loadProposalForPdf(proposalId: string) {
   const { data, error } = await supabase
     .from('proposals')
-    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, deliverables, exclusions, proposed_rpic, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_amount, estimated_duration, payment_terms, valid_until, created_at')
+    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, deliverables, exclusions, proposed_rpic, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_amount, estimated_duration, payment_terms, valid_until, created_at')
     .eq('id', proposalId)
     .is('deleted_at', null)
     .single();

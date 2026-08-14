@@ -57,6 +57,11 @@ type Proposal = {
   proposed_rpic_name: string | null;
   proposed_rpic_credentials: string | null;
   proposed_rpic_bio: string | null;
+  airspace_class: string | null;
+  relevant_airport_heliport: string | null;
+  known_airspace_restrictions: string | null;
+  laanc_required: boolean | null;
+  additional_authorization_required: boolean | null;
   converted_to_job: boolean;
   converted_job_id: string | null;
   converted_at: string | null;
@@ -181,7 +186,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       const { data, error: proposalsLoadError } = await supabase
         .from("proposals")
         .select(
-          "id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, converted_to_job, converted_job_id, converted_at",
+          "id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required, converted_to_job, converted_job_id, converted_at",
         )
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
@@ -362,6 +367,19 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       if (error) throw error;
 
       const createdJob = data as Job;
+      const { error: jhaError } = await supabase.from("jha_assessments").insert({
+        job_id: createdJob.id,
+        organization_id: proposal.organization_id,
+        user_id: userData.user.id,
+        faa_airspace_class: proposal.airspace_class?.replace(/^Class\s+/i, "") || null,
+        relevant_airport_heliport: proposal.relevant_airport_heliport,
+        known_airspace_restrictions: proposal.known_airspace_restrictions,
+        laanc_required: proposal.laanc_required ? "Yes" : "No",
+        additional_authorization_required: proposal.additional_authorization_required ? "Yes" : "No",
+        hazard_entries: proposal.hazard_assessment ?? [],
+      });
+      if (jhaError) throw jhaError;
+
       const convertedAt = new Date().toISOString();
       const { error: proposalUpdateError } = await supabase
         .from("proposals")
