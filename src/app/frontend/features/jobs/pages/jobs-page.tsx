@@ -53,6 +53,7 @@ type Proposal = {
   status: ProposalStatus;
   created_at: string;
   hazard_assessment: SelectedPreliminaryHazard[] | null;
+  proposal_equipment: ProposalEquipmentAssignment[] | null;
   proposed_rpic_id: string | null;
   proposed_rpic_name: string | null;
   proposed_rpic_credentials: string | null;
@@ -60,6 +61,10 @@ type Proposal = {
   converted_to_job: boolean;
   converted_job_id: string | null;
   converted_at: string | null;
+};
+
+type ProposalEquipmentAssignment = {
+  equipment_id: string;
 };
 
 type JobsTab = "proposals" | "active" | "completed";
@@ -181,7 +186,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       const { data, error: proposalsLoadError } = await supabase
         .from("proposals")
         .select(
-          "id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, converted_to_job, converted_job_id, converted_at",
+          "id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposal_equipment, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, converted_to_job, converted_job_id, converted_at",
         )
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
@@ -362,6 +367,44 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       if (error) throw error;
 
       const createdJob = data as Job;
+
+      // Proposal selections are copied into the operational assignment tables.
+      // These are independent rows, so subsequent job edits never rewrite the
+      // historical proposal snapshot.
+      const personnelAssignments = proposal.proposed_rpic_id
+        ? [{
+            job_id: createdJob.id,
+            organization_id: proposal.organization_id,
+            personnel_id: proposal.proposed_rpic_id,
+            assigned_role: "RPIC",
+          }]
+        : [];
+      const equipmentAssignments = (proposal.proposal_equipment ?? [])
+        .filter((assignment) => Boolean(assignment?.equipment_id))
+        .map((assignment) => ({
+          job_id: createdJob.id,
+          organization_id: proposal.organization_id,
+          equipment_id: assignment.equipment_id,
+        }));
+
+      if (personnelAssignments.length) {
+        const { error: personnelAssignmentError } = await supabase
+          .from("job_personnel")
+          .insert(personnelAssignments);
+        if (personnelAssignmentError) {
+          throw new Error(`Job created, but proposal personnel could not be carried forward: ${personnelAssignmentError.message}`);
+        }
+      }
+
+      if (equipmentAssignments.length) {
+        const { error: equipmentAssignmentError } = await supabase
+          .from("job_equipment")
+          .insert(equipmentAssignments);
+        if (equipmentAssignmentError) {
+          throw new Error(`Job created, but proposal equipment could not be carried forward: ${equipmentAssignmentError.message}`);
+        }
+      }
+
       const convertedAt = new Date().toISOString();
       const { error: proposalUpdateError } = await supabase
         .from("proposals")

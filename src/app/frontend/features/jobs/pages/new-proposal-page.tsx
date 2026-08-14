@@ -12,6 +12,7 @@ import {
   serviceTypes,
   summarizeSelectedHazards,
   normalizeSelectedHazards,
+  restoreSystemHazardMappings,
   type HazardLibraryEntry,
   type SelectedPreliminaryHazard
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
@@ -395,7 +396,9 @@ export function NewProposalPage() {
           .order('hazard_name', { ascending: true });
 
         if (hazardLibraryError) throw hazardLibraryError;
-        if (isMounted && data?.length) setHazardLibrary(data as HazardLibraryEntry[]);
+        if (isMounted && data?.length) {
+          setHazardLibrary(restoreSystemHazardMappings(data as HazardLibraryEntry[]));
+        }
       } catch {
         if (isMounted) setHazardLibrary(fallbackHazardLibrary);
       }
