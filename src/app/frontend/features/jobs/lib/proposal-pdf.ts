@@ -35,6 +35,9 @@ const SECTION_HEADER_TITLE_BASELINE_OFFSET = 14.4;
 const SECTION_HEADER_BOTTOM_GAP = 14;
 const SECTION_SUBTITLE_GAP = 0;
 const SECTION_SUBTITLE_BOTTOM_GAP = 8;
+const COMPANY_HEADER_RESERVED_HEIGHT = 68;
+const COMPANY_HEADER_CONTENT_GAP = 18;
+const CONTENT_START_Y = PAGE_HEIGHT - COMPANY_HEADER_RESERVED_HEIGHT - COMPANY_HEADER_CONTENT_GAP;
 
 
 export type ProposalDocumentKind = 'proposal' | 'operational-packet';
@@ -333,7 +336,7 @@ class ProposalPdfRenderer {
     const includeProposalEnhancements = options.includeProposalEnhancements ?? true;
     this.includeProposalEnhancements = includeProposalEnhancements;
     this.startContentPage();
-    if (options.sectionTitle) this.section(options.sectionTitle);
+    if (options.sectionTitle) this.majorSection(options.sectionTitle);
     this.section('EXECUTIVE SUMMARY', undefined, 80);
     this.paragraph(buildExecutiveSummary(this.proposal, this.organization), 12);
     this.section('SCOPE OF WORK', undefined, 69);
@@ -493,7 +496,7 @@ class ProposalPdfRenderer {
     this.watermark(this.currentPage);
     this.header(this.currentPage);
     this.footer(this.currentPage, showPageNumber ? this.pageNumber : 1);
-    this.y = PAGE_HEIGHT - (68 - SECTION_HEADER_BOTTOM_GAP);
+    this.y = CONTENT_START_Y;
   }
 
   private header(page: PageState) {
@@ -532,6 +535,18 @@ class ProposalPdfRenderer {
       this.y -= SECTION_SUBTITLE_GAP;
       this.y = this.pdf.drawWrappedText(this.currentPage, subtitle, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 8.6, font: 'oblique', color: GRAY, lineHeight: 11 }) - SECTION_SUBTITLE_BOTTOM_GAP;
     }
+  }
+
+  majorSection(title: string) {
+    this.ensureSpace(this.sectionHeaderHeight());
+    this.y -= SECTION_HEADER_TOP_PADDING;
+    this.pdf.drawText(this.currentPage, title, PAGE_WIDTH / 2, this.y - SECTION_HEADER_TITLE_BASELINE_OFFSET, {
+      size: SECTION_HEADER_TITLE_SIZE,
+      font: 'bold',
+      color: NAVY,
+      align: 'center',
+    });
+    this.y -= SECTION_HEADER_LINE_GAP + SECTION_HEADER_BOTTOM_GAP;
   }
 
   private drawSectionHeader(title: string) {
@@ -774,7 +789,7 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.renderProposalContent({ sectionTitle: 'PROPOSAL', includeProposalEnhancements: false });
 
   renderer.startContentPage();
-  renderer.section('COMPLETED JOB RECORD');
+  renderer.majorSection('COMPLETED JOB RECORD');
 
   renderer.section('JOB INFORMATION');
   renderer.keyValueTable([
@@ -794,7 +809,7 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.section('JHA SUMMARY');
   renderJhaSummary(renderer, pdf, packet.jha, packetPhotos);
   renderer.startContentPage();
-  renderer.section('CLOSEOUT & SUPPORTING DOCUMENTATION');
+  renderer.majorSection('CLOSEOUT & SUPPORTING DOCUMENTATION');
   const environmentalRows = buildEnvironmentalRows(packet.jha);
   if (environmentalRows.length) { renderer.section('ENVIRONMENTAL CONTROLS'); renderer.keyValueTable(environmentalRows); }
   renderer.section('AIRSPACE REVIEW');
