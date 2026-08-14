@@ -92,6 +92,33 @@ export const fallbackHazardLibrary: HazardLibraryEntry[] = [
 export const preliminaryHazardLibrary = fallbackHazardLibrary;
 export const preliminaryHazardCategories = Array.from(new Set(fallbackHazardLibrary.map((hazard) => hazard.category)));
 
+/**
+ * Keep the service mappings for built-in hazards authoritative in the client.
+ *
+ * Some existing databases contain system rows whose `service_types` or
+ * `is_universal` values were broadened by an earlier seed/refactor.  Trusting
+ * those values makes every system hazard appear for every service.  Descriptive
+ * fields may still be maintained in the database, but the checked-in mapping is
+ * the compatibility baseline for built-in hazards.  Organization-defined rows
+ * continue to use their database mappings unchanged.
+ */
+export function restoreSystemHazardMappings(library: HazardLibraryEntry[]) {
+  const canonicalByName = new Map(
+    fallbackHazardLibrary.map((hazard) => [hazard.hazard_name.trim().toLowerCase(), hazard])
+  );
+
+  return library.map((hazard) => {
+    const canonical = canonicalByName.get(hazard.hazard_name.trim().toLowerCase());
+    if (!canonical || !hazard.is_system_hazard) return hazard;
+
+    return {
+      ...hazard,
+      service_types: [...canonical.service_types],
+      is_universal: canonical.is_universal
+    };
+  });
+}
+
 export function getSuggestedHazards(library: HazardLibraryEntry[], serviceType: string) {
   if (serviceType === 'Custom Operation') return [];
 
