@@ -41,6 +41,8 @@ type ProposalFormState = {
   exclusions: string;
   proposedRpicId: string;
   airspaceClass: string;
+  relevantAirportHeliport: string;
+  knownAirspaceRestrictions: string;
   laancRequired: string;
   additionalAuthorizationRequired: string;
   proposalAmount: string;
@@ -65,6 +67,8 @@ const initialFormState: ProposalFormState = {
   exclusions: initialScopeDefaults.exclusions,
   proposedRpicId: '',
   airspaceClass: airspaceClasses[0],
+  relevantAirportHeliport: '',
+  knownAirspaceRestrictions: '',
   laancRequired: 'No',
   additionalAuthorizationRequired: 'No',
   proposalAmount: '',
@@ -95,6 +99,8 @@ type ProposalRecord = {
   proposed_rpic_credentials: string | null;
   proposed_rpic_bio: string | null;
   airspace_class: string | null;
+  relevant_airport_heliport: string | null;
+  known_airspace_restrictions: string | null;
   laanc_required: boolean | null;
   additional_authorization_required: boolean | null;
   hazard_assessment: unknown;
@@ -247,6 +253,8 @@ function mapProposalToFormState(proposal: ProposalRecord) {
     exclusions: proposal.exclusions ?? getProposalScopeDefaults(proposal.service_type).exclusions,
     proposedRpicId: proposal.proposed_rpic_id ?? '',
     airspaceClass: proposal.airspace_class ?? airspaceClasses[0],
+    relevantAirportHeliport: proposal.relevant_airport_heliport ?? '',
+    knownAirspaceRestrictions: proposal.known_airspace_restrictions ?? '',
     laancRequired: fromBoolean(proposal.laanc_required),
     additionalAuthorizationRequired: fromBoolean(proposal.additional_authorization_required),
     proposalAmount: proposal.proposal_amount === null || proposal.proposal_amount === undefined ? '' : String(proposal.proposal_amount),
@@ -357,7 +365,7 @@ export function NewProposalPage() {
       try {
         const { data, error: proposalLoadError } = await supabase
           .from('proposals')
-          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, deliverables, exclusions, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, laanc_required, additional_authorization_required, hazard_assessment, proposal_equipment, proposal_amount, estimated_duration, payment_terms, valid_until, status')
+          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, deliverables, exclusions, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required, hazard_assessment, proposal_equipment, proposal_amount, estimated_duration, payment_terms, valid_until, status')
           .eq('id', proposalId)
           .is('deleted_at', null)
           .single();
@@ -633,6 +641,8 @@ export function NewProposalPage() {
         proposed_rpic_bio: rpicSnapshot.professional_bio || null,
         proposed_rpic: rpicSnapshot.full_name || null,
         airspace_class: formData.airspaceClass === 'Not reviewed' ? null : formData.airspaceClass,
+        relevant_airport_heliport: formData.relevantAirportHeliport.trim() || null,
+        known_airspace_restrictions: formData.knownAirspaceRestrictions.trim() || null,
         laanc_required: toBoolean(formData.laancRequired),
         additional_authorization_required: toBoolean(formData.additionalAuthorizationRequired),
         hazard: summarizedHazards.hazard,
@@ -777,9 +787,11 @@ export function NewProposalPage() {
         />
 
         <FormSection title="Airspace Review">
-          <SelectField label="Airspace Class" value={formData.airspaceClass} options={airspaceClasses} onChange={(value) => updateField('airspaceClass', value)} disabled={isFormDisabled} />
+          <SelectField label="Airspace Classification" value={formData.airspaceClass} options={airspaceClasses} onChange={(value) => updateField('airspaceClass', value)} disabled={isFormDisabled} />
+          <TextField label="Relevant Airport / Heliport" value={formData.relevantAirportHeliport} onChange={(value) => updateField('relevantAirportHeliport', value)} disabled={isFormDisabled} placeholder="Airport or heliport name, identifier, or None identified" />
           <SelectField label="LAANC Required" value={formData.laancRequired} options={['No', 'Yes']} onChange={(value) => updateField('laancRequired', value)} disabled={isFormDisabled} />
           <SelectField label="Additional Authorization Required" value={formData.additionalAuthorizationRequired} options={['No', 'Yes']} onChange={(value) => updateField('additionalAuthorizationRequired', value)} disabled={isFormDisabled} />
+          <TextField label="Known Airspace Restrictions / TFR Considerations" value={formData.knownAirspaceRestrictions} onChange={(value) => updateField('knownAirspaceRestrictions', value)} disabled={isFormDisabled} placeholder="Preliminary restrictions, TFR considerations, or None identified" />
         </FormSection>
 
         <FormSection title="Pricing">
