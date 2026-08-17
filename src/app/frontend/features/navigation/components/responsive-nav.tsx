@@ -86,6 +86,11 @@ function LogoutButton({ onLogout }: LogoutButtonProps) {
   );
 }
 
+function SupportLink({ onNavigate }: { onNavigate?: () => void }) {
+  const href = 'mailto:support@dronesms.app?subject=DroneSMS%20Support%20Request&body=DroneSMS%20Support%20Request%0A%0APlease%20describe%20the%20issue%20or%20question%20below%3A%0A%0A';
+  return <a href={href} onClick={onNavigate} className="mb-2 flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2">Need Help? / Report a Problem</a>;
+}
+
 function BrandMark() {
   return (
     <Link to="/dashboard" className="flex min-w-0 items-center gap-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2">
@@ -106,6 +111,7 @@ export function DesktopSidebar() {
         <NavigationLinks layout="sidebar" />
       </nav>
       <div className="border-t border-slate-200 pt-4">
+        <SupportLink />
         <LogoutButton />
       </div>
     </aside>
@@ -164,6 +170,7 @@ export function MobileTopBar() {
               <NavigationLinks layout="drawer" onNavigate={closeDrawer} />
             </nav>
             <div className="border-t border-slate-200 pt-4">
+              <SupportLink onNavigate={closeDrawer} />
               <LogoutButton onLogout={closeDrawer} />
             </div>
           </aside>

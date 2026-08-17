@@ -2,6 +2,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { DEFAULT_SERVICE_COMMITMENT } from '../lib/organization-settings';
 import { useAuth } from '../../auth/components/use-auth';
+import { AccountSecurityCard } from '../components/account-security-card';
 import {
   DEFAULT_EMERGENCY_PROCEDURES_SUMMARY,
   DEFAULT_HAZARD_REPORTING_STATEMENT,
@@ -464,6 +465,8 @@ export function SettingsPage() {
       ) : null}
 
       {message ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+
+      <AccountSecurityCard currentEmail={session?.user.email} />
 
       {isLoading ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">Loading settings...</div>
