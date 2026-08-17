@@ -1,10 +1,7 @@
 import { type FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@frontend/lib/supabase';
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to sign in. Please try again.';
-}
+import { friendlyAuthError, getAppUrl } from '../lib/auth-helpers';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -12,6 +9,8 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [canResendVerification, setCanResendVerification] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
   const configured = isSupabaseConfigured();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -30,6 +29,8 @@ export function LoginPage() {
     }
 
     setError(null);
+    setCanResendVerification(false);
+    setVerificationMessage(null);
     setIsSigningIn(true);
 
     try {
@@ -42,9 +43,26 @@ export function LoginPage() {
 
       navigate('/dashboard', { replace: true });
     } catch (loginError) {
-      setError(getErrorMessage(loginError));
+      const message = friendlyAuthError(loginError, 'Unable to sign in. Please try again.');
+      setError(message);
+      setCanResendVerification(message.includes('verify your email'));
     } finally {
       setIsSigningIn(false);
+    }
+  }
+
+  async function resendVerification() {
+    if (!email.trim()) return;
+    setVerificationMessage(null);
+    const { error: resendError } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim(),
+      options: { emailRedirectTo: getAppUrl('/auth/callback') }
+    });
+    if (resendError) setError('Unable to resend the verification email. Please try again shortly.');
+    else {
+      setError(null);
+      setVerificationMessage('Verification email resent. Check your inbox.');
     }
   }
 
@@ -90,6 +108,8 @@ export function LoginPage() {
             {error}
           </p>
         ) : null}
+        {canResendVerification ? <button type="button" className="text-sm font-medium text-brand-700 hover:text-brand-800" onClick={resendVerification}>Resend verification email</button> : null}
+        {verificationMessage ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">{verificationMessage}</p> : null}
 
         <button
           type="submit"
@@ -99,6 +119,7 @@ export function LoginPage() {
           {isSigningIn ? 'Signing in...' : 'Sign In'}
         </button>
       </form>
+      <Link className="mt-3 block text-center text-sm font-medium text-brand-700 hover:text-brand-800" to="/forgot-password">Forgot Password?</Link>
       <p className="mt-4 text-sm text-slate-600">
         Need an account?{' '}
         <Link className="font-medium text-brand-700 hover:text-brand-800" to="/register">

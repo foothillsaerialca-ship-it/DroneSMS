@@ -5,15 +5,7 @@ import {
   validatePasswordRequirements,
   areAllRequirementsMet,
 } from '@frontend/lib/password-utils';
-
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string') return message;
-  }
-  return 'Unable to create account. Please try again.';
-}
+import { friendlyAuthError, getAppUrl } from '../lib/auth-helpers';
 
 export function RegisterPage() {
   const navigate = useNavigate();
@@ -74,6 +66,7 @@ export function RegisterPage() {
         email: email.trim(),
         password,
         options: {
+          emailRedirectTo: getAppUrl('/auth/callback'),
           data: {
             first_name: trimmedFirstName,
             last_name: trimmedLastName
@@ -103,7 +96,7 @@ export function RegisterPage() {
 
       navigate('/dashboard', { replace: true });
     } catch (submitError) {
-      setError(getErrorMessage(submitError));
+      setError(friendlyAuthError(submitError, 'Unable to create account. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }

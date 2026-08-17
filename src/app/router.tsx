@@ -17,6 +17,9 @@ import { SettingsPage } from './frontend/features/settings/pages/settings-page';
 import { ReportsPage } from './frontend/features/reports/pages/reports-page';
 import { AboutPage } from './frontend/features/information/team';
 import { ProtectedRoute } from './frontend/features/auth/components/protected-route';
+import { ForgotPasswordPage } from './frontend/features/auth/pages/forgot-password-page';
+import { ResetPasswordPage } from './frontend/features/auth/pages/reset-password-page';
+import { AuthCallbackPage } from './frontend/features/auth/pages/auth-callback-page';
 
 function LandingPage() {
   return (
@@ -53,6 +56,9 @@ export function AppRouter() {
       <Route index element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
