@@ -1,8 +1,8 @@
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../../lib/supabase';
 import { DEFAULT_SERVICE_COMMITMENT } from '../lib/organization-settings';
 import { useAuth } from '../../auth/components/use-auth';
-import { AccountSecurityCard } from '../components/account-security-card';
 import {
   DEFAULT_EMERGENCY_PROCEDURES_SUMMARY,
   DEFAULT_HAZARD_REPORTING_STATEMENT,
@@ -87,32 +87,6 @@ const organizationFields = [
   { key: 'serviceCommitment', label: 'Service Commitment', type: 'textarea', autoComplete: 'off' }
 ] as const;
 
-const safetyFields = [
-  { key: 'safetyManager', label: 'Safety Manager', type: 'text' },
-  { key: 'stopWorkAuthorityStatement', label: 'Stop-Work Authority Statement', type: 'textarea' },
-  { key: 'hazardReportingStatement', label: 'Hazard Reporting Statement', type: 'textarea' },
-  { key: 'emergencyProceduresSummary', label: 'Emergency Procedures Summary', type: 'textarea' }
-] as const;
-
-const smsCapabilityGroups = [
-  {
-    title: 'Safety Policy & Objectives',
-    items: ['Safety Policy Statement', 'Safety Objectives']
-  },
-  {
-    title: 'Safety Risk Management',
-    items: ['Risk Acceptance Criteria', 'Risk Matrix Configuration']
-  },
-  {
-    title: 'Safety Assurance',
-    items: ['Internal Audit Program', 'Corrective Action Process']
-  },
-  {
-    title: 'Safety Promotion',
-    items: ['Training Program Summary', 'Safety Meeting Frequency']
-  }
-] as const;
-
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
@@ -166,15 +140,6 @@ function FieldDisplay({ label, value }: { label: string; value: string }) {
   );
 }
 
-
-function ComingSoonRow({ label }: { label: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3">
-      <span className="text-sm font-medium text-slate-600">{label}</span>
-      <span className="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Coming Soon</span>
-    </div>
-  );
-}
 
 function SettingsInput({
   label,
@@ -453,9 +418,11 @@ export function SettingsPage() {
   return (
     <section className="mx-auto flex w-full max-w-3xl flex-col gap-4">
       <div>
-        <p className="text-sm font-medium uppercase tracking-wide text-brand-700">Settings</p>
-        <h1 className="mt-1 text-2xl font-semibold text-brand-900">Organization Settings</h1>
-        <p className="mt-2 text-sm text-slate-600">Manage organization details, account access, SMS language, and branding.</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><p className="text-sm font-medium uppercase tracking-wide text-brand-700">Settings</p><h1 className="mt-1 text-2xl font-semibold text-brand-900">Organization Settings</h1></div>
+          <Link className="rounded-lg border border-brand-700 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50" to="/settings/account">Account Settings</Link>
+        </div>
+        <p className="mt-2 text-sm text-slate-600">Manage company details, organization-level configuration, and branding.</p>
       </div>
 
       {error ? (
@@ -466,7 +433,6 @@ export function SettingsPage() {
 
       {message ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
 
-      <AccountSecurityCard currentEmail={session?.user.email} />
 
       {isLoading ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">Loading settings...</div>
@@ -593,105 +559,6 @@ export function SettingsPage() {
             </div>
           </article>
 
-          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <div>
-              <h2 className="text-lg font-semibold text-brand-900">Account Settings</h2>
-              <p className="mt-1 text-sm text-slate-600">Manage the authenticated user’s account access and security.</p>
-            </div>
-            <dl className="mt-4 grid grid-cols-1 gap-3">
-              <FieldDisplay label="Email Address" value={session?.user.email ?? ''} />
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Change Password</dt>
-                <dd className="mt-1 text-sm text-slate-500">Coming soon: self-service password management.</dd>
-              </div>
-              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3">
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Multi-Factor Authentication</dt>
-                <dd className="mt-1 text-sm text-slate-500">Coming soon.</dd>
-              </div>
-              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3">
-                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active Sessions</dt>
-                <dd className="mt-1 text-sm text-slate-500">Coming soon.</dd>
-              </div>
-            </dl>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-brand-900">Safety Management System (SMS)</h2>
-                <p className="mt-1 text-sm text-slate-600">Manage organization-wide safety policies, responsibilities, and operational standards.</p>
-              </div>
-              {editingSection !== 'safety' ? (
-                <button
-                  type="button"
-                  className="rounded-lg border border-brand-700 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
-                  onClick={() => beginEdit('safety')}
-                  disabled={Boolean(editingSection)}
-                >
-                  Edit
-                </button>
-              ) : null}
-            </div>
-
-            {editingSection === 'safety' ? (
-              <form className="mt-4 space-y-4" onSubmit={handleSave}>
-                {safetyFields.map((field) => (
-                  <SettingsInput
-                    key={field.key}
-                    label={field.label}
-                    name={field.key}
-                    value={draft[field.key]}
-                    type={field.type}
-                    disabled={isSaving}
-                    onChange={updateDraft}
-                  />
-                ))}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <button
-                    type="submit"
-                    className="min-h-11 rounded-lg bg-brand-700 px-3 py-3 text-sm font-medium text-white transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-                    disabled={isSaving}
-                  >
-                    {isSaving ? 'Saving...' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    className="min-h-11 rounded-lg border border-slate-300 px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 sm:py-2"
-                    onClick={cancelEdit}
-                    disabled={isSaving}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <>
-                <dl className="mt-4 grid grid-cols-1 gap-3">
-                  {safetyFields.map((field) => (
-                    <FieldDisplay key={field.key} label={field.label} value={settings[field.key]} />
-                  ))}
-                </dl>
-                <div className="mt-6 space-y-4 border-t border-slate-200 pt-5">
-                  <div>
-                    <h3 className="text-base font-semibold text-brand-900">Future SMS Capabilities</h3>
-                    <p className="mt-1 text-sm text-slate-600">Planned SMS modules are shown as placeholders and do not affect current settings.</p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    {smsCapabilityGroups.map((group) => (
-                      <section key={group.title} className="rounded-lg border border-slate-200 bg-white p-3">
-                        <h4 className="text-sm font-semibold text-slate-800">{group.title}</h4>
-                        <div className="mt-3 space-y-2">
-                          {group.items.map((item) => (
-                            <ComingSoonRow key={item} label={item} />
-                          ))}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </article>
         </>
       )}
     </section>
