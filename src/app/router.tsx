@@ -14,6 +14,8 @@ import { LoginPage } from './frontend/features/auth/pages/login-page';
 import { RegisterPage } from './frontend/features/auth/pages/register-page';
 import { CompanyOnboardingPage } from './frontend/features/auth/pages/company-onboarding-page';
 import { SettingsPage } from './frontend/features/settings/pages/settings-page';
+import { AccountSettingsPage } from './frontend/features/settings/pages/account-settings-page';
+import { SmsPage } from './frontend/features/sms/pages/sms-page';
 import { ReportsPage } from './frontend/features/reports/pages/reports-page';
 import { AboutPage } from './frontend/features/information/team';
 import { ProtectedRoute } from './frontend/features/auth/components/protected-route';
@@ -77,7 +79,10 @@ export function AppRouter() {
           <Route path="/equipment" element={<EquipmentPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/about" element={<AboutPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings" element={<Navigate to="/settings/organization" replace />} />
+          <Route path="/settings/account" element={<AccountSettingsPage />} />
+          <Route path="/settings/organization" element={<SettingsPage />} />
+          <Route path="/sms" element={<SmsPage />} />
         </Route>
       </Route>
 
