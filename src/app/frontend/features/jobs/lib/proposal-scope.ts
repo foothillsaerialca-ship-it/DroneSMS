@@ -1,8 +1,18 @@
+/**
+ * File purpose: Provides proposal scope domain utilities and service adapters shared by the application.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 export type ProposalScopeDefaults = {
   deliverables: string;
   exclusions: string;
 };
 
+/**
+ * Purpose: Maps scope defaults values to the canonical metadata consumed by proposal scope.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const scopeDefaults: Record<string, ProposalScopeDefaults> = {
   'cleaning operations': {
     deliverables: 'Completed exterior cleaning of identified surfaces.\nBefore/after photographic documentation where applicable.\nMission completion summary.',
@@ -30,16 +40,30 @@ const scopeDefaults: Record<string, ProposalScopeDefaults> = {
   }
 };
 
+/**
+ * Purpose: Maps inspection defaults values to the canonical metadata consumed by proposal scope.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const inspectionDefaults: ProposalScopeDefaults = {
   deliverables: 'Visual documentation captured during the operation.\nAnnotated findings summary where applicable.\nMission completion summary.',
   exclusions: 'Engineering analysis.\nRepair design or corrective work.\nDestructive testing or invasive investigation.'
 };
 
+/**
+ * Purpose: Maps custom operation defaults values to the canonical metadata consumed by proposal scope.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const customOperationDefaults: ProposalScopeDefaults = {
   deliverables: 'Documentation of completed work prepared according to the accepted scope and site conditions.\nMission completion summary.',
   exclusions: 'Work not expressly included in the accepted scope.\nAdditional site requirements or scope changes unless approved in writing.'
 };
 
+/**
+ * Computes get proposal scope defaults for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function getProposalScopeDefaults(serviceType: string | null | undefined): ProposalScopeDefaults {
   const normalizedServiceType = serviceType?.trim().toLowerCase() ?? '';
   if (!normalizedServiceType) return customOperationDefaults;
@@ -50,6 +74,10 @@ export function getProposalScopeDefaults(serviceType: string | null | undefined)
 }
 
 
+/**
+ * Determines is proposal scope field customized for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function isProposalScopeFieldCustomized(
   value: string | null | undefined,
   serviceType: string | null | undefined,
@@ -58,6 +86,10 @@ export function isProposalScopeFieldCustomized(
   return (value ?? '') !== getProposalScopeDefaults(serviceType)[field];
 }
 
+/**
+ * Determines has customized proposal scope for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function hasCustomizedProposalScope(
   values: Pick<ProposalScopeDefaults, 'deliverables' | 'exclusions'>,
   serviceType: string | null | undefined

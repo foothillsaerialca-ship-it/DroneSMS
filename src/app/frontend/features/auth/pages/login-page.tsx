@@ -1,8 +1,17 @@
+/**
+ * File purpose: Implements the login page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@frontend/lib/supabase';
 import { friendlyAuthError, getAppUrl } from '../lib/auth-helpers';
 
+/**
+ * Renders the login interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -13,6 +22,10 @@ export function LoginPage() {
   const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
   const configured = isSupabaseConfigured();
 
+  /**
+   * Handles submit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -51,6 +64,10 @@ export function LoginPage() {
     }
   }
 
+  /**
+   * Implements resend verification for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function resendVerification() {
     if (!email.trim()) return;
     setVerificationMessage(null);

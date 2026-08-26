@@ -1,8 +1,17 @@
+/**
+ * File purpose: Implements the forgot password page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from '@frontend/lib/supabase';
 import { getAppUrl } from '../lib/auth-helpers';
 
+/**
+ * Renders the forgot password interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -10,6 +19,10 @@ export function ForgotPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const configured = isSupabaseConfigured();
 
+  /**
+   * Handles submit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!configured || !email.trim()) return;

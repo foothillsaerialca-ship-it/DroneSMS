@@ -1,13 +1,51 @@
+/**
+ * File purpose: Implements the equipment page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@frontend/lib/supabase';
+import { getCurrentOrganizationId } from '@frontend/lib/organization';
+import { daysUntilDate, formatIsoDate as formatDate } from '@frontend/lib/date-utils';
+import { type ReadinessState } from '@frontend/lib/readiness';
 
+/**
+ * Purpose: Defines the ordered type options used for UI choices and workflow decisions in equipment page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const typeOptions = ['Drone', 'Controller', 'Battery', 'Payload', 'Ground Support', 'Filtration / Water System', 'Camera / Sensor', 'Charger', 'Safety Kit', 'Chemical / Material', 'Other'];
+/**
+ * Purpose: Defines the ordered status options used for UI choices and workflow decisions in equipment page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const statusOptions = ['Available', 'In Use', 'Maintenance', 'Inactive', 'Retired'];
+/**
+ * Purpose: Defines the ordered maintenance filter options used for UI choices and workflow decisions in equipment page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const maintenanceFilterOptions = ['All', 'Not Scheduled', 'Due Soon', 'Overdue'];
 const chemicalMaterialType = 'Chemical / Material';
+/**
+ * Purpose: Defines the ordered chemical document types used for UI choices and workflow decisions in equipment page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const chemicalDocumentTypes = ['Safety Data Sheet (SDS)', 'Product Label', 'Technical Data Sheet (TDS)'] as const;
+/**
+ * Purpose: Defines the chemical document type data contract used by the equipment page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type ChemicalDocumentType = (typeof chemicalDocumentTypes)[number];
 
+/**
+ * Purpose: Provides the stable default shape for initial form state in the equipment page workflow.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const initialFormState = {
   name: '',
   equipmentType: typeOptions[0],
@@ -28,6 +66,11 @@ const initialFormState = {
   restrictedUseProduct: 'No'
 };
 
+/**
+ * Purpose: Represents equipment data read, written, or rendered by the equipment page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type Equipment = {
   id: string;
   name: string;
@@ -51,8 +94,18 @@ type Equipment = {
   updated_at: string;
 };
 
+/**
+ * Purpose: Represents the complete equipment form state used by the equipment page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type EquipmentFormState = typeof initialFormState;
 
+/**
+ * Purpose: Represents equipment reference document data read, written, or rendered by the equipment page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type EquipmentReferenceDocument = {
   id: string;
   equipment_id: string;
@@ -63,42 +116,31 @@ type EquipmentReferenceDocument = {
   created_at: string;
 };
 
+/**
+ * Purpose: Represents pending reference document data read, written, or rendered by the equipment page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PendingReferenceDocument = { documentType: ChemicalDocumentType; file: File };
 
 const equipmentReferenceDocumentsBucket = 'equipment-reference-documents';
 
-type ReadinessState = {
-  label: string;
-  detail: string;
-  className: string;
-  sortOrder: number;
-};
-
+/**
+ * Computes get error message for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to load equipment. Please try again.';
 }
 
-function formatDate(date: string | null) {
-  if (!date) return 'Not scheduled';
-
-  const [year, month, day] = date.split('-');
-  if (!year || !month || !day) return date;
-
-  return `${month}/${day}/${year}`;
-}
-
-function daysUntil(date: string) {
-  const targetDate = new Date(`${date}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  return Math.ceil((targetDate.getTime() - today.getTime()) / 86_400_000);
-}
-
+/**
+ * Computes get maintenance status for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getMaintenanceStatus(equipment: Equipment): 'not-scheduled' | 'due-soon' | 'overdue' {
   if (!equipment.maintenance_due_date) return 'not-scheduled';
 
-  const remainingDays = daysUntil(equipment.maintenance_due_date);
+  const remainingDays = daysUntilDate(equipment.maintenance_due_date);
 
   if (remainingDays < 0) return 'overdue';
   if (remainingDays <= 30) return 'due-soon';
@@ -106,6 +148,10 @@ function getMaintenanceStatus(equipment: Equipment): 'not-scheduled' | 'due-soon
   return 'not-scheduled';
 }
 
+/**
+ * Computes get readiness state for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getReadinessState(equipment: Equipment): ReadinessState {
   if (equipment.status === 'Retired') {
     return {
@@ -126,7 +172,7 @@ function getReadinessState(equipment: Equipment): ReadinessState {
   }
 
   if (equipment.maintenance_due_date) {
-    const remainingDays = daysUntil(equipment.maintenance_due_date);
+    const remainingDays = daysUntilDate(equipment.maintenance_due_date);
 
     if (remainingDays < 0) {
       return {
@@ -166,6 +212,10 @@ function getReadinessState(equipment: Equipment): ReadinessState {
   };
 }
 
+/**
+ * Computes to form state for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function toFormState(equipment: Equipment): EquipmentFormState {
   return {
     name: equipment.name,
@@ -188,22 +238,26 @@ function toFormState(equipment: Equipment): EquipmentFormState {
   };
 }
 
-async function getCurrentOrganizationId(userId: string) {
-  const { data, error } = await supabase.from('profiles').select('organization_id').eq('id', userId).maybeSingle();
-
-  if (error) throw error;
-
-  return data?.organization_id ?? null;
-}
-
+/**
+ * Determines is chemical material for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isChemicalMaterial(formData: EquipmentFormState | Equipment) {
   return ('equipmentType' in formData ? formData.equipmentType : formData.equipment_type) === chemicalMaterialType;
 }
 
+/**
+ * Computes sanitize storage name for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function sanitizeStorageName(value: string) {
   return value.trim().replace(/[^a-z0-9._-]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'document';
 }
 
+/**
+ * Computes build equipment payload for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildEquipmentPayload(formData: EquipmentFormState) {
   const chemical = formData.equipmentType === chemicalMaterialType;
   return {
@@ -228,6 +282,10 @@ function buildEquipmentPayload(formData: EquipmentFormState) {
   };
 }
 
+/**
+ * Renders the equipment interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function EquipmentPage() {
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [formData, setFormData] = useState<EquipmentFormState>(initialFormState);
@@ -244,6 +302,10 @@ export function EquipmentPage() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [pendingDocuments, setPendingDocuments] = useState<PendingReferenceDocument[]>([]);
 
+  /**
+   * Performs load equipment for the surrounding workflow.
+   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+   */
   async function loadEquipment() {
     setIsLoading(true);
     setError(null);
@@ -309,8 +371,8 @@ export function EquipmentPage() {
         if (!left.maintenance_due_date) return 1;
         if (!right.maintenance_due_date) return -1;
 
-        const leftDays = daysUntil(left.maintenance_due_date);
-        const rightDays = daysUntil(right.maintenance_due_date);
+        const leftDays = daysUntilDate(left.maintenance_due_date);
+        const rightDays = daysUntilDate(right.maintenance_due_date);
 
         // For "Due Soon", sort by soonest first (ascending days)
         if (maintenanceFilter === 'Due Soon') {
@@ -336,11 +398,19 @@ export function EquipmentPage() {
     return filtered;
   }, [equipment, searchQuery, statusFilter, typeFilter, maintenanceFilter]);
 
+  /**
+   * Renders the update field interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   function updateField(field: keyof EquipmentFormState, value: string) {
     setFormData((current) => ({ ...current, [field]: value }));
     setSaveMessage(null);
   }
 
+  /**
+   * Handles reset form while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function resetForm() {
     setFormData(initialFormState);
     setEditingEquipmentId(null);
@@ -350,6 +420,10 @@ export function EquipmentPage() {
     setSaveMessage(null);
   }
 
+  /**
+   * Handles add while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function handleAdd() {
     setFormData(initialFormState);
     setEditingEquipmentId(null);
@@ -359,6 +433,10 @@ export function EquipmentPage() {
     setSaveMessage(null);
   }
 
+  /**
+   * Implements validate form for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function validateForm() {
     if (!formData.name.trim()) return 'Equipment name is required.';
     if (!formData.equipmentType) return 'Equipment type is required.';
@@ -367,15 +445,27 @@ export function EquipmentPage() {
     return null;
   }
 
+  /**
+   * Performs add pending document for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function addPendingDocument(documentType: ChemicalDocumentType, files: FileList | null) {
     if (!files?.length) return;
     setPendingDocuments((current) => [...current, ...Array.from(files).map((file) => ({ documentType, file }))]);
   }
 
+  /**
+   * Handles remove pending document while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function removePendingDocument(index: number) {
     setPendingDocuments((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
+  /**
+   * Implements upload pending documents for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function uploadPendingDocuments(equipmentId: string, organizationId: string) {
     await Promise.all(pendingDocuments.map(async ({ documentType, file }) => {
       const storagePath = `${organizationId}/${equipmentId}/${crypto.randomUUID()}-${sanitizeStorageName(file.name)}`;
@@ -386,6 +476,10 @@ export function EquipmentPage() {
     }));
   }
 
+  /**
+   * Handles submit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -439,6 +533,10 @@ export function EquipmentPage() {
     }
   }
 
+  /**
+   * Handles delete while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleDelete(item: Equipment) {
     const confirmed = window.confirm(`Delete ${item.name}? This cannot be undone.`);
     if (!confirmed) return;
@@ -461,6 +559,10 @@ export function EquipmentPage() {
     }
   }
 
+  /**
+   * Handles edit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function handleEdit(item: Equipment) {
     setEditingEquipmentId(item.id);
     setIsFormOpen(true);

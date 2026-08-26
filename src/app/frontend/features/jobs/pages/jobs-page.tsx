@@ -1,4 +1,10 @@
+/**
+ * File purpose: Implements the jobs page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { todayIsoDate } from "@frontend/lib/date-utils";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@frontend/lib/supabase";
 import { OrganizationIdentityCard } from "@frontend/features/settings/components/organization-identity-card";
@@ -22,7 +28,17 @@ import {
   normalizeSelectedHazards,
   type SelectedPreliminaryHazard,
 } from "@frontend/features/safety/lib/preliminary-hazard-library";
+import {
+  proposalStatuses,
+  type ProposalEquipmentAssignment,
+  type ProposalStatus,
+} from "@frontend/features/jobs/lib/workflow-types";
 
+/**
+ * Purpose: Represents job data read, written, or rendered by the jobs page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type Job = {
   id: string;
   name: string;
@@ -32,13 +48,11 @@ type Job = {
   status: string;
 };
 
-type ProposalStatus =
-  | "Draft"
-  | "Sent"
-  | "Under Review"
-  | "Accepted"
-  | "Declined";
-
+/**
+ * Purpose: Represents proposal data read, written, or rendered by the jobs page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type Proposal = {
   id: string;
   organization_id: string;
@@ -53,7 +67,7 @@ type Proposal = {
   status: ProposalStatus;
   created_at: string;
   hazard_assessment: SelectedPreliminaryHazard[] | null;
-  proposal_equipment: ProposalEquipmentAssignment[] | null;
+  proposal_equipment: Array<Pick<ProposalEquipmentAssignment, "equipment_id">> | null;
   proposed_rpic_id: string | null;
   proposed_rpic_name: string | null;
   proposed_rpic_credentials: string | null;
@@ -63,25 +77,33 @@ type Proposal = {
   converted_at: string | null;
 };
 
-type ProposalEquipmentAssignment = {
-  equipment_id: string;
-};
-
+/**
+ * Purpose: Defines the jobs tab data contract used by the jobs page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobsTab = "proposals" | "active" | "completed";
+/**
+ * Purpose: Defines the input contract accepted by the jobs page component.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobsPageProps = { mode?: "jobs" | "proposals" };
 
-const proposalStatuses: ProposalStatus[] = [
-  "Draft",
-  "Sent",
-  "Under Review",
-  "Accepted",
-  "Declined",
-];
+/**
+ * Purpose: Stores the shared jobs tabs structure used by the jobs page module.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const jobsTabs: { id: Exclude<JobsTab, "proposals">; label: string }[] = [
   { id: "active", label: "Active Jobs" },
   { id: "completed", label: "Completed Jobs" },
 ];
 
+/**
+ * Computes get error message for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getErrorMessage(
   error: unknown,
   fallback = "Unable to load jobs. Please try again.",
@@ -98,6 +120,10 @@ function getErrorMessage(
   return fallback;
 }
 
+/**
+ * Computes format date for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatDate(dateValue: string) {
   if (!dateValue) return "Not scheduled";
 
@@ -108,6 +134,10 @@ function formatDate(dateValue: string) {
   return `${month}/${day}/${year}`;
 }
 
+/**
+ * Determines is completed job for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isCompletedJob(job: Job) {
   return (
     job.status.toLowerCase() === "complete" ||
@@ -115,11 +145,19 @@ function isCompletedJob(job: Job) {
   );
 }
 
+/**
+ * Computes get initial tab for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getInitialTab(tab: string | null): JobsTab {
   if (tab === "completed") return "completed";
   return "active";
 }
 
+/**
+ * Renders the jobs interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -248,6 +286,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   useEffect(() => {
     let isMounted = true;
 
+    /**
+     * Performs load company identity for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadCompanyIdentity() {
       setIsLoadingOrganization(true);
 
@@ -297,16 +339,20 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   const currentError = showProposalsView ? proposalsError : jobsError;
   const tabs = mode === "proposals" ? [{ id: "proposals" as JobsTab, label: "Proposals" }] : jobsTabs;
 
+  /**
+   * Computes select tab for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function selectTab(tab: JobsTab) {
     if (mode === "proposals") return;
     setActiveTab(tab);
     setSearchParams(tab === "active" ? {} : { tab });
   }
 
-  function getTodayDate() {
-    return new Date().toISOString().slice(0, 10);
-  }
-
+  /**
+   * Computes create job from proposal for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function createJobFromProposal(proposal: Proposal) {
     if (proposal.converted_to_job && proposal.converted_job_id) {
       navigate(`/jobs/${proposal.converted_job_id}`);
@@ -345,7 +391,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
           name: proposal.proposal_name,
           service_type: proposal.service_type,
           location: proposal.site_address || proposal.client_name,
-          planned_date: getTodayDate(),
+          planned_date: todayIsoDate(),
           notes: `Created from proposal ${proposalNumber}. Confirm planned date during Mission Planning / JHA.`,
           status: "Planned",
           source_proposal_id: proposal.id,
@@ -448,6 +494,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     }
   }
 
+  /**
+   * Handles update proposal status while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function updateProposalStatus(
     proposalId: string,
     status: ProposalStatus,
@@ -477,6 +527,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   }
 
 
+  /**
+   * Handles generate proposal pdf while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleGenerateProposalPdf(proposalId: string) {
     setGeneratingProposalPdfId(proposalId);
     setProposalsError(null);
@@ -504,6 +558,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     }
   }
 
+  /**
+   * Implements delete proposal for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function deleteProposal(proposalId: string) {
     if (
       !window.confirm(
@@ -537,6 +595,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     }
   }
 
+  /**
+   * Implements delete job for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function deleteJob(jobId: string) {
     if (
       !window.confirm(
@@ -571,6 +633,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   }
 
 
+  /**
+   * Handles remove generated document while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function removeGeneratedDocument(documentId: string) {
     if (!window.confirm("Remove this document from the proposal documents list?")) {
       return;
@@ -596,6 +662,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     }
   }
 
+  /**
+   * Renders the render proposal card interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   function renderProposalCard(proposal: Proposal, isConverted: boolean) {
     const proposalNumber =
       proposal.proposal_number ?? proposal.id.slice(0, 8).toUpperCase();

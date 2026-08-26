@@ -1,7 +1,16 @@
+/**
+ * File purpose: Implements the auth callback page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 
+/**
+ * Renders the auth callback interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function AuthCallbackPage() {
   const navigate = useNavigate();
   const [failed, setFailed] = useState(false);

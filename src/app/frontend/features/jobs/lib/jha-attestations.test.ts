@@ -1,3 +1,8 @@
+/**
+ * File purpose: Verifies the jha attestations domain helpers with deterministic Node unit tests.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { operationalRoleLabel, recordOperationalAttestation } from './jha-attestations.ts';

@@ -1,6 +1,12 @@
+/**
+ * File purpose: Implements the new proposal page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
+import { getCurrentOrganizationId } from '@frontend/lib/organization';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import {
   createCustomPreliminaryHazard,
@@ -9,7 +15,6 @@ import {
   getVisibleHazards,
   searchHazards,
   selectLibraryHazard,
-  serviceTypes,
   summarizeSelectedHazards,
   normalizeSelectedHazards,
   restoreSystemHazardMappings,
@@ -18,17 +23,41 @@ import {
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 import { getProposalScopeDefaults, hasCustomizedProposalScope } from '@frontend/features/jobs/lib/proposal-scope';
-
-const proposalStatuses = ['Draft', 'Sent', 'Under Review', 'Accepted', 'Declined'];
+import {
+  normalizeProposalEquipment,
+  proposalStatuses,
+  serviceTypes,
+  type ProposalEquipmentAssignment
+} from '@frontend/features/jobs/lib/workflow-types';
+/**
+ * Purpose: Stores the shared airspace classes structure used by the new proposal page module.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const airspaceClasses = ['Not reviewed', 'Class B', 'Class C', 'Class D', 'Class E', 'Class G'];
+/**
+ * Purpose: Defines the ordered blocked equipment statuses used for UI choices and workflow decisions in new proposal page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const blockedEquipmentStatuses = new Set(['Archived', 'Retired', 'Out-of-Service', 'Out of Service', 'Maintenance']);
 
+/**
+ * Purpose: Defines the pending service type change data contract used by the new proposal page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PendingServiceTypeChange = {
   nextServiceType: string;
   deliverables: string;
   exclusions: string;
 };
 
+/**
+ * Purpose: Represents the complete proposal form state used by the new proposal page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type ProposalFormState = {
   clientName: string;
   contactName: string;
@@ -55,6 +84,11 @@ type ProposalFormState = {
 
 const initialScopeDefaults = getProposalScopeDefaults(serviceTypes[0]);
 
+/**
+ * Purpose: Provides the stable default shape for initial form state in the new proposal page workflow.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const initialFormState: ProposalFormState = {
   clientName: '',
   contactName: '',
@@ -80,6 +114,11 @@ const initialFormState: ProposalFormState = {
 };
 
 
+/**
+ * Purpose: Represents proposal record data read, written, or rendered by the new proposal page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type ProposalRecord = {
   id: string;
   organization_id: string;
@@ -113,16 +152,11 @@ type ProposalRecord = {
   status: string | null;
 };
 
-type ProposalEquipmentAssignment = {
-  equipment_id: string;
-  equipment_name: string;
-  equipment_type: string;
-  make: string | null;
-  model: string | null;
-  status: string;
-  purpose: string;
-};
-
+/**
+ * Purpose: Represents repository equipment data read, written, or rendered by the new proposal page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type RepositoryEquipment = {
   id: string;
   name: string;
@@ -133,12 +167,22 @@ type RepositoryEquipment = {
   purpose: string | null;
 };
 
+/**
+ * Purpose: Defines the rpic snapshot data contract used by the new proposal page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type RpicSnapshot = {
   full_name: string;
   credentials: string | null;
   professional_bio: string | null;
 };
 
+/**
+ * Purpose: Defines the proposed rpic data contract used by the new proposal page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type ProposedRpic = {
   id: string;
   full_name: string;
@@ -150,6 +194,10 @@ type ProposedRpic = {
   professional_bio: string | null;
 };
 
+/**
+ * Computes create proposal number for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function createProposalNumber() {
   const now = new Date();
   const dateStamp = now.toISOString().slice(0, 10).replace(/-/g, '');
@@ -157,6 +205,10 @@ function createProposalNumber() {
   return `PRO-${dateStamp}-${timeStamp}`;
 }
 
+/**
+ * Computes build fallback credentials for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildFallbackCredentials(person: ProposedRpic | null) {
   if (!person) return null;
   const credentials = person.certifications_summary?.trim();
@@ -168,35 +220,43 @@ function buildFallbackCredentials(person: ProposedRpic | null) {
   return fallback || null;
 }
 
+/**
+ * Computes get error message for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to save proposal. Please try again.';
 }
 
-async function getCurrentOrganizationId(userId: string) {
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('organization_id')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (error) throw error;
-
-  return profile?.organization_id ?? null;
-}
-
+/**
+ * Computes to boolean for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function toBoolean(value: string) {
   return value === 'Yes';
 }
 
+/**
+ * Computes from boolean for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function fromBoolean(value: boolean | null | undefined) {
   return value ? 'Yes' : 'No';
 }
 
+/**
+ * Computes to date input value for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function toDateInputValue(value: string | null) {
   return value ? value.slice(0, 10) : '';
 }
 
 
+/**
+ * Computes get default equipment purpose for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getDefaultEquipmentPurpose(equipmentType: string, serviceType: string) {
   const normalizedType = equipmentType.trim().toLowerCase();
   if (normalizedType === 'drone') return `Primary aircraft supporting ${serviceType || '[service type]'}`;
@@ -208,38 +268,27 @@ function getDefaultEquipmentPurpose(equipmentType: string, serviceType: string) 
   return '';
 }
 
-function normalizeProposalEquipment(value: unknown): ProposalEquipmentAssignment[] {
-  if (!Array.isArray(value)) return [];
-
-  return value
-    .map((item) => {
-      const record = item as Partial<ProposalEquipmentAssignment>;
-      const equipmentId = typeof record.equipment_id === 'string' ? record.equipment_id : '';
-      const equipmentName = typeof record.equipment_name === 'string' ? record.equipment_name : '';
-      if (!equipmentId || !equipmentName) return null;
-
-      return {
-        equipment_id: equipmentId,
-        equipment_name: equipmentName,
-        equipment_type: typeof record.equipment_type === 'string' ? record.equipment_type : '',
-        make: typeof record.make === 'string' ? record.make : null,
-        model: typeof record.model === 'string' ? record.model : null,
-        status: typeof record.status === 'string' ? record.status : '',
-        purpose: typeof record.purpose === 'string' ? record.purpose : ''
-      } satisfies ProposalEquipmentAssignment;
-    })
-    .filter((item): item is ProposalEquipmentAssignment => Boolean(item));
-}
-
+/**
+ * Computes format equipment name for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatEquipmentName(equipment: Pick<ProposalEquipmentAssignment, 'equipment_name' | 'make' | 'model'>) {
   const makeModel = [equipment.make, equipment.model].filter(Boolean).join(' ').trim();
   return makeModel ? `${equipment.equipment_name} — ${makeModel}` : equipment.equipment_name;
 }
 
+/**
+ * Determines is equipment selectable for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isEquipmentSelectable(equipment: RepositoryEquipment) {
   return !blockedEquipmentStatuses.has(equipment.status);
 }
 
+/**
+ * Implements map proposal to form state for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function mapProposalToFormState(proposal: ProposalRecord) {
   return {
     clientName: proposal.client_name ?? '',
@@ -266,6 +315,10 @@ function mapProposalToFormState(proposal: ProposalRecord) {
   };
 }
 
+/**
+ * Renders the new proposal interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function NewProposalPage() {
   const navigate = useNavigate();
   const { proposalId } = useParams();
@@ -290,6 +343,10 @@ export function NewProposalPage() {
   useEffect(() => {
     let isMounted = true;
 
+    /**
+     * Performs load company identity for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadCompanyIdentity() {
       setIsLoadingOrganization(true);
 
@@ -317,6 +374,10 @@ export function NewProposalPage() {
       }
     }
 
+    /**
+     * Performs load personnel for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadPersonnel() {
       setIsLoadingPersonnel(true);
 
@@ -336,6 +397,10 @@ export function NewProposalPage() {
       }
     }
 
+    /**
+     * Performs load equipment for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadEquipment() {
       setIsLoadingEquipment(true);
 
@@ -355,6 +420,10 @@ export function NewProposalPage() {
       }
     }
 
+    /**
+     * Performs load proposal for editing for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadProposalForEditing() {
       if (!proposalId) {
         if (isMounted) setIsLoadingProposal(false);
@@ -387,6 +456,10 @@ export function NewProposalPage() {
       }
     }
 
+    /**
+     * Performs load hazard library for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadHazardLibrary() {
       try {
         const { data, error: hazardLibraryError } = await supabase
@@ -441,6 +514,10 @@ export function NewProposalPage() {
 
   const isFormDisabled = isSaving || isLoadingProposal;
 
+  /**
+   * Renders the update field interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   function updateField(field: keyof typeof initialFormState, value: string) {
     if (field !== 'serviceType') {
       setFormData((current) => ({ ...current, [field]: value }));
@@ -475,6 +552,10 @@ export function NewProposalPage() {
     });
   }
 
+  /**
+   * Handles keep current scope for service type change while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function keepCurrentScopeForServiceTypeChange() {
     if (!pendingServiceTypeChange) return;
 
@@ -487,6 +568,10 @@ export function NewProposalPage() {
     setPendingServiceTypeChange(null);
   }
 
+  /**
+   * Handles replace scope defaults for service type change while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function replaceScopeDefaultsForServiceTypeChange() {
     if (!pendingServiceTypeChange) return;
 
@@ -500,6 +585,10 @@ export function NewProposalPage() {
     setPendingServiceTypeChange(null);
   }
 
+  /**
+   * Performs add library hazard for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function addLibraryHazard(hazardId: string) {
     const libraryHazard = hazardLibrary.find((hazard) => hazard.id === hazardId);
     if (!libraryHazard) return;
@@ -513,20 +602,36 @@ export function NewProposalPage() {
     );
   }
 
+  /**
+   * Handles remove hazard while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function removeHazard(hazardId: string) {
     setSelectedHazards((current) => current.filter((hazard) => hazard.id !== hazardId));
   }
 
+  /**
+   * Handles update selected hazard while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function updateSelectedHazard(hazardId: string, value: string) {
     setSelectedHazards((current) =>
       current.map((hazard) => (hazard.id === hazardId ? { ...hazard, mitigation: value } : hazard))
     );
   }
 
+  /**
+   * Handles update custom hazard while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function updateCustomHazard(field: keyof typeof customHazard, value: string) {
     setCustomHazard((current) => ({ ...current, [field]: value }));
   }
 
+  /**
+   * Performs add equipment for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function addEquipment(equipmentId: string) {
     const selected = equipment.find((item) => item.id === equipmentId);
     if (!selected || !isEquipmentSelectable(selected)) return;
@@ -549,14 +654,26 @@ export function NewProposalPage() {
     );
   }
 
+  /**
+   * Handles remove equipment while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function removeEquipment(equipmentId: string) {
     setSelectedEquipment((current) => current.filter((item) => item.equipment_id !== equipmentId));
   }
 
+  /**
+   * Handles update equipment purpose while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function updateEquipmentPurpose(equipmentId: string, purpose: string) {
     setSelectedEquipment((current) => current.map((item) => (item.equipment_id === equipmentId ? { ...item, purpose } : item)));
   }
 
+  /**
+   * Performs add custom hazard for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function addCustomHazard() {
     const hazardName = customHazard.hazardName.trim();
     const category = customHazard.category.trim();
@@ -571,6 +688,10 @@ export function NewProposalPage() {
     setCustomHazard({ hazardName: '', category: '', mitigation: '' });
   }
 
+  /**
+   * Implements validate form for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function validateForm() {
     if (!formData.clientName.trim()) return 'Client name is required.';
     if (!formData.proposalName.trim()) return 'Proposal name is required.';
@@ -582,6 +703,10 @@ export function NewProposalPage() {
     return null;
   }
 
+  /**
+   * Handles submit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -834,6 +959,10 @@ export function NewProposalPage() {
 
 
 
+/**
+ * Renders the confirmation dialog interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function ConfirmationDialog({
   title,
   message,
@@ -883,6 +1012,10 @@ function ConfirmationDialog({
 }
 
 
+/**
+ * Renders the equipment selection interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function EquipmentSelection({
   equipment,
   selectedEquipment,
@@ -957,6 +1090,10 @@ function EquipmentSelection({
   );
 }
 
+/**
+ * Renders the proposal equipment summary interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function ProposalEquipmentSummary({ selectedEquipment }: { selectedEquipment: ProposalEquipmentAssignment[] }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -974,6 +1111,10 @@ function ProposalEquipmentSummary({ selectedEquipment }: { selectedEquipment: Pr
   );
 }
 
+/**
+ * Renders the hazard selection interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function HazardSelection({
   serviceType,
   hazardLibrary,
@@ -1198,6 +1339,10 @@ function HazardSelection({
 }
 
 
+/**
+ * Renders the personnel select field interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function PersonnelSelectField({
   label,
   value,
@@ -1238,6 +1383,10 @@ function PersonnelSelectField({
   );
 }
 
+/**
+ * Renders the rpic snapshot card interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function RpicSnapshotCard({ snapshot, isLoading }: { snapshot: RpicSnapshot | null; isLoading: boolean }) {
   if (isLoading && !snapshot) {
     return <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 sm:col-span-2">Loading personnel...</div>;
@@ -1271,6 +1420,10 @@ function RpicSnapshotCard({ snapshot, isLoading }: { snapshot: RpicSnapshot | nu
   );
 }
 
+/**
+ * Implements form section for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function FormSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <fieldset className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -1280,6 +1433,10 @@ function FormSection({ title, children }: { title: string; children: ReactNode }
   );
 }
 
+/**
+ * Renders the text field interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function TextField({
   label,
   value,
@@ -1314,6 +1471,10 @@ function TextField({
   );
 }
 
+/**
+ * Renders the text area field interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function TextAreaField({
   label,
   value,
@@ -1341,6 +1502,10 @@ function TextAreaField({
   );
 }
 
+/**
+ * Renders the select field interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function SelectField({
   label,
   value,

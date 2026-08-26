@@ -1,20 +1,20 @@
+/**
+ * File purpose: Implements the new job page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
+import { serviceTypes } from '@frontend/features/jobs/lib/workflow-types';
 
-const serviceTypes = [
-  'Cleaning Operations',
-  'Thermal Inspection',
-  'Roof Inspection',
-  'Agricultural',
-  'Mapping / Surveying',
-  'Construction Progress',
-  'Real Estate / Property Media',
-  'Custom Operation'
-];
-
+/**
+ * Purpose: Provides the stable default shape for initial form state in the new job page workflow.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const initialFormState = {
   jobName: '',
   serviceType: serviceTypes[0],
@@ -23,10 +23,18 @@ const initialFormState = {
   notes: ''
 };
 
+/**
+ * Computes get error message for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to save job. Please try again.';
 }
 
+/**
+ * Computes get current organization id for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 async function getCurrentOrganizationId(userId: string) {
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
@@ -64,6 +72,10 @@ async function getCurrentOrganizationId(userId: string) {
   return organization.id as string;
 }
 
+/**
+ * Renders the new job interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function NewJobPage() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState(initialFormState);
@@ -75,6 +87,10 @@ export function NewJobPage() {
   useEffect(() => {
     let isMounted = true;
 
+    /**
+     * Performs load company identity for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadCompanyIdentity() {
       setIsLoadingOrganization(true);
 
@@ -99,10 +115,18 @@ export function NewJobPage() {
     };
   }, []);
 
+  /**
+   * Renders the update field interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   function updateField(field: keyof typeof formData, value: string) {
     setFormData((current) => ({ ...current, [field]: value }));
   }
 
+  /**
+   * Implements validate form for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function validateForm() {
     if (!formData.jobName.trim()) return 'Job name is required.';
     if (!formData.serviceType) return 'Service type is required.';
@@ -111,6 +135,10 @@ export function NewJobPage() {
     return null;
   }
 
+  /**
+   * Handles submit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 

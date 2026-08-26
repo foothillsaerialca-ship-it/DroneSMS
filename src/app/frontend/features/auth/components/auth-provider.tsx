@@ -1,13 +1,31 @@
+/**
+ * File purpose: Provides the reusable auth provider React component and its local interaction behavior.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type PropsWithChildren, createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@frontend/lib/supabase';
 import type { AuthContextValue, AuthStatus, ProfileState } from '../types/auth-context';
 
+/**
+ * Purpose: Stores the shared auth context structure used by the auth provider module.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
+/**
+ * Computes get error message for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to check company onboarding status.';
 }
 
+/**
+ * Renders the auth provider interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function AuthProvider({ children }: PropsWithChildren) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [session, setSession] = useState<AuthContextValue['session']>(null);
@@ -85,6 +103,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     let isMounted = true;
 
+    /**
+     * Implements initialize auth for this module.
+     * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+     */
     async function initializeAuth() {
       try {
         const { data } = await supabase.auth.getSession();

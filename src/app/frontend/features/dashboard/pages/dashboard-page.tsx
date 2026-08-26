@@ -1,9 +1,20 @@
+/**
+ * File purpose: Implements the dashboard page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { useEffect, useState } from 'react';
+import { todayIsoDate as getTodayDateString } from '@frontend/lib/date-utils';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../auth/components/use-auth';
 import { supabase } from '@frontend/lib/supabase';
 import { loadOrganizationSettingsForUser } from '@frontend/features/settings/lib/organization-settings';
 
+/**
+ * Purpose: Represents dashboard job data read, written, or rendered by the dashboard page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type DashboardJob = {
   id: string;
   name: string;
@@ -15,6 +26,11 @@ type DashboardJob = {
   updated_at: string;
 };
 
+/**
+ * Purpose: Defines the dashboard jha data contract used by the dashboard page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type DashboardJha = {
   job_id: string;
   status: string | null;
@@ -24,6 +40,11 @@ type DashboardJha = {
   updated_at: string;
 };
 
+/**
+ * Purpose: Represents dashboard proposal data read, written, or rendered by the dashboard page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type DashboardProposal = {
   id: string;
   proposal_name: string;
@@ -37,8 +58,18 @@ type DashboardProposal = {
   updated_at: string;
 };
 
+/**
+ * Purpose: Defines the count by job id data contract used by the dashboard page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type CountByJobId = Record<string, number>;
 
+/**
+ * Purpose: Defines the attention item data contract used by the dashboard page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type AttentionItem = {
   id: string;
   label: string;
@@ -46,6 +77,11 @@ type AttentionItem = {
   to: string;
 };
 
+/**
+ * Purpose: Defines the activity item data contract used by the dashboard page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type ActivityItem = {
   id: string;
   label: string;
@@ -54,6 +90,11 @@ type ActivityItem = {
   to: string;
 };
 
+/**
+ * Purpose: Defines the dashboard data data contract used by the dashboard page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type DashboardData = {
   companyName: string | null;
   currentOperation: DashboardJob | null;
@@ -63,7 +104,17 @@ type DashboardData = {
   recentActivity: ActivityItem[];
 };
 
+/**
+ * Purpose: Defines the ordered active job statuses used for UI choices and workflow decisions in dashboard page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const activeJobStatuses = new Set(['planned', 'in progress', 'needs review', 'awaiting review', 'awaiting closeout']);
+/**
+ * Purpose: Stores the shared current priority structure used by the dashboard page module.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const currentPriority: Record<string, number> = {
   'in progress': 0,
   'awaiting closeout': 1,
@@ -72,18 +123,26 @@ const currentPriority: Record<string, number> = {
   planned: 3
 };
 
+/**
+ * Computes get error message for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to load dashboard. Please try again.';
 }
 
+/**
+ * Computes normalize status for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function normalizeStatus(value: string | null | undefined) {
   return value?.trim().toLowerCase() ?? '';
 }
 
-function getTodayDateString() {
-  return new Date().toISOString().slice(0, 10);
-}
-
+/**
+ * Computes format planned date for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatPlannedDate(dateValue: string) {
   if (!dateValue) return 'Not scheduled';
 
@@ -94,23 +153,43 @@ function formatPlannedDate(dateValue: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date(year, month - 1, day));
 }
 
+/**
+ * Computes format activity date for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatActivityDate(dateValue: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(dateValue));
 }
 
+/**
+ * Determines is active job for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isActiveJob(job: DashboardJob) {
   return activeJobStatuses.has(normalizeStatus(job.status));
 }
 
+/**
+ * Determines is jha complete for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isJhaComplete(jha: DashboardJha | undefined) {
   return normalizeStatus(jha?.status) === 'complete' || normalizeStatus(jha?.status) === 'completed';
 }
 
+/**
+ * Determines is closeout status for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isCloseoutStatus(status: string) {
   const normalized = normalizeStatus(status);
   return normalized === 'needs review' || normalized === 'awaiting review' || normalized === 'awaiting closeout';
 }
 
+/**
+ * Computes get workflow stage for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getWorkflowStage(job: DashboardJob | null, jhaByJobId: Map<string, DashboardJha>, crewCounts: CountByJobId, equipmentCounts: CountByJobId) {
   if (!job) return 'No active workflow';
 
@@ -123,6 +202,10 @@ function getWorkflowStage(job: DashboardJob | null, jhaByJobId: Map<string, Dash
   return 'Ready';
 }
 
+/**
+ * Computes get current operation for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getCurrentOperation(jobs: DashboardJob[]) {
   const today = getTodayDateString();
   const activeJobs = jobs.filter(isActiveJob);
@@ -140,6 +223,10 @@ function getCurrentOperation(jobs: DashboardJob[]) {
   })[0] ?? null;
 }
 
+/**
+ * Computes build attention items for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildAttentionItems(
   jobs: DashboardJob[],
   proposals: DashboardProposal[],
@@ -177,6 +264,10 @@ function buildAttentionItems(
   return items.slice(0, 5);
 }
 
+/**
+ * Computes build upcoming operations for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildUpcomingOperations(jobs: DashboardJob[], currentOperation: DashboardJob | null) {
   const today = getTodayDateString();
 
@@ -186,6 +277,10 @@ function buildUpcomingOperations(jobs: DashboardJob[], currentOperation: Dashboa
     .slice(0, 3);
 }
 
+/**
+ * Computes build recent activity for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildRecentActivity(jobs: DashboardJob[], proposals: DashboardProposal[], jhas: DashboardJha[], photoRows: Array<{ id: string; job_id: string; created_at: string }>) {
   const jobNames = new Map(jobs.map((job) => [job.id, job.name]));
   const items: ActivityItem[] = [];
@@ -242,6 +337,10 @@ function buildRecentActivity(jobs: DashboardJob[], proposals: DashboardProposal[
     .slice(0, 6);
 }
 
+/**
+ * Computes count rows by job id for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function countRowsByJobId(rows: Array<{ job_id: string }>) {
   return rows.reduce<CountByJobId>((counts, row) => {
     counts[row.job_id] = (counts[row.job_id] ?? 0) + 1;
@@ -249,6 +348,10 @@ function countRowsByJobId(rows: Array<{ job_id: string }>) {
   }, {});
 }
 
+/**
+ * Performs load dashboard data for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 async function loadDashboardData(userId: string): Promise<DashboardData> {
   const organizationSettingsPromise = loadOrganizationSettingsForUser(userId);
   const jobsQuery = supabase
@@ -308,6 +411,10 @@ async function loadDashboardData(userId: string): Promise<DashboardData> {
   };
 }
 
+/**
+ * Implements action link for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function ActionLink({ to, children, variant = 'secondary' }: { to: string; children: React.ReactNode; variant?: 'primary' | 'secondary' }) {
   const classes =
     variant === 'primary'
@@ -321,6 +428,10 @@ function ActionLink({ to, children, variant = 'secondary' }: { to: string; child
   );
 }
 
+/**
+ * Renders the dashboard interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function DashboardPage() {
   const { session } = useAuth();
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -330,6 +441,10 @@ export function DashboardPage() {
   useEffect(() => {
     let isMounted = true;
 
+    /**
+     * Performs load dashboard for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadDashboard() {
       if (!session?.user?.id) {
         setIsLoading(false);

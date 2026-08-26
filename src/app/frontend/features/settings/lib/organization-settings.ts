@@ -1,9 +1,19 @@
+/**
+ * File purpose: Provides organization settings domain utilities and service adapters shared by the application.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { supabase } from '@frontend/lib/supabase';
 
 export const SETTINGS_NOT_PROVIDED = 'Not provided in Settings';
 
 export const DEFAULT_SERVICE_COMMITMENT = 'We are committed to delivering the services described in this proposal safely, professionally, and in accordance with the agreed scope of work. If you believe any portion of the completed work does not reflect the agreed scope or was not performed to a professional standard, please contact us promptly. We will review the concern and, when appropriate, schedule corrective work. This commitment applies to workmanship only and does not extend to normal environmental conditions, weather, airborne contaminants, irrigation, construction activity, or conditions occurring after the completion of the work.';
 
+/**
+ * Purpose: Defines the organization settings data contract used by the organization settings module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 export type OrganizationSettings = {
   id: string;
   companyName: string;
@@ -26,6 +36,10 @@ export type OrganizationSettings = {
   logoUrl: string;
 };
 
+/**
+ * Computes normalize organization settings for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function normalizeOrganizationSettings(data: Record<string, unknown> | null | undefined): OrganizationSettings | null {
   if (!data?.id) return null;
 
@@ -52,10 +66,18 @@ export function normalizeOrganizationSettings(data: Record<string, unknown> | nu
   };
 }
 
+/**
+ * Implements display organization value for this module.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function displayOrganizationValue(value: string) {
   return value.trim() || SETTINGS_NOT_PROVIDED;
 }
 
+/**
+ * Computes get organization logo url for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function getOrganizationLogoUrl(settings: OrganizationSettings | null) {
   if (!settings) return '';
   if (settings.logoUrl.trim()) return settings.logoUrl;
@@ -63,6 +85,10 @@ export function getOrganizationLogoUrl(settings: OrganizationSettings | null) {
   return supabase.storage.from('organization-logos').getPublicUrl(settings.logoPath).data.publicUrl;
 }
 
+/**
+ * Performs load organization settings for user for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 export async function loadOrganizationSettingsForUser(userId: string) {
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
@@ -84,6 +110,10 @@ export async function loadOrganizationSettingsForUser(userId: string) {
   return normalizeOrganizationSettings(organization as Record<string, unknown> | null | undefined);
 }
 
+/**
+ * Performs load organization settings by id for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 export async function loadOrganizationSettingsById(organizationId: string) {
   const { data: organization, error } = await supabase
     .from('organizations')

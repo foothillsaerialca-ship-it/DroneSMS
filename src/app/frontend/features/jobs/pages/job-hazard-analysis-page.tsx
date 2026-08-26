@@ -1,4 +1,10 @@
+/**
+ * File purpose: Implements the job hazard analysis page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type ChangeEvent, type FormEvent, useEffect, useMemo, useState } from 'react';
+import { getGenericErrorMessage as getErrorMessage } from '@frontend/lib/error-utils';
 import { Link, useParams } from 'react-router-dom';
 import { loadOrganizationSettingsById } from '@frontend/features/settings/lib/organization-settings';
 import { supabase } from '@frontend/lib/supabase';
@@ -6,20 +12,95 @@ import { fallbackHazardLibrary, getVisibleHazards, restoreSystemHazardMappings, 
 import { environmentalConcernCategories, serviceUsesAppliedMaterials } from '@frontend/features/jobs/lib/operational-environment';
 import { operationalRoleLabel } from '@frontend/features/jobs/lib/jha-attestations';
 
+/**
+ * Purpose: Defines the ordered steps used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const steps = ['Mission Basics', 'Site Conditions', 'Airspace', 'Environmental', 'Hazards', 'Crew Briefing & Communications'];
+/**
+ * Purpose: Defines the ordered ground surface options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const groundSurfaceOptions = ['Asphalt', 'Concrete', 'Gravel', 'Grass', 'Dirt', 'Rooftop', 'Muddy/Wet', 'Mixed Surface', 'Other'];
+/**
+ * Purpose: Defines the ordered work surface options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const workSurfaceOptions = ['Solar Panels', 'Building Facade', 'Windows / Glass', 'Roof', 'Agricultural Field', 'Tower / Structure', 'Parking Structure', 'Industrial Equipment', 'Other'];
+/**
+ * Purpose: Defines the ordered site constraint options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const siteConstraintOptions = ['Public sidewalk nearby', 'Active vehicle traffic', 'Limited staging area', 'Roof access required', 'Gated property', 'Uneven terrain', 'Narrow access point', 'Alley/rear access only', 'Other'];
+/**
+ * Purpose: Defines the ordered runoff contaminant options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const runoffContaminantOptions = ['Dirt / sediment', 'Bird droppings / biological material', 'Cleaning residue', 'Oils / vehicle contaminants', 'Agricultural residue', 'Chemical product used', 'Other'];
+/**
+ * Purpose: Defines the ordered communication options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const communicationOptions = ['Headsets', 'Radios', 'Cell Phones', 'Hand Signals', 'Other'];
+/**
+ * Purpose: Defines the ordered weather options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const weatherOptions = ['Clear', 'Partly Cloudy', 'Overcast', 'Light Rain'];
+/**
+ * Purpose: Defines the ordered visibility options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const visibilityOptions = ['Excellent', 'Good', 'Fair', 'Poor'];
+/**
+ * Purpose: Defines the ordered airspace options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const airspaceOptions = ['B', 'C', 'D', 'E', 'G'];
+/**
+ * Purpose: Defines the ordered laanc options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const laancOptions = ['Yes', 'No', 'Not Applicable'];
+/**
+ * Purpose: Defines the ordered water body type options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const waterBodyTypeOptions = ['River', 'Stream', 'Lake', 'Pond', 'Irrigation Canal', 'Storm Drain', 'Wetland', 'Other'];
+/**
+ * Purpose: Defines the ordered reclamation method options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const reclamationMethodOptions = ['Collection Tank', 'Absorbent Material', 'Containment Berm', 'Third Party Vendor', 'Not Required'];
+/**
+ * Purpose: Defines the ordered status options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const statusOptions = ['Draft', 'Complete'];
+/**
+ * Purpose: Defines the ordered citation options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const citationOptions = ['Clean Water Act 402', 'Clean Water Act 404', 'FIFRA', 'CA DPR', 'Other State Ag Dept', 'OSHA HazCom', 'Not Applicable'];
+/**
+ * Purpose: Maps citation guidance values to the canonical metadata consumed by job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const citationGuidance: Record<string, string> = {
   'Clean Water Act 402': 'This may apply if wash water or pollutants could enter a storm drain, ditch, creek, or waterway.',
   'Clean Water Act 404': 'This may apply if work impacts wetlands or protected waters.',
@@ -29,6 +110,11 @@ const citationGuidance: Record<string, string> = {
   'OSHA HazCom': 'This may apply if workers handle hazardous chemicals requiring SDS/PPE communication.',
   'Not Applicable': 'This may apply when no listed regulatory citation is relevant to the operation.'
 };
+/**
+ * Purpose: Defines the ordered ppe options used for UI choices and workflow decisions in job hazard analysis page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const ppeOptions = ['Safety Glasses', 'Chemical Resistant Gloves', 'Non-Slip Footwear', 'High-Vis Vest', 'Hearing Protection', 'Hard Hat'];
 const today = new Date().toISOString().slice(0, 10);
 const defaultIncidentProcedure = 'Land immediately, secure area, assess injuries, notify RPIC, document, and report per FAA requirements if applicable.';
@@ -38,6 +124,11 @@ const maxEvidencePhotoWidth = 1600;
 const evidencePhotoQuality = 0.82;
 const thumbnailWidth = 360;
 
+/**
+ * Purpose: Stores the shared common hazards structure used by the job hazard analysis page module.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const commonHazards = [
   ['Drone fly-away or loss of control over public or personnel', 'Aircraft / Systems', 'RPIC', 'Pre-flight checks, VLOS maintained, visual observer assigned, exclusion zone established, emergency procedure briefed.'],
   ['Drone rotor strike to ground personnel or public', 'Ground / Site', 'VO', 'Exclusion zone marked and enforced, VO monitors perimeter, public warning signage posted, site access controlled.'],
@@ -52,58 +143,223 @@ const commonHazards = [
   ['Heat stress or dehydration', 'Environmental', 'RPIC', 'Water on site, rest breaks scheduled, heat index monitored, work suspended if conditions exceed safe limits.']
 ] as const;
 
+/**
+ * Purpose: Represents job data read, written, or rendered by the job hazard analysis page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type Job = { id: string; organization_id: string; source_proposal_id?: string | null; name: string; service_type: string; location: string; planned_date: string; status: string; client_name?: string | null; site_address?: string | null; preliminary_hazards?: unknown };
+/**
+ * Purpose: Defines the role person data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type RolePerson = { id: string; full_name: string; user_id: string };
+/**
+ * Purpose: Defines the job personnel assignment data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPersonnelAssignment = { id: string; assigned_role: string; personnel: RolePerson | null };
+/**
+ * Purpose: Defines the safety designation data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type SafetyDesignation = { personnel: RolePerson } | null;
+/**
+ * Purpose: Defines the jha attestations data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JhaAttestations = { safetyManagerReviewedAt: string | null; safetyManagerName: string | null; rpicAcceptedAt: string | null; rpicName: string | null };
+/**
+ * Purpose: Provides the stable default shape for empty attestations in the job hazard analysis page workflow.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const emptyAttestations: JhaAttestations = { safetyManagerReviewedAt: null, safetyManagerName: null, rpicAcceptedAt: null, rpicName: null };
+/**
+ * Purpose: Defines the job equipment assignment data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobEquipmentAssignment = { id: string; equipment: { name: string; equipment_type: string | null; make?: string | null; model?: string | null } | null };
+/**
+ * Purpose: Defines the mission basics source data data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type MissionBasicsSourceData = Pick<JhaFormState, 'operatorCompany' | 'remotePilotInCommand' | 'clientPropertyOwner' | 'jobDate' | 'siteAddress' | 'dronePlatform' | 'jobTypeScope' | 'crewMembers'>;
+/**
+ * Purpose: Represents job hazard photo data read, written, or rendered by the job hazard analysis page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobHazardPhoto = { id: string; organization_id: string; job_id: string; hazard_id: string | null; hazard_name: string; photo_url: string; thumbnail_url: string | null; caption: string | null; include_in_packet: boolean; uploaded_by: string | null; created_at: string | null; deleted_at: string | null; display_url?: string | null; thumbnail_display_url?: string | null };
+/**
+ * Purpose: Defines the optimized image data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type OptimizedImage = { blob: Blob; width: number; height: number; contentType: string };
+/**
+ * Purpose: Defines the hazard photo upload options data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type HazardPhotoUploadOptions = { caption: string; includeInPacket: boolean };
+/**
+ * Purpose: Defines the hazard photo update data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type HazardPhotoUpdate = Pick<JobHazardPhoto, 'caption' | 'include_in_packet'> & { hazard_id?: string | null; hazard_name?: string };
+/**
+ * Purpose: Defines the hazard entry data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type HazardEntry = { id: string; description: string; category: string; mitigation: string; owner: string; notes: string };
+/**
+ * Purpose: Defines the ppe value data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PpeValue = boolean | string | string[];
+/**
+ * Purpose: Defines the ppe requirements data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PpeRequirements = Record<string, PpeValue>;
+/**
+ * Purpose: Represents the complete jha form state used by the job hazard analysis page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JhaFormState = {
   operatorCompany: string; jhaNumber: string; remotePilotInCommand: string; datePrepared: string; clientPropertyOwner: string; jobDate: string; siteAddress: string; dronePlatform: string; jobTypeScope: string; crewMembers: string; weatherConditions: string; faaAirspaceClass: string;
   surfaceType: string; surfaceTypeOther: string; workSurfaceType: string; workSurfaceTypeOther: string; buildingHeight: string; siteAccess: string; siteAccessConstraints: string[]; siteAccessOther: string; siteAccessNotes: string; windSpeed: string; weather: string; visibility: string; publicPresence: boolean; exclusionZonePlanned: boolean; exclusionZoneDescription: string;
   environmentalConcern: boolean; environmentalConcernCategories: string[]; environmentalConcernOther: string; runoffRisk: boolean; runoffContaminants: string[]; runoffContaminantOther: string; chemicalType: string; chemicalSdsReviewed: boolean; hazComCommunicationRequired: boolean; containmentPlan: string; regulatoryCitations: string[]; waterBodyProximity: boolean; waterBodyDistance: string; waterBodyType: string; secondaryContainmentInPlace: boolean; reclamationMethod: string; reclamationVolumeEstimate: string; disposalVendorNameContact: string;
   laancRequired: string; relevantAirportHeliport: string; knownAirspaceRestrictions: string; additionalAuthorizationRequired: string; hazardEntries: HazardEntry[]; ppeRequirements: PpeRequirements; nearestHospital: string; emergencyFacilityAddress: string; emergencyContact: string; droneIncidentProcedure: string; communicationMethods: string[]; communicationMethodOther: string; radioChannel: string; communicationPlanReviewed: boolean; lostCommunicationProcedureReviewed: boolean; crewBriefed: boolean; controlsInPlace: boolean; stopWorkAuthorityAcknowledged: boolean; status: string;
 };
+/**
+ * Purpose: Defines the jha assessment data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JhaAssessment = Record<string, any>;
+/**
+ * Purpose: Defines the proposal airspace source data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type ProposalAirspaceSource = { airspace_class: string | null; relevant_airport_heliport: string | null; known_airspace_restrictions: string | null; laanc_required: boolean | null; additional_authorization_required: boolean | null };
 
-function getErrorMessage(error: unknown) { return error instanceof Error ? error.message : 'Something went wrong. Please try again.'; }
+/**
+ * Computes create safe storage name for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function createSafeStorageName() { if ('randomUUID' in crypto) return crypto.randomUUID(); return `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+/**
+ * Computes get storage path url for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getStoragePathUrl(path: string) { return supabase.storage.from(evidencePhotosBucket).getPublicUrl(path).data.publicUrl; }
+/**
+ * Computes get display url for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 async function getDisplayUrl(path: string | null) { if (!path) return null; if (path.startsWith('http')) return path; const { data, error } = await supabase.storage.from(evidencePhotosBucket).createSignedUrl(path, 60 * 60); if (!error && data?.signedUrl) return data.signedUrl; return getStoragePathUrl(path); }
+/**
+ * Implements attach display urls for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 async function attachDisplayUrls(photos: JobHazardPhoto[]) { return Promise.all(photos.map(async (photo) => ({ ...photo, display_url: await getDisplayUrl(photo.photo_url), thumbnail_display_url: await getDisplayUrl(photo.thumbnail_url) }))); }
+/**
+ * Performs load image for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 function loadImage(file: File) { return new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); const objectUrl = URL.createObjectURL(file); image.onload = () => { URL.revokeObjectURL(objectUrl); resolve(image); }; image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Unable to read this image file.')); }; image.src = objectUrl; }); }
+/**
+ * Implements optimize image for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 async function optimizeImage(file: File, maxWidth: number, quality: number): Promise<OptimizedImage> { const image = await loadImage(file); const scale = image.width > maxWidth ? maxWidth / image.width : 1; const width = Math.max(1, Math.round(image.width * scale)); const height = Math.max(1, Math.round(image.height * scale)); const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; const context = canvas.getContext('2d'); if (!context) throw new Error('Image optimization is not supported in this browser.'); context.drawImage(image, 0, 0, width, height); const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality)); if (!blob) throw new Error('Image compression is not supported in this browser.'); return { blob, width, height, contentType: 'image/jpeg' }; }
+/**
+ * Computes create hazard entry for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function createHazardEntry(overrides: Partial<HazardEntry> = {}): HazardEntry { return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, description: '', category: '', mitigation: '', owner: '', notes: '', ...overrides }; }
+/**
+ * Computes get initial ppe requirements for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getInitialPpeRequirements(): PpeRequirements { return ppeOptions.reduce<PpeRequirements>((requirements, option) => ({ ...requirements, [option]: false }), {}); }
+/**
+ * Computes get stored array for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getStoredArray(value: PpeValue | undefined) { return Array.isArray(value) ? value : []; }
+/**
+ * Computes get stored string for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getStoredString(value: PpeValue | undefined) { return typeof value === 'string' ? value : ''; }
+/**
+ * Computes split stored option for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function splitStoredOption(value: string | null | undefined, options: string[]) { if (!value) return { option: '', other: '' }; return options.includes(value) ? { option: value, other: '' } : { option: 'Other', other: value }; }
+/**
+ * Computes get effective ground surface for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getEffectiveGroundSurface(formData: JhaFormState) { return formData.surfaceType === 'Other' ? formData.surfaceTypeOther.trim() : formData.surfaceType; }
+/**
+ * Computes get effective work surface for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getEffectiveWorkSurface(formData: JhaFormState) { return formData.workSurfaceType === 'Other' ? formData.workSurfaceTypeOther.trim() : formData.workSurfaceType; }
+/**
+ * Computes parse nullable number for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function parseNullableNumber(value: string) { return value.trim() ? Number(value) : null; }
+/**
+ * Computes format date for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatDate(value: string) { if (!value) return 'Not scheduled'; const [year, month, day] = value.split('-'); return year && month && day ? `${month}/${day}/${year}` : value; }
+/**
+ * Determines has runoff hazard for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function hasRunoffHazard(formData: JhaFormState) { return formData.hazardEntries.some((entry) => entry.description === 'Contaminated runoff entering storm drains or waterways'); }
 
+/**
+ * Computes normalize job personnel assignment for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function normalizeJobPersonnelAssignment(row: unknown): JobPersonnelAssignment {
   const assignment = row as JobPersonnelAssignment & { personnel: JobPersonnelAssignment['personnel'] | JobPersonnelAssignment['personnel'][] };
   return { ...assignment, personnel: Array.isArray(assignment.personnel) ? assignment.personnel[0] ?? null : assignment.personnel };
 }
 
+/**
+ * Computes normalize job equipment assignment for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function normalizeJobEquipmentAssignment(row: unknown): JobEquipmentAssignment {
   const assignment = row as JobEquipmentAssignment & { equipment: JobEquipmentAssignment['equipment'] | JobEquipmentAssignment['equipment'][] };
   return { ...assignment, equipment: Array.isArray(assignment.equipment) ? assignment.equipment[0] ?? null : assignment.equipment };
 }
 
+/**
+ * Computes get assigned equipment label for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getAssignedEquipmentLabel(assignment: JobEquipmentAssignment) {
   const equipment = assignment.equipment;
   if (!equipment) return '';
@@ -111,6 +367,10 @@ function getAssignedEquipmentLabel(assignment: JobEquipmentAssignment) {
   return makeModel && makeModel !== equipment.name ? `${equipment.name} (${makeModel})` : equipment.name;
 }
 
+/**
+ * Computes build mission basics source data for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildMissionBasicsSourceData(job: Job, assignments: JobPersonnelAssignment[], equipmentAssignments: JobEquipmentAssignment[], operatorCompany: string): MissionBasicsSourceData {
   const rpicAssignment = assignments.find((assignment) => assignment.assigned_role === 'RPIC');
   const crewAssignments = assignments.filter((assignment) => assignment.assigned_role !== 'RPIC');
@@ -129,22 +389,50 @@ function buildMissionBasicsSourceData(job: Job, assignments: JobPersonnelAssignm
   };
 }
 
+/**
+ * Computes get initial form state for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getInitialFormState(job: Job | null, missionBasicsSource?: MissionBasicsSourceData, proposal?: ProposalAirspaceSource | null): JhaFormState {
   return { operatorCompany: missionBasicsSource?.operatorCompany ?? '', jhaNumber: job ? `JHA-${job.id.slice(0, 8).toUpperCase()}` : '', remotePilotInCommand: missionBasicsSource?.remotePilotInCommand ?? '', datePrepared: today, clientPropertyOwner: missionBasicsSource?.clientPropertyOwner ?? '', jobDate: missionBasicsSource?.jobDate ?? job?.planned_date ?? today, siteAddress: missionBasicsSource?.siteAddress ?? job?.location ?? '', dronePlatform: missionBasicsSource?.dronePlatform ?? '', jobTypeScope: missionBasicsSource?.jobTypeScope ?? (job ? `${job.service_type} - ${job.name}` : ''), crewMembers: missionBasicsSource?.crewMembers ?? '', weatherConditions: '', faaAirspaceClass: proposal?.airspace_class?.replace('Class ', '') ?? '', surfaceType: '', surfaceTypeOther: '', workSurfaceType: '', workSurfaceTypeOther: '', buildingHeight: '', siteAccess: '', siteAccessConstraints: [], siteAccessOther: '', siteAccessNotes: '', windSpeed: '', weather: weatherOptions[0], visibility: visibilityOptions[0], publicPresence: false, exclusionZonePlanned: false, exclusionZoneDescription: '', environmentalConcern: false, environmentalConcernCategories: [], environmentalConcernOther: '', runoffRisk: false, runoffContaminants: [], runoffContaminantOther: '', chemicalType: '', chemicalSdsReviewed: false, hazComCommunicationRequired: false, containmentPlan: '', regulatoryCitations: [], waterBodyProximity: false, waterBodyDistance: '', waterBodyType: waterBodyTypeOptions[0], secondaryContainmentInPlace: false, reclamationMethod: reclamationMethodOptions[0], reclamationVolumeEstimate: '', disposalVendorNameContact: '', laancRequired: proposal?.laanc_required === true ? 'Yes' : proposal?.laanc_required === false ? 'No' : laancOptions[2], relevantAirportHeliport: proposal?.relevant_airport_heliport ?? '', knownAirspaceRestrictions: proposal?.known_airspace_restrictions ?? '', additionalAuthorizationRequired: proposal?.additional_authorization_required === true ? 'Yes' : proposal?.additional_authorization_required === false ? 'No' : 'Not Applicable', hazardEntries: [], ppeRequirements: getInitialPpeRequirements(), nearestHospital: '', emergencyFacilityAddress: '', emergencyContact: '', droneIncidentProcedure: defaultIncidentProcedure, communicationMethods: [], communicationMethodOther: '', radioChannel: '', communicationPlanReviewed: false, lostCommunicationProcedureReviewed: false, crewBriefed: false, controlsInPlace: false, stopWorkAuthorityAcknowledged: false, status: statusOptions[0] };
 }
+/**
+ * Computes normalize hazards for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function normalizeHazards(value: unknown) { if (!Array.isArray(value)) return []; return value.map((entry) => { const item = entry as Partial<HazardEntry> & { hazard_name?: string; hazard?: string; default_mitigation?: string }; return createHazardEntry({ id: item.id || createHazardEntry().id, description: item.description ?? item.hazard_name ?? item.hazard ?? '', category: item.category ?? '', mitigation: item.mitigation ?? item.default_mitigation ?? '', owner: item.owner ?? '', notes: item.notes ?? '' }); }); }
+/**
+ * Computes normalize ppe for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function normalizePpe(value: unknown) { if (!value || typeof value !== 'object' || Array.isArray(value)) return getInitialPpeRequirements(); return { ...getInitialPpeRequirements(), ...(value as PpeRequirements) }; }
+/**
+ * Computes to form state for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function toFormState(job: Job, assessment: JhaAssessment | null, missionBasicsSource: MissionBasicsSourceData, proposal?: ProposalAirspaceSource | null): JhaFormState {
   const defaults = { ...getInitialFormState(job, missionBasicsSource, proposal), hazardEntries: normalizeHazards(job.preliminary_hazards) }; if (!assessment) return defaults; const ppeRequirements = normalizePpe(assessment.ppe_requirements); const groundSurface = splitStoredOption(assessment.surface_type, groundSurfaceOptions); const workSurface = splitStoredOption(getStoredString(ppeRequirements.__workSurfaceType), workSurfaceOptions); const storedRunoffContaminants = getStoredArray(ppeRequirements.__runoffContaminants);
   return { ...defaults, operatorCompany: defaults.operatorCompany, jhaNumber: assessment.jha_number ?? defaults.jhaNumber, remotePilotInCommand: defaults.remotePilotInCommand, datePrepared: assessment.date_prepared ?? defaults.datePrepared, clientPropertyOwner: defaults.clientPropertyOwner, jobDate: defaults.jobDate, siteAddress: defaults.siteAddress, dronePlatform: defaults.dronePlatform, jobTypeScope: defaults.jobTypeScope, crewMembers: defaults.crewMembers, weatherConditions: assessment.weather_conditions ?? '', faaAirspaceClass: assessment.faa_airspace_class ?? defaults.faaAirspaceClass, surfaceType: groundSurface.option, surfaceTypeOther: groundSurface.other, workSurfaceType: workSurface.option, workSurfaceTypeOther: workSurface.other, buildingHeight: assessment.building_height?.toString() ?? '', siteAccess: assessment.site_access ?? '', siteAccessConstraints: getStoredArray(ppeRequirements.__siteAccessConstraints), siteAccessOther: getStoredString(ppeRequirements.__siteAccessOther), siteAccessNotes: (getStoredString(ppeRequirements.__siteAccessNotes) || assessment.site_access) ?? '', windSpeed: assessment.wind_speed?.toString() ?? '', weather: assessment.weather ?? defaults.weather, visibility: assessment.visibility ?? defaults.visibility, publicPresence: Boolean(assessment.public_presence), exclusionZonePlanned: Boolean(assessment.exclusion_zone_planned), exclusionZoneDescription: assessment.exclusion_zone_description ?? '', environmentalConcern: Boolean(ppeRequirements.__environmentalConcern) || Boolean(assessment.runoff_risk) || Boolean(assessment.water_body_proximity), environmentalConcernCategories: getStoredArray(ppeRequirements.__environmentalConcernCategories), environmentalConcernOther: getStoredString(ppeRequirements.__environmentalConcernOther), runoffRisk: Boolean(assessment.runoff_risk), runoffContaminants: storedRunoffContaminants.length > 0 ? storedRunoffContaminants : assessment.chemical_type ? ['Chemical product used'] : [], runoffContaminantOther: getStoredString(ppeRequirements.__runoffContaminantOther), chemicalType: assessment.chemical_type ?? '', chemicalSdsReviewed: Boolean(ppeRequirements.__chemicalSdsReviewed), hazComCommunicationRequired: Boolean(ppeRequirements.__hazComCommunicationRequired), containmentPlan: assessment.containment_plan ?? '', regulatoryCitations: assessment.regulatory_citations ?? [], waterBodyProximity: Boolean(assessment.water_body_proximity), waterBodyDistance: assessment.water_body_distance?.toString() ?? '', waterBodyType: assessment.water_body_type ?? defaults.waterBodyType, secondaryContainmentInPlace: Boolean(assessment.secondary_containment_in_place), reclamationMethod: assessment.reclamation_method ?? defaults.reclamationMethod, reclamationVolumeEstimate: assessment.reclamation_volume_estimate?.toString() ?? '', disposalVendorNameContact: assessment.disposal_vendor_name_contact ?? '', laancRequired: assessment.laanc_required ?? defaults.laancRequired, relevantAirportHeliport: assessment.relevant_airport_heliport ?? assessment.nearby_airport_heliport ?? defaults.relevantAirportHeliport, knownAirspaceRestrictions: assessment.known_airspace_restrictions ?? defaults.knownAirspaceRestrictions, additionalAuthorizationRequired: assessment.additional_authorization_required ?? defaults.additionalAuthorizationRequired, hazardEntries: normalizeHazards(assessment.hazard_entries), ppeRequirements, nearestHospital: assessment.nearest_hospital ?? '', emergencyFacilityAddress: assessment.emergency_facility_address ?? '', emergencyContact: assessment.emergency_contact ?? '', droneIncidentProcedure: assessment.drone_incident_procedure ?? defaultIncidentProcedure, communicationMethods: getStoredArray(ppeRequirements.__communicationMethods), communicationMethodOther: getStoredString(ppeRequirements.__communicationMethodOther), radioChannel: getStoredString(ppeRequirements.__radioChannel), communicationPlanReviewed: Boolean(ppeRequirements.__communicationPlanReviewed), lostCommunicationProcedureReviewed: Boolean(ppeRequirements.__lostCommunicationProcedureReviewed), crewBriefed: Boolean(assessment.crew_briefed), controlsInPlace: Boolean(assessment.controls_in_place), stopWorkAuthorityAcknowledged: Boolean(assessment.stop_work_authority_acknowledged), status: assessment.status ?? defaults.status };
 }
+/**
+ * Computes get step completion for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getStepCompletion(formData: JhaFormState) { return [Boolean(formData.jhaNumber && formData.jobDate && formData.siteAddress && formData.jobTypeScope), Boolean(getEffectiveGroundSurface(formData) && getEffectiveWorkSurface(formData) && formData.windSpeed && formData.weather && formData.visibility), Boolean(formData.faaAirspaceClass || formData.laancRequired), !formData.runoffRisk || Boolean(formData.containmentPlan), formData.hazardEntries.some((entry) => entry.description.trim() && entry.mitigation.trim()), Boolean(formData.crewBriefed && formData.controlsInPlace && formData.stopWorkAuthorityAcknowledged)]; }
 
+/**
+ * Renders the job hazard analysis interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function JobHazardAnalysisPage() {
   const { jobId } = useParams(); const [job, setJob] = useState<Job | null>(null); const [personnelAssignments, setPersonnelAssignments] = useState<JobPersonnelAssignment[]>([]); const [safetyDesignation, setSafetyDesignation] = useState<SafetyDesignation>(null); const [attestations, setAttestations] = useState<JhaAttestations>(emptyAttestations); const [currentUserId, setCurrentUserId] = useState(''); const [formData, setFormData] = useState<JhaFormState | null>(null); const [hazardLibrary, setHazardLibrary] = useState<HazardLibraryEntry[]>(fallbackHazardLibrary); const [photosByHazardId, setPhotosByHazardId] = useState<Record<string, JobHazardPhoto[]>>({}); const [uploadingHazardId, setUploadingHazardId] = useState<string | null>(null); const [photoError, setPhotoError] = useState<string | null>(null); const [activeStep, setActiveStep] = useState(0); const [isLoading, setIsLoading] = useState(true); const [isSaving, setIsSaving] = useState(false); const [loadError, setLoadError] = useState<string | null>(null); const [saveError, setSaveError] = useState<string | null>(null); const [saveMessage, setSaveMessage] = useState<string | null>(null);
   useEffect(() => {
     let isMounted = true;
 
+    /**
+     * Performs load jha for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadJha() {
       if (!jobId) {
         setLoadError('Missing job id.');
@@ -252,19 +540,75 @@ export function JobHazardAnalysisPage() {
     };
   }, [jobId]);
 
+  /**
+   * Renders the update field interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   function updateField<T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) { setFormData((current) => (current ? { ...current, [field]: value } : current)); setSaveMessage(null); }
+  /**
+   * Handles update hazard while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function updateHazard(index: number, field: keyof HazardEntry, value: string) { setFormData((current) => current ? { ...current, hazardEntries: current.hazardEntries.map((entry, entryIndex) => entryIndex === index ? { ...entry, [field]: value } : entry) } : current); setSaveMessage(null); }
+  /**
+   * Performs add hazard from suggestion for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function addHazardFromSuggestion(hazard: (typeof commonHazards)[number] | HazardLibraryEntry) { const values = 'hazard_name' in hazard ? { description: hazard.hazard_name, category: hazard.category, owner: '', mitigation: hazard.default_mitigation } : { description: hazard[0], category: hazard[1], owner: hazard[2], mitigation: hazard[3] }; setFormData((current) => { if (!current || current.hazardEntries.some((entry) => entry.description.toLowerCase() === values.description.toLowerCase())) return current; return { ...current, hazardEntries: [...current.hazardEntries, createHazardEntry(values)] }; }); setSaveMessage(null); }
+  /**
+   * Performs add custom hazard for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function addCustomHazard() { setFormData((current) => current ? { ...current, hazardEntries: [...current.hazardEntries, createHazardEntry()] } : current); setSaveMessage(null); }
+  /**
+   * Handles remove hazard while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function removeHazard(index: number) { setFormData((current) => current ? { ...current, hazardEntries: current.hazardEntries.filter((_, entryIndex) => entryIndex !== index) } : current); setSaveMessage(null); }
+  /**
+   * Computes toggle citation for the surrounding workflow.
+   * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+   */
   function toggleCitation(citation: string) { setFormData((current) => { if (!current) return current; const regulatoryCitations = current.regulatoryCitations.includes(citation) ? current.regulatoryCitations.filter((item) => item !== citation) : [...current.regulatoryCitations, citation]; return { ...current, regulatoryCitations }; }); setSaveMessage(null); }
+  /**
+   * Renders the toggle form array field interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   function toggleFormArrayField(field: 'runoffContaminants' | 'communicationMethods' | 'environmentalConcernCategories', value: string) { setFormData((current) => { if (!current) return current; const values = current[field].includes(value) ? current[field].filter((item) => item !== value) : [...current[field], value]; return { ...current, [field]: values }; }); setSaveMessage(null); }
+  /**
+   * Computes toggle ppe for the surrounding workflow.
+   * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+   */
   function togglePpe(option: string) { setFormData((current) => current ? { ...current, ppeRequirements: { ...current.ppeRequirements, [option]: !current.ppeRequirements[option] } } : current); setSaveMessage(null); }
+  /**
+   * Handles upload hazard photo while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleUploadHazardPhoto(entry: HazardEntry, file: File, options: HazardPhotoUploadOptions) { if (!job) return; setUploadingHazardId(entry.id); setPhotoError(null); try { const { data: userData, error: userError } = await supabase.auth.getUser(); if (userError) throw userError; if (!userData.user) throw new Error('You must be signed in to upload evidence photos.'); const optimized = await optimizeImage(file, maxEvidencePhotoWidth, evidencePhotoQuality); const thumbnail = await optimizeImage(file, thumbnailWidth, 0.76); const safeName = createSafeStorageName(); const basePath = `${job.organization_id}/${job.id}/${entry.id}`; const photoPath = `${basePath}/${safeName}.jpg`; const thumbnailPath = `${basePath}/${safeName}-thumb.jpg`; const { error: uploadError } = await supabase.storage.from(evidencePhotosBucket).upload(photoPath, optimized.blob, { contentType: optimized.contentType, upsert: false }); if (uploadError) throw uploadError; const { error: thumbnailError } = await supabase.storage.from(evidencePhotosBucket).upload(thumbnailPath, thumbnail.blob, { contentType: thumbnail.contentType, upsert: false }); if (thumbnailError) throw thumbnailError; const hazardIndex = formData?.hazardEntries.findIndex((hazard) => hazard.id === entry.id) ?? -1; const hazardName = entry.description.trim() || `Hazard ${hazardIndex + 1}`; const { data, error } = await supabase.from('job_hazard_photos').insert({ organization_id: job.organization_id, job_id: job.id, hazard_id: entry.id, hazard_name: hazardName, photo_url: photoPath, thumbnail_url: thumbnailPath, caption: options.caption.trim() || null, include_in_packet: options.includeInPacket, uploaded_by: userData.user.id }).select('*').single(); if (error) throw error; const [signedPhoto] = await attachDisplayUrls([data as JobHazardPhoto]); setPhotosByHazardId((current) => ({ ...current, [entry.id]: [signedPhoto, ...(current[entry.id] ?? [])] })); setSaveMessage('Evidence photo uploaded.'); } catch (error) { setPhotoError(getErrorMessage(error)); } finally { setUploadingHazardId(null); } }
+  /**
+   * Handles update hazard photo while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleUpdateHazardPhoto(photo: JobHazardPhoto, updates: HazardPhotoUpdate) { setPhotoError(null); const previousPhotos = photosByHazardId; const nextPhoto = { ...photo, ...updates }; setPhotosByHazardId((current) => { const withoutPhoto = Object.fromEntries(Object.entries(current).map(([key, items]) => [key, items.filter((item) => item.id !== photo.id)])); const key = nextPhoto.hazard_id ?? 'none'; return { ...withoutPhoto, [key]: [nextPhoto, ...(withoutPhoto[key] ?? [])] }; }); const { error } = await supabase.from('job_hazard_photos').update(updates).eq('id', photo.id); if (error) { setPhotosByHazardId(previousPhotos); setPhotoError(getErrorMessage(error)); } }
+  /**
+   * Handles remove hazard photo while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleRemoveHazardPhoto(photo: JobHazardPhoto) { setPhotoError(null); const previousPhotos = photosByHazardId; setPhotosByHazardId((current) => ({ ...current, [photo.hazard_id ?? 'none']: (current[photo.hazard_id ?? 'none'] ?? []).filter((item) => item.id !== photo.id) })); const { error } = await supabase.from('job_hazard_photos').update({ deleted_at: new Date().toISOString() }).eq('id', photo.id); if (error) { setPhotosByHazardId(previousPhotos); setPhotoError(getErrorMessage(error)); } }
+  /**
+   * Implements validate form for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function validateForm(requireCompletion: boolean) { if (!formData) return 'Unable to save this JHA.'; if (!requireCompletion) return null; if (!getEffectiveGroundSurface(formData)) return 'Ground / Staging Surface is required.'; if (!getEffectiveWorkSurface(formData)) return 'Work Surface / Structure Type is required.'; if (!formData.windSpeed.trim()) return 'Wind speed is required.'; if (!formData.weather) return 'Weather is required.'; if (!formData.visibility) return 'Visibility is required.'; if (!formData.faaAirspaceClass && !formData.laancRequired) return 'Airspace class or LAANC status is required.'; if (formData.siteAccessConstraints.includes('Other') && !formData.siteAccessOther.trim()) return 'Describe the other site access or operational constraint.'; if (formData.runoffRisk && formData.runoffContaminants.length === 0) return 'Select at least one potential runoff contaminant.'; if (formData.runoffContaminants.includes('Other') && !formData.runoffContaminantOther.trim()) return 'Describe the other potential runoff contaminant.'; if (formData.runoffContaminants.includes('Chemical product used') && !formData.chemicalType.trim()) return 'Chemical type is required when a chemical product is used.'; if (formData.runoffRisk && !formData.containmentPlan.trim()) return 'Containment plan is required when runoff planning is needed.'; const completeHazards = formData.hazardEntries.filter((entry) => entry.description.trim() || entry.mitigation.trim()); if (completeHazards.length === 0) return 'Select or add at least one hazard.'; if (completeHazards.some((entry) => !entry.description.trim() || !entry.category.trim() || !entry.mitigation.trim())) return 'Each hazard needs a description, category, and mitigation.'; if (formData.publicPresence && formData.exclusionZonePlanned && !formData.exclusionZoneDescription.trim()) return 'Describe the planned exclusion zone.'; if (formData.status === 'Complete') { if (formData.communicationMethods.includes('Other') && !formData.communicationMethodOther.trim()) return 'Describe the other communication method.'; if (!formData.crewBriefed || !formData.controlsInPlace || !formData.stopWorkAuthorityAcknowledged) return 'Complete the RPIC certification acknowledgments before marking the JHA complete.'; if (!attestations.safetyManagerReviewedAt || !attestations.rpicAcceptedAt) return 'Safety Manager Review and RPIC Acceptance are required before marking the JHA complete.'; } return null; }
+  /**
+   * Performs save assessment for the surrounding workflow.
+   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+   */
   async function saveAssessment(options: { requireCompletion?: boolean; message?: string } = {}) { if (!job || !formData) return false; const validationError = validateForm(Boolean(options.requireCompletion)); if (validationError) { setSaveError(validationError); setSaveMessage(null); return false; } setIsSaving(true); setSaveError(null); setSaveMessage(null); try { const { data: userData, error: userError } = await supabase.auth.getUser(); if (userError) throw userError; if (!userData.user) throw new Error('You must be signed in to save a JHA.'); const ppeRequirements = { ...formData.ppeRequirements, __workSurfaceType: getEffectiveWorkSurface(formData), __siteAccessConstraints: formData.siteAccessConstraints, __siteAccessOther: formData.siteAccessOther.trim(), __siteAccessNotes: formData.siteAccessNotes.trim(), __environmentalConcern: formData.environmentalConcern, __environmentalConcernCategories: formData.environmentalConcernCategories, __environmentalConcernOther: formData.environmentalConcernOther.trim(), __runoffContaminants: formData.runoffContaminants, __runoffContaminantOther: formData.runoffContaminantOther.trim(), __chemicalSdsReviewed: formData.chemicalSdsReviewed, __hazComCommunicationRequired: formData.hazComCommunicationRequired, __communicationMethods: formData.communicationMethods, __communicationMethodOther: formData.communicationMethodOther.trim(), __radioChannel: formData.radioChannel.trim(), __communicationPlanReviewed: formData.communicationPlanReviewed, __lostCommunicationProcedureReviewed: formData.lostCommunicationProcedureReviewed }; const siteAccessSummary = [...formData.siteAccessConstraints.filter((constraint) => constraint !== 'Other'), formData.siteAccessConstraints.includes('Other') ? formData.siteAccessOther.trim() : '', formData.siteAccessNotes.trim()].filter(Boolean).join('; '); const { error } = await supabase.from('jha_assessments').upsert({ job_id: job.id, organization_id: job.organization_id, user_id: userData.user.id, operator_company: formData.operatorCompany.trim() || null, jha_number: formData.jhaNumber.trim() || null, remote_pilot_in_command: formData.remotePilotInCommand.trim() || null, date_prepared: formData.datePrepared || null, client_property_owner: formData.clientPropertyOwner.trim() || null, job_date: formData.jobDate || null, site_address: formData.siteAddress.trim() || null, drone_platform: formData.dronePlatform.trim() || null, job_type_scope: formData.jobTypeScope.trim() || null, crew_members: formData.crewMembers.trim() || null, weather_conditions: formData.weatherConditions.trim() || null, faa_airspace_class: formData.faaAirspaceClass || null, surface_type: getEffectiveGroundSurface(formData) || null, building_height: parseNullableNumber(formData.buildingHeight), site_access: siteAccessSummary || null, wind_speed: parseNullableNumber(formData.windSpeed), weather: formData.weather, visibility: formData.visibility, public_presence: formData.publicPresence, exclusion_zone_planned: formData.exclusionZonePlanned, exclusion_zone_description: formData.exclusionZoneDescription.trim() || null, runoff_risk: formData.runoffRisk, chemical_type: formData.runoffContaminants.includes('Chemical product used') ? formData.chemicalType.trim() || null : null, containment_plan: formData.containmentPlan.trim() || null, regulatory_citations: formData.regulatoryCitations, water_body_proximity: formData.waterBodyProximity, water_body_distance: parseNullableNumber(formData.waterBodyDistance), water_body_type: formData.waterBodyType || null, secondary_containment_in_place: formData.secondaryContainmentInPlace, reclamation_method: formData.reclamationMethod || null, reclamation_volume_estimate: parseNullableNumber(formData.reclamationVolumeEstimate), disposal_vendor_name_contact: formData.disposalVendorNameContact.trim() || null, laanc_required: formData.laancRequired, relevant_airport_heliport: formData.relevantAirportHeliport.trim() || null, known_airspace_restrictions: formData.knownAirspaceRestrictions.trim() || null, additional_authorization_required: formData.additionalAuthorizationRequired, hazard_entries: formData.hazardEntries, ppe_requirements: ppeRequirements, nearest_hospital: formData.nearestHospital.trim() || null, emergency_facility_address: formData.emergencyFacilityAddress.trim() || null, emergency_contact: formData.emergencyContact.trim() || null, drone_incident_procedure: formData.droneIncidentProcedure.trim() || null, crew_briefed: formData.crewBriefed, controls_in_place: formData.controlsInPlace, stop_work_authority_acknowledged: formData.stopWorkAuthorityAcknowledged, certified_at: formData.status === 'Complete' ? new Date().toISOString() : null, status: formData.status, updated_at: new Date().toISOString() }, { onConflict: 'job_id' }); if (error) throw error; setSaveMessage(options.message ?? 'Progress saved.'); return true; } catch (error) { setSaveError(getErrorMessage(error)); return false; } finally { setIsSaving(false); } }
+  /**
+   * Handles perform attestation while keeping the feature state consistent.
+   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+   */
   async function performAttestation(kind: 'safety-manager' | 'rpic') {
     if (!job) return;
     const saved = await saveAssessment({ message: 'JHA saved for attestation.' });
@@ -279,9 +623,25 @@ export function JobHazardAnalysisPage() {
       setSaveMessage(kind === 'safety-manager' ? 'Safety Manager Review recorded.' : 'RPIC Acceptance recorded.');
     } catch (error) { setSaveError(getErrorMessage(error)); } finally { setIsSaving(false); }
   }
+  /**
+   * Renders the go to step interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   async function goToStep(stepIndex: number) { if (stepIndex === activeStep || isSaving) return; const saved = await saveAssessment({ message: 'Progress saved.' }); if (saved) setActiveStep(stepIndex); }
+  /**
+   * Handles go next while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function goNext() { if (activeStep >= steps.length - 1) return; const saved = await saveAssessment({ message: 'Progress saved.' }); if (saved) setActiveStep((current) => Math.min(current + 1, steps.length - 1)); }
+  /**
+   * Handles go back while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function goBack() { if (activeStep <= 0) return; const saved = await saveAssessment({ message: 'Progress saved.' }); if (saved) setActiveStep((current) => Math.max(current - 1, 0)); }
+  /**
+   * Handles submit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); await saveAssessment({ requireCompletion: true, message: 'JHA saved.' }); }
   if (isLoading) return <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">Loading job hazard analysis...</section>;
   if (loadError || !job || !formData) return <section className="space-y-4"><Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to={jobId ? `/jobs/${jobId}/hub` : '/jobs'}>Back to Job File</Link><div className="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm" role="alert"><h1 className="text-base font-semibold text-red-800">Unable to load JHA</h1><p className="mt-2 text-sm text-red-700">{loadError ?? 'Please try again.'}</p></div></section>;
@@ -289,9 +649,27 @@ export function JobHazardAnalysisPage() {
   return <section className="space-y-4"><Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to={`/jobs/${job.id}/hub`}>Back to Job File</Link><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-sm font-medium text-slate-500">Operational Safety Documentation</p><h1 className="mt-1 text-2xl font-semibold text-brand-900">Job Hazard Analysis</h1><p className="mt-2 text-sm text-slate-600">{job.name} - {job.service_type} - {formatDate(job.planned_date)}</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-medium text-slate-900">Hazards documented:</span> {formData.hazardEntries.length}</div></div></div><ProgressIndicator activeStep={activeStep} completedSteps={stepCompletion} onStepClick={goToStep} disabled={isSaving} /><form className="space-y-4" onSubmit={handleSubmit}><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"><div className="mb-5 flex flex-col gap-1"><p className="text-sm font-medium text-slate-500">Step {activeStep + 1} of {steps.length}</p><h2 className="text-xl font-semibold text-brand-900">{steps[activeStep]}</h2></div>{activeStep === 0 ? <MissionBasicsStep formData={formData} updateField={updateField} isSaving={isSaving} jobId={job.id} /> : null}{activeStep === 1 ? <SiteConditionsStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}{activeStep === 2 ? <AirspaceStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}{activeStep === 3 ? <EnvironmentalStep serviceType={job.service_type} formData={formData} updateField={updateField} toggleFormArrayField={toggleFormArrayField} toggleCitation={toggleCitation} isSaving={isSaving} /> : null}{activeStep === 4 ? <HazardsStep personnelAssignments={personnelAssignments} formData={formData} hazardLibrary={hazardLibrary} serviceType={job.service_type} photosByHazardId={photosByHazardId} uploadingHazardId={uploadingHazardId} addHazardFromSuggestion={addHazardFromSuggestion} addCustomHazard={addCustomHazard} updateHazard={updateHazard} removeHazard={removeHazard} onUploadPhoto={handleUploadHazardPhoto} onUpdatePhoto={handleUpdateHazardPhoto} onRemovePhoto={handleRemoveHazardPhoto} isSaving={isSaving} /> : null}{activeStep === 5 ? <CertificationStep formData={formData} updateField={updateField} togglePpe={togglePpe} toggleFormArrayField={toggleFormArrayField} isSaving={isSaving} jobId={job.id} safetyDesignation={safetyDesignation} rpic={personnelAssignments.find((assignment) => assignment.assigned_role === 'RPIC')?.personnel ?? null} currentUserId={currentUserId} attestations={attestations} onAttest={performAttestation} /> : null}</div>{saveError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{saveError}</p> : null}{photoError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{photoError}</p> : null}{saveMessage ? <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700" role="status">{saveMessage}</p> : null}<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:py-2" onClick={goBack} disabled={isSaving || activeStep === 0}>Back</button><div className="flex flex-col gap-2 sm:flex-row"><button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 sm:py-2" onClick={() => saveAssessment({ message: 'Progress saved.' })} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Progress'}</button>{activeStep < steps.length - 1 ? <button type="button" className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2" onClick={goNext} disabled={isSaving}>{isSaving ? 'Saving...' : 'Next'}</button> : <button type="submit" className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2" disabled={isSaving}>{isSaving ? 'Saving...' : 'Save JHA'}</button>}</div></div></form></section>;
 }
 
+/**
+ * Renders the progress indicator interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function ProgressIndicator({ activeStep, completedSteps, onStepClick, disabled }: { activeStep: number; completedSteps: boolean[]; onStepClick: (step: number) => void; disabled: boolean }) { return <nav className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="JHA progress"><ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">{steps.map((step, index) => <li key={step}><button type="button" className={`min-h-11 w-full rounded-lg border px-3 py-2 text-left text-sm transition ${index === activeStep ? 'border-brand-700 bg-brand-50 text-brand-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`} onClick={() => onStepClick(index)} disabled={disabled}><span className="block text-xs font-semibold uppercase text-slate-500">Step {index + 1}</span><span className="mt-1 block font-semibold">{step}</span><span className="mt-1 block text-xs">{completedSteps[index] ? 'Started' : 'Not started'}</span></button></li>)}</ol></nav>; }
+/**
+ * Purpose: Defines the input contract accepted by the step component.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type StepProps = { formData: JhaFormState; updateField: <T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) => void; isSaving: boolean };
+/**
+ * Purpose: Defines the input contract accepted by the mission basics step component.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type MissionBasicsStepProps = StepProps & { jobId: string };
+/**
+ * Renders the mission basics step interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function MissionBasicsStep({ formData, updateField, isSaving, jobId }: MissionBasicsStepProps) {
   const jobFileLink = `/jobs/${jobId}`;
   const crewLink = `/jobs/${jobId}/hub#crew-assignment`;
@@ -317,9 +695,26 @@ function MissionBasicsStep({ formData, updateField, isSaving, jobId }: MissionBa
     </div>
   );
 }
+/**
+ * Renders the site conditions step interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function SiteConditionsStep({ formData, updateField, isSaving }: StepProps) { function toggleConstraint(constraint: string) { const constraints = formData.siteAccessConstraints.includes(constraint) ? formData.siteAccessConstraints.filter((item) => item !== constraint) : [...formData.siteAccessConstraints, constraint]; updateField('siteAccessConstraints', constraints); } return <div className="space-y-4"><div className="grid gap-4 sm:grid-cols-2"><SelectInput label="Ground / Staging Surface" value={formData.surfaceType} options={['', ...groundSurfaceOptions]} onChange={(value) => updateField('surfaceType', value)} disabled={isSaving} required />{formData.surfaceType === 'Other' ? <TextInput label="Custom ground / staging surface" value={formData.surfaceTypeOther} onChange={(value) => updateField('surfaceTypeOther', value)} disabled={isSaving} required /> : null}<SelectInput label="Work Surface / Structure Type" value={formData.workSurfaceType} options={['', ...workSurfaceOptions]} onChange={(value) => updateField('workSurfaceType', value)} disabled={isSaving} required />{formData.workSurfaceType === 'Other' ? <TextInput label="Custom work surface / structure type" value={formData.workSurfaceTypeOther} onChange={(value) => updateField('workSurfaceTypeOther', value)} disabled={isSaving} required /> : null}<TextInput label="Building height (feet)" type="number" value={formData.buildingHeight} onChange={(value) => updateField('buildingHeight', value)} disabled={isSaving} /><TextInput label="Wind speed (MPH)" type="number" value={formData.windSpeed} onChange={(value) => updateField('windSpeed', value)} disabled={isSaving} required /><SelectInput label="Weather" value={formData.weather} options={weatherOptions} onChange={(value) => updateField('weather', value)} disabled={isSaving} /><SelectInput label="Visibility" value={formData.visibility} options={visibilityOptions} onChange={(value) => updateField('visibility', value)} disabled={isSaving} /><TextInput label="Weather Conditions" value={formData.weatherConditions} onChange={(value) => updateField('weatherConditions', value)} disabled={isSaving} /></div><fieldset className="rounded-lg border border-slate-200 bg-slate-50 p-3"><legend className="px-1 text-sm font-medium text-slate-700">Site Access / Operational Constraints</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{siteConstraintOptions.map((constraint) => <Checkbox key={constraint} label={constraint} checked={formData.siteAccessConstraints.includes(constraint)} onChange={() => toggleConstraint(constraint)} disabled={isSaving} />)}</div>{formData.siteAccessConstraints.includes('Other') ? <div className="mt-3"><TextInput label="Custom site access / operational constraint" value={formData.siteAccessOther} onChange={(value) => updateField('siteAccessOther', value)} disabled={isSaving} /></div> : null}<div className="mt-3"><TextArea label="Additional site access / operational notes" value={formData.siteAccessNotes} onChange={(value) => updateField('siteAccessNotes', value)} disabled={isSaving} /></div></fieldset><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Public presence" checked={formData.publicPresence} onChange={(checked) => updateField('publicPresence', checked)} disabled={isSaving} />{formData.publicPresence ? <div className="mt-3 space-y-3"><Checkbox label="Exclusion zone planned" checked={formData.exclusionZonePlanned} onChange={(checked) => updateField('exclusionZonePlanned', checked)} disabled={isSaving} />{formData.exclusionZonePlanned ? <TextArea label="Exclusion zone description" value={formData.exclusionZoneDescription} onChange={(value) => updateField('exclusionZoneDescription', value)} disabled={isSaving} /> : null}</div> : null}</div></div>; }
+/**
+ * Renders the airspace step interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function AirspaceStep({ formData, updateField, isSaving }: StepProps) { return <div className="grid gap-4 sm:grid-cols-2"><SelectInput label="FAA Airspace Class" value={formData.faaAirspaceClass} options={['', ...airspaceOptions]} onChange={(value) => updateField('faaAirspaceClass', value)} disabled={isSaving} /><SelectInput label="LAANC Required" value={formData.laancRequired} options={laancOptions} onChange={(value) => updateField('laancRequired', value)} disabled={isSaving} /><div className="sm:col-span-2"><TextInput label="Relevant Airport / Heliport" value={formData.relevantAirportHeliport} onChange={(value) => updateField('relevantAirportHeliport', value)} placeholder="Airport or heliport name, identifier, or “None identified”" disabled={isSaving} /></div><SelectInput label="Additional Authorization Required" value={formData.additionalAuthorizationRequired} options={laancOptions} onChange={(value) => updateField('additionalAuthorizationRequired', value)} disabled={isSaving} /><div className="sm:col-span-2"><TextInput label="Known Airspace Restrictions / TFR Considerations" value={formData.knownAirspaceRestrictions} onChange={(value) => updateField('knownAirspaceRestrictions', value)} placeholder="Operational restrictions, TFR considerations, or None identified" disabled={isSaving} /></div>{formData.laancRequired === 'Yes' ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:col-span-2">Keep LAANC authorization documentation in the job file before operations begin.</div> : null}</div>; }
+/**
+ * Renders the environmental step interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function EnvironmentalStep({ serviceType, formData, updateField, toggleFormArrayField, toggleCitation, isSaving }: StepProps & { serviceType: string; toggleFormArrayField: (field: 'runoffContaminants' | 'communicationMethods' | 'environmentalConcernCategories', value: string) => void; toggleCitation: (citation: string) => void }) { const appliedMaterialMission = serviceUsesAppliedMaterials(serviceType); const hasHistoricalAppliedData = formData.runoffRisk || formData.waterBodyProximity || Boolean(formData.containmentPlan); const showMissionConcerns = appliedMaterialMission || formData.environmentalConcern || hasHistoricalAppliedData; const showAppliedControls = appliedMaterialMission || formData.environmentalConcernCategories.some((category) => ['Water body / wetland', 'Runoff', 'Applied material / chemical', 'Spill / release concern'].includes(category)) || hasHistoricalAppliedData; const showEnvironmentalControls = formData.runoffRisk || formData.waterBodyProximity; const chemicalProductUsed = formData.runoffContaminants.includes('Chemical product used'); return <div className="space-y-4"><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Are there environmental conditions or sensitive resources that could be affected by this operation?" checked={formData.environmentalConcern || appliedMaterialMission || hasHistoricalAppliedData} onChange={(checked) => updateField('environmentalConcern', checked)} disabled={isSaving || appliedMaterialMission || hasHistoricalAppliedData} /><p className="mt-2 text-xs text-slate-500">{appliedMaterialMission ? `Environmental controls are shown because ${serviceType} may involve liquids or applied materials.` : 'Select this only when the mission has an environmental consideration. No environmental hazard is required when none applies.'}</p></div>{showMissionConcerns ? <fieldset><legend className="text-sm font-medium text-slate-700">Relevant environmental considerations</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{environmentalConcernCategories.map((category) => <Checkbox key={category} label={category} checked={formData.environmentalConcernCategories.includes(category)} onChange={() => toggleFormArrayField('environmentalConcernCategories', category)} disabled={isSaving} />)}</div>{formData.environmentalConcernCategories.includes('Other') ? <div className="mt-3"><TextInput label="Other mission-specific environmental condition" value={formData.environmentalConcernOther} onChange={(value) => updateField('environmentalConcernOther', value)} disabled={isSaving} /></div> : null}</fieldset> : null}{showAppliedControls ? <><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Runoff planning needed" checked={formData.runoffRisk} onChange={(checked) => updateField('runoffRisk', checked)} disabled={isSaving} />{formData.runoffRisk ? <div className="mt-3 space-y-4"><p className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700">{environmentalRunoffHelperText}</p><fieldset><legend className="text-sm font-medium text-slate-700">Potential runoff contaminants</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{runoffContaminantOptions.map((option) => <Checkbox key={option} label={option} checked={formData.runoffContaminants.includes(option)} onChange={() => toggleFormArrayField('runoffContaminants', option)} disabled={isSaving} />)}</div></fieldset>{formData.runoffContaminants.includes('Other') ? <TextInput label="Other potential runoff contaminant" value={formData.runoffContaminantOther} onChange={(value) => updateField('runoffContaminantOther', value)} disabled={isSaving} /> : null}{chemicalProductUsed ? <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3"><div className="grid gap-4 sm:grid-cols-2"><TextInput label="Chemical type / product" value={formData.chemicalType} onChange={(value) => updateField('chemicalType', value)} disabled={isSaving} /><TextInput label="Containment plan" value={formData.containmentPlan} onChange={(value) => updateField('containmentPlan', value)} disabled={isSaving} /></div><div className="grid gap-2 sm:grid-cols-2"><Checkbox label="SDS reviewed" checked={formData.chemicalSdsReviewed} onChange={(checked) => updateField('chemicalSdsReviewed', checked)} disabled={isSaving} /><Checkbox label="HazCom / PPE communication reviewed" checked={formData.hazComCommunicationRequired} onChange={(checked) => updateField('hazComCommunicationRequired', checked)} disabled={isSaving} /></div></div> : <TextInput label="Containment plan" value={formData.containmentPlan} onChange={(value) => updateField('containmentPlan', value)} disabled={isSaving} />}</div> : null}</div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Water body proximity" checked={formData.waterBodyProximity} onChange={(checked) => updateField('waterBodyProximity', checked)} disabled={isSaving} />{formData.waterBodyProximity ? <div className="mt-3 grid gap-4 sm:grid-cols-2"><TextInput label="Water body distance (feet)" type="number" value={formData.waterBodyDistance} onChange={(value) => updateField('waterBodyDistance', value)} disabled={isSaving} /><SelectInput label="Water body type" value={formData.waterBodyType} options={waterBodyTypeOptions} onChange={(value) => updateField('waterBodyType', value)} disabled={isSaving} /></div> : null}</div>{showEnvironmentalControls ? <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-3"><Checkbox label="Secondary containment in place" checked={formData.secondaryContainmentInPlace} onChange={(checked) => updateField('secondaryContainmentInPlace', checked)} disabled={isSaving} /><div className="grid gap-4 sm:grid-cols-2"><SelectInput label="Reclamation method" value={formData.reclamationMethod} options={reclamationMethodOptions} onChange={(value) => updateField('reclamationMethod', value)} disabled={isSaving} /><TextInput label="Reclamation volume estimate (gallons)" type="number" value={formData.reclamationVolumeEstimate} onChange={(value) => updateField('reclamationVolumeEstimate', value)} disabled={isSaving} />{formData.reclamationMethod === 'Third Party Vendor' ? <TextInput label="Disposal vendor name and contact" value={formData.disposalVendorNameContact} onChange={(value) => updateField('disposalVendorNameContact', value)} disabled={isSaving} /> : null}</div></div> : null}{showEnvironmentalControls ? <fieldset><legend className="text-sm font-medium text-slate-700">Regulatory citations</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{citationOptions.map((citation) => <label key={citation} className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700"><span className="flex items-start gap-3 font-medium"><input className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700" type="checkbox" checked={formData.regulatoryCitations.includes(citation)} onChange={() => toggleCitation(citation)} disabled={isSaving} /><span>{citation}</span></span><span className="mt-2 block text-xs leading-5 text-slate-500">{citationGuidance[citation]}</span></label>)}</div></fieldset> : <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Advanced regulatory fields appear when runoff planning or water body proximity is selected.</div>}</> : null}</div>; }
+/**
+ * Purpose: Defines the hazard photo handlers data contract used by the job hazard analysis page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type HazardPhotoHandlers = {
   photosByHazardId: Record<string, JobHazardPhoto[]>;
   uploadingHazardId: string | null;
@@ -328,6 +723,10 @@ type HazardPhotoHandlers = {
   onRemovePhoto: (photo: JobHazardPhoto) => Promise<void>;
 };
 
+/**
+ * Renders the hazards step interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function HazardsStep({ personnelAssignments, formData, hazardLibrary, serviceType, photosByHazardId, uploadingHazardId, updateHazard, addHazardFromSuggestion, addCustomHazard, removeHazard, onUploadPhoto, onUpdatePhoto, onRemovePhoto, isSaving }: { personnelAssignments: JobPersonnelAssignment[]; formData: JhaFormState; hazardLibrary: HazardLibraryEntry[]; serviceType: string; updateHazard: (index: number, field: keyof HazardEntry, value: string) => void; addHazardFromSuggestion: (hazard: (typeof commonHazards)[number] | HazardLibraryEntry) => void; addCustomHazard: () => void; removeHazard: (index: number) => void; isSaving: boolean } & HazardPhotoHandlers) {
   const [libraryView, setLibraryView] = useState<'relevant' | 'all'>('relevant');
   const [searchQuery, setSearchQuery] = useState('');
@@ -358,17 +757,37 @@ function HazardsStep({ personnelAssignments, formData, hazardLibrary, serviceTyp
     {(photosByHazardId.none ?? []).length > 0 ? <div className="rounded-lg border border-slate-200 bg-white p-3"><h3 className="text-sm font-semibold text-brand-900">General Photo Documentation</h3><div className="mt-4 grid gap-3 sm:grid-cols-2">{(photosByHazardId.none ?? []).map((photo) => <HazardPhotoCard key={photo.id} photo={photo} hazardOptions={formData.hazardEntries} disabled={isSaving} onUpdatePhoto={onUpdatePhoto} onRemovePhoto={onRemovePhoto} />)}</div></div> : null}
   </div>;
 }
+/**
+ * Renders the hazard card interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function HazardCard({ entry, index, personnelAssignments, photos, hazardOptions, isUploadingPhoto, updateHazard, removeHazard, onUploadPhoto, onUpdatePhoto, onRemovePhoto, disabled }: { entry: HazardEntry; index: number; personnelAssignments: JobPersonnelAssignment[]; photos: JobHazardPhoto[]; hazardOptions: HazardEntry[]; isUploadingPhoto: boolean; updateHazard: (index: number, field: keyof HazardEntry, value: string) => void; removeHazard: (index: number) => void; disabled: boolean } & Pick<HazardPhotoHandlers, 'onUploadPhoto' | 'onUpdatePhoto' | 'onRemovePhoto'>) {
   const ownerOptions = personnelAssignments.flatMap((assignment) => assignment.personnel ? [`${assignment.personnel.full_name} — ${assignment.assigned_role}`] : []);
   if (personnelAssignments.length > 1) ownerOptions.push('All Crew');
   if (entry.owner && !ownerOptions.includes(entry.owner)) ownerOptions.push(`${entry.owner} (previously recorded)`);
   return <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><h3 className="text-sm font-semibold text-brand-900">Hazard {index + 1}</h3><button type="button" className="text-sm font-medium text-red-700 disabled:text-slate-400" onClick={() => removeHazard(index)} disabled={disabled}>Remove</button></div><div className="mt-3 grid gap-4 sm:grid-cols-2"><TextArea label="Hazard name / description" value={entry.description} onChange={(value) => updateHazard(index, 'description', value)} disabled={disabled} /><TextInput label="Category" value={entry.category} onChange={(value) => updateHazard(index, 'category', value)} disabled={disabled} /><div className="sm:col-span-2"><TextArea label="Controls / Mitigation Measures" value={entry.mitigation} onChange={(value) => updateHazard(index, 'mitigation', value)} disabled={disabled} /></div><label className="block text-sm font-medium text-slate-700">Control Owner<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm" value={entry.owner ? (ownerOptions.includes(entry.owner) ? entry.owner : `${entry.owner} (previously recorded)`) : ''} onChange={(event) => updateHazard(index, 'owner', event.target.value.replace(/ \(previously recorded\)$/, ''))} disabled={disabled}><option value="">Select assigned personnel</option>{ownerOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select><span className="mt-1 block text-xs text-slate-500">Responsible for implementing, maintaining, or monitoring this control.</span></label></div><HazardPhotoEvidence entry={entry} photos={photos} hazardOptions={hazardOptions} isUploading={isUploadingPhoto} disabled={disabled} onUploadPhoto={onUploadPhoto} onUpdatePhoto={onUpdatePhoto} onRemovePhoto={onRemovePhoto} /></div>;
 }
+/**
+ * Renders the hazard photo evidence interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function HazardPhotoEvidence({ entry, photos, hazardOptions, isUploading, disabled, onUploadPhoto, onUpdatePhoto, onRemovePhoto }: { entry: HazardEntry; photos: JobHazardPhoto[]; hazardOptions: HazardEntry[]; isUploading: boolean; disabled: boolean } & Pick<HazardPhotoHandlers, 'onUploadPhoto' | 'onUpdatePhoto' | 'onRemovePhoto'>) { const [caption, setCaption] = useState(''); const [includeInPacket, setIncludeInPacket] = useState(true); const uploadInputId = `hazard-${entry.id}-upload`; const cameraInputId = `hazard-${entry.id}-camera`; async function handleFileChange(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; event.target.value = ''; if (!file) return; await onUploadPhoto(entry, file, { caption, includeInPacket }); setCaption(''); setIncludeInPacket(true); } return <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><div><h4 className="text-sm font-semibold text-brand-900">Add Photo Evidence</h4><p className="mt-1 text-xs text-slate-500">Attach proof that controls were implemented for this hazard.</p></div><span className="text-xs font-medium text-slate-500">{photos.length} photo{photos.length === 1 ? '' : 's'}</span></div><div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]"><TextInput label="Caption / notes for next photo" value={caption} onChange={setCaption} disabled={disabled || isUploading} /><div className="flex items-end"><Checkbox label="Include in Packet" checked={includeInPacket} onChange={setIncludeInPacket} disabled={disabled || isUploading} /></div></div><div className="mt-3 flex flex-col gap-2 sm:flex-row"><input id={uploadInputId} className="hidden" type="file" accept="image/*" onChange={handleFileChange} disabled={disabled || isUploading} /><input id={cameraInputId} className="hidden" type="file" accept="image/*" capture="environment" onChange={handleFileChange} disabled={disabled || isUploading} /><label htmlFor={uploadInputId} className={`min-h-11 cursor-pointer rounded-lg border border-slate-300 bg-white px-4 py-3 text-center text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:py-2 ${disabled || isUploading ? 'pointer-events-none opacity-50' : ''}`}>Upload File</label><label htmlFor={cameraInputId} className={`min-h-11 cursor-pointer rounded-lg bg-brand-700 px-4 py-3 text-center text-sm font-medium text-white transition hover:bg-brand-900 sm:py-2 ${disabled || isUploading ? 'pointer-events-none opacity-50' : ''}`}>{isUploading ? 'Optimizing & Uploading...' : 'Take Photo'}</label></div>{photos.length > 0 ? <div className="mt-4 grid gap-3 sm:grid-cols-2">{photos.map((photo) => <HazardPhotoCard key={photo.id} photo={photo} hazardOptions={hazardOptions} disabled={disabled} onUpdatePhoto={onUpdatePhoto} onRemovePhoto={onRemovePhoto} />)}</div> : <p className="mt-3 rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No evidence photos attached to this hazard yet.</p>}</div>; }
+/**
+ * Renders the hazard photo card interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function HazardPhotoCard({ photo, hazardOptions, disabled, onUpdatePhoto, onRemovePhoto }: { photo: JobHazardPhoto; hazardOptions: HazardEntry[]; disabled: boolean } & Pick<HazardPhotoHandlers, 'onUpdatePhoto' | 'onRemovePhoto'>) { return <article className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"><img className="h-40 w-full object-cover" src={photo.thumbnail_display_url ?? photo.display_url ?? getStoragePathUrl(photo.thumbnail_url ?? photo.photo_url)} alt={photo.caption || `${photo.hazard_name} evidence photo`} /><div className="space-y-3 p-3"><label className="block text-sm font-medium text-slate-700">Caption<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100" defaultValue={photo.caption ?? ''} onBlur={(event) => void onUpdatePhoto(photo, { caption: event.target.value.trim() || null, include_in_packet: photo.include_in_packet })} disabled={disabled} /></label><p className="text-xs text-slate-500">Uploaded {photo.created_at ? new Date(photo.created_at).toLocaleString() : 'just now'}</p><label className="block text-sm font-medium text-slate-700">Related Hazard<select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100" value={photo.hazard_id ?? 'none'} onChange={(event) => { const selected = hazardOptions.find((hazard) => hazard.id === event.target.value); void onUpdatePhoto(photo, { caption: photo.caption, include_in_packet: photo.include_in_packet, hazard_id: selected?.id ?? null, hazard_name: selected?.description || 'None' }); }} disabled={disabled}><option value="none">None</option>{hazardOptions.map((hazard) => <option key={hazard.id} value={hazard.id}>{hazard.description || 'Documented hazard'}</option>)}</select></label><Checkbox label="Include in Packet" checked={photo.include_in_packet} onChange={(checked) => void onUpdatePhoto(photo, { caption: photo.caption, include_in_packet: checked })} disabled={disabled} /><button type="button" className="min-h-11 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:text-slate-400" onClick={() => void onRemovePhoto(photo)} disabled={disabled}>Remove Photo</button></div></article>; }
+/**
+ * Renders the certification step interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function CertificationStep({ formData, updateField, togglePpe, toggleFormArrayField, isSaving, jobId, safetyDesignation, rpic, currentUserId, attestations, onAttest }: StepProps & { togglePpe: (option: string) => void; toggleFormArrayField: (field: 'runoffContaminants' | 'communicationMethods', value: string) => void; jobId: string; safetyDesignation: SafetyDesignation; rpic: RolePerson | null; currentUserId: string; attestations: JhaAttestations; onAttest: (kind: 'safety-manager' | 'rpic') => Promise<void> }) {
   const safetyManager = safetyDesignation?.personnel ?? null;
   const dualRole = Boolean(safetyManager && rpic && safetyManager.id === rpic.id);
+  /**
+   * Computes format attestation time for the surrounding workflow.
+   * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+   */
   const formatAttestationTime = (value: string | null) => value ? new Date(value).toLocaleString() : 'Pending';
   return <div className="space-y-5">
     <fieldset><legend className="text-sm font-medium text-slate-700">PPE Requirements</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{ppeOptions.map((option) => <Checkbox key={option} label={option} checked={Boolean(formData.ppeRequirements[option])} onChange={() => togglePpe(option)} disabled={isSaving} />)}</div></fieldset>
@@ -384,7 +803,16 @@ function CertificationStep({ formData, updateField, togglePpe, toggleFormArrayFi
   </div>;
 }
 
+/**
+ * Purpose: Defines the input contract accepted by the field component.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type FieldProps = { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; required?: boolean; placeholder?: string };
+/**
+ * Renders the locked field interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function LockedField({ label, value, helperText, editHref, editLabel, type = 'text' }: { label: string; value: string; helperText: string; editHref: string; editLabel: string; type?: string }) {
   return (
     <label className="block text-sm font-medium text-slate-700">
@@ -397,7 +825,23 @@ function LockedField({ label, value, helperText, editHref, editLabel, type = 'te
     </label>
   );
 }
+/**
+ * Renders the text input interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function TextInput({ label, value, onChange, disabled, required, placeholder, type = 'text' }: FieldProps & { type?: string }) { return <label className="block text-sm font-medium text-slate-700">{label}{required ? <span className="text-red-600"> *</span> : null}<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm" type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} disabled={disabled} /></label>; }
+/**
+ * Implements text area for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function TextArea({ label, value, onChange, disabled }: FieldProps) { return <label className="block text-sm font-medium text-slate-700">{label}<textarea className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} /></label>; }
+/**
+ * Renders the select input interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function SelectInput({ label, value, options, onChange, disabled, required }: FieldProps & { options: string[] }) { return <label className="block text-sm font-medium text-slate-700">{label}{required ? <span className="text-red-600"> *</span> : null}<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>{options.map((option) => <option key={option || 'blank'} value={option}>{option || 'Select one'}</option>)}</select></label>; }
+/**
+ * Implements checkbox for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function Checkbox({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) { return <label className="flex items-start gap-3 text-sm font-medium text-slate-700"><input className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} disabled={disabled} /><span>{label}</span></label>; }

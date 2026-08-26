@@ -1,7 +1,17 @@
+/**
+ * File purpose: Provides generated documents domain utilities and service adapters shared by the application.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { supabase } from '@frontend/lib/supabase';
 
 export const generatedDocumentsBucket = 'generated-documents';
 
+/**
+ * Purpose: Defines the generated document type data contract used by the generated documents module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 export type GeneratedDocumentType =
   | 'proposal_pdf'
   | 'job_packet_pdf'
@@ -12,12 +22,22 @@ export type GeneratedDocumentType =
   | 'preflight_packet_pdf'
   | 'jha_packet_pdf';
 
+/**
+ * Purpose: Defines the generated document record type data contract used by the generated documents module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 export type GeneratedDocumentRecordType =
   | 'proposal'
   | 'job'
   | 'incident'
   | 'organization';
 
+/**
+ * Purpose: Represents generated document record data read, written, or rendered by the generated documents workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 export type GeneratedDocumentRecord = {
   id: string;
   organization_id: string;
@@ -35,6 +55,11 @@ export type GeneratedDocumentRecord = {
   created_at: string;
 };
 
+/**
+ * Purpose: Maps document type labels values to the canonical metadata consumed by generated documents.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const documentTypeLabels: Record<GeneratedDocumentType, string> = {
   proposal_pdf: 'Proposal PDF',
   job_packet_pdf: 'Job Packet PDF',
@@ -46,10 +71,18 @@ const documentTypeLabels: Record<GeneratedDocumentType, string> = {
   jha_packet_pdf: 'JHA Packet PDF',
 };
 
+/**
+ * Computes get generated document type label for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function getGeneratedDocumentTypeLabel(type: GeneratedDocumentType) {
   return documentTypeLabels[type] ?? type.replace(/_/g, ' ');
 }
 
+/**
+ * Computes format file size for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function formatFileSize(bytes: number | null | undefined) {
   if (!bytes || bytes < 0) return 'Unknown size';
   if (bytes < 1024) return `${bytes} B`;
@@ -63,6 +96,11 @@ export function formatFileSize(bytes: number | null | undefined) {
   return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
+/**
+ * Purpose: Defines the load generated documents input data contract used by the generated documents module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type LoadGeneratedDocumentsInput = {
   recordType: GeneratedDocumentRecordType;
   recordIds: string[];
@@ -70,6 +108,10 @@ type LoadGeneratedDocumentsInput = {
   includeArchived?: boolean;
 };
 
+/**
+ * Performs load generated documents for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 export async function loadGeneratedDocuments({
   recordType,
   recordIds,
@@ -97,6 +139,10 @@ export async function loadGeneratedDocuments({
   return (data ?? []) as GeneratedDocumentRecord[];
 }
 
+/**
+ * Computes get generated document file name for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function getGeneratedDocumentFileName(document: GeneratedDocumentRecord) {
   const storageFileName = document.storage_path.split('/').pop();
   return (
@@ -107,6 +153,10 @@ export function getGeneratedDocumentFileName(document: GeneratedDocumentRecord) 
   );
 }
 
+/**
+ * Performs open generated document for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 export async function openGeneratedDocument(document: GeneratedDocumentRecord) {
   const { data, error } = await supabase.storage
     .from(generatedDocumentsBucket)
@@ -116,6 +166,10 @@ export async function openGeneratedDocument(document: GeneratedDocumentRecord) {
   window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
 }
 
+/**
+ * Performs download generated document for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 export async function downloadGeneratedDocument(document: GeneratedDocumentRecord) {
   const { data, error } = await supabase.storage
     .from(generatedDocumentsBucket)
@@ -133,6 +187,11 @@ export async function downloadGeneratedDocument(document: GeneratedDocumentRecor
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Purpose: Defines the save generated document input data contract used by the generated documents module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type SaveGeneratedDocumentInput = {
   blob: Blob;
   organizationId: string;
@@ -145,6 +204,10 @@ type SaveGeneratedDocumentInput = {
   storagePath: string;
 };
 
+/**
+ * Performs save generated document for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 export async function saveGeneratedDocument({
   blob,
   organizationId,
@@ -184,6 +247,10 @@ export async function saveGeneratedDocument({
   if (insertError) throw insertError;
 }
 
+/**
+ * Computes get current generated document user id for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 async function getCurrentGeneratedDocumentUserId() {
   const { data: sessionData } = await supabase.auth.getSession();
   const sessionUserId = sessionData.session?.user.id;
@@ -197,6 +264,10 @@ async function getCurrentGeneratedDocumentUserId() {
   return userId;
 }
 
+/**
+ * Performs archive generated document for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 export async function archiveGeneratedDocument(documentId: string) {
   const { error } = await supabase
     .from('generated_documents')

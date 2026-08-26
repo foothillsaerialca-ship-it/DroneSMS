@@ -1,4 +1,12 @@
+/**
+ * File purpose: Provides proposal pdf domain utilities and service adapters shared by the application.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { supabase } from '@frontend/lib/supabase';
+import {
+  normalizeProposalEquipment
+} from '@frontend/features/jobs/lib/workflow-types';
 import { saveGeneratedDocument } from '@frontend/features/jobs/lib/generated-documents';
 import {
   getOrganizationLogoUrl,
@@ -40,13 +48,28 @@ const COMPANY_HEADER_CONTENT_GAP = 18;
 const CONTENT_START_Y = PAGE_HEIGHT - COMPANY_HEADER_RESERVED_HEIGHT - COMPANY_HEADER_CONTENT_GAP;
 
 
+/**
+ * Purpose: Defines the proposal document kind data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 export type ProposalDocumentKind = 'proposal' | 'operational-packet';
 
+/**
+ * Purpose: Defines the ordered document types used for UI choices and workflow decisions in proposal pdf.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 export const documentTypes: Record<ProposalDocumentKind, { label: string; implemented: boolean }> = {
   proposal: { label: 'Proposal PDF', implemented: true },
   'operational-packet': { label: 'Operational Packet PDF', implemented: false },
 };
 
+/**
+ * Purpose: Represents proposal pdf record data read, written, or rendered by the proposal pdf workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type ProposalPdfRecord = {
   id: string;
   organization_id: string;
@@ -84,24 +107,60 @@ type ProposalPdfRecord = {
   created_at: string | null;
 };
 
-type ProposalEquipmentAssignment = {
-  equipment_id: string;
-  equipment_name: string;
-  equipment_type: string;
-  make: string | null;
-  model: string | null;
-  purpose: string;
-};
-
+/**
+ * Purpose: Defines the pdf image data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PdfImage = { bytes: Uint8Array; width: number; height: number };
+/**
+ * Purpose: Defines the packet photo image data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PacketPhotoImage = PdfImage & { id: string; caption: string | null; timestamp: string | null; hazardId: string | null; hazardName: string | null; photoUrl: string; category: string | null };
+/**
+ * Purpose: Defines the toc group data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type TocGroup = { title: string; items: string[] };
+/**
+ * Purpose: Defines the table column data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type TableColumn = { header: string; width: number; align?: 'left' | 'right' | 'center' };
+/**
+ * Purpose: Defines the table cell data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type TableCell = string | number | null | undefined;
+/**
+ * Purpose: Defines the table options data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type TableOptions = { totalRowIndex?: number; minRowHeight?: number; avoidSingleRowContinuation?: boolean };
+/**
+ * Purpose: Represents the complete page state used by the proposal pdf workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PageState = { commands: string[]; contentId: number; pageId: number };
+/**
+ * Purpose: Defines the pdf object value data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PdfObjectValue = string | Uint8Array;
 
+/**
+ * Purpose: Encapsulates pdf builder behavior and its internal state for the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 class PdfBuilder {
   private readonly objects: PdfObjectValue[] = [];
   private readonly pages: PageState[] = [];
@@ -116,6 +175,10 @@ class PdfBuilder {
   private logo: PdfImage | null = null;
   private imageXObjects: Array<{ name: string; id: number }> = [];
 
+  /**
+   * Initializes PDF object registries, built-in fonts, graphics states, and an optional JPEG logo.
+   * Fallback/error behavior: a null logo produces an unbranded document; invalid image bytes fail when the PDF is rendered or opened.
+   */
   constructor(logo: PdfImage | null) {
     this.catalogId = this.addObject('');
     this.pagesId = this.addObject('');
@@ -134,6 +197,10 @@ class PdfBuilder {
     }
   }
 
+  /**
+   * Renders the add interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   addPage() {
     const contentId = this.addObject('');
     const pageId = this.addObject('');
@@ -142,10 +209,18 @@ class PdfBuilder {
     return page;
   }
 
+  /**
+   * Computes get logo for the surrounding workflow.
+   * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+   */
   getLogo() {
     return this.logo;
   }
 
+  /**
+   * Performs draw text for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   drawText(page: PageState, text: string, x: number, y: number, options: { size?: number; color?: string; font?: 'regular' | 'bold' | 'oblique'; align?: 'left' | 'right' | 'center' } = {}) {
     const size = options.size ?? 10;
     const fontName = options.font === 'bold' ? 'F2' : options.font === 'oblique' ? 'F3' : 'F1';
@@ -156,6 +231,10 @@ class PdfBuilder {
     page.commands.push(`BT /${fontName} ${formatNumber(size)} Tf ${formatNumber(color.r)} ${formatNumber(color.g)} ${formatNumber(color.b)} rg ${formatNumber(drawX)} ${formatNumber(y)} Td <${pdfTextHex(cleanText)}> Tj ET`);
   }
 
+  /**
+   * Performs draw wrapped text for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   drawWrappedText(page: PageState, text: string, x: number, y: number, maxWidth: number, options: { size?: number; color?: string; font?: 'regular' | 'bold' | 'oblique'; lineHeight?: number; align?: 'left' | 'right' | 'center' } = {}) {
     const size = options.size ?? 10;
     const lineHeight = options.lineHeight ?? size + 4;
@@ -165,11 +244,19 @@ class PdfBuilder {
     return y - lines.length * lineHeight;
   }
 
+  /**
+   * Performs draw line for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   drawLine(page: PageState, x1: number, y1: number, x2: number, y2: number, color = BLUE, width = 1) {
     const rgb = hexToRgb(color);
     page.commands.push(`${formatNumber(rgb.r)} ${formatNumber(rgb.g)} ${formatNumber(rgb.b)} RG ${formatNumber(width)} w ${formatNumber(x1)} ${formatNumber(y1)} m ${formatNumber(x2)} ${formatNumber(y2)} l S`);
   }
 
+  /**
+   * Performs draw rect for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   drawRect(page: PageState, x: number, y: number, width: number, height: number, options: { fill?: string; stroke?: string; strokeWidth?: number; opacity?: number } = {}) {
     const segments: string[] = [];
     if (options.opacity !== undefined && options.opacity < 1) segments.push('q /GS2 gs');
@@ -187,6 +274,10 @@ class PdfBuilder {
     page.commands.push(segments.join(' '));
   }
 
+  /**
+   * Performs draw image for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   drawImage(page: PageState, x: number, y: number, width: number, height: number, opacity = 1) {
     if (!this.logoImageId) return;
     page.commands.push('q');
@@ -197,6 +288,10 @@ class PdfBuilder {
 
 
 
+  /**
+   * Performs add jpeg image for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   addJpegImage(image: PdfImage) {
     const name = `Img${this.imageXObjects.length + 1}`;
     const id = this.addStream(
@@ -207,12 +302,20 @@ class PdfBuilder {
     return name;
   }
 
+  /**
+   * Performs draw named image for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   drawNamedImage(page: PageState, name: string, x: number, y: number, width: number, height: number) {
     page.commands.push('q');
     page.commands.push(`${formatNumber(width)} 0 0 ${formatNumber(height)} ${formatNumber(x)} ${formatNumber(y)} cm /${name} Do`);
     page.commands.push('Q');
   }
 
+  /**
+   * Performs draw circular image for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   drawCircularImage(page: PageState, centerX: number, centerY: number, diameter: number, opacity = 1) {
     const logo = this.logo;
     if (!this.logoImageId || !logo) return;
@@ -235,6 +338,10 @@ class PdfBuilder {
     page.commands.push('Q');
   }
 
+  /**
+   * Performs append pdf pages for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   appendPdfPages(bytes: Uint8Array) {
     const binary = bytesToBinaryString(bytes);
     const objectMatches = [...binary.matchAll(/(\d+)\s+(\d+)\s+obj\s*([\s\S]*?)\s*endobj/g)];
@@ -267,6 +374,10 @@ class PdfBuilder {
     return pageSourceIds.length;
   }
 
+  /**
+   * Performs save for the surrounding workflow.
+   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+   */
   save() {
     for (const page of this.pages) {
       if (!page.contentId) continue;
@@ -300,27 +411,48 @@ class PdfBuilder {
     return new Blob(chunks, { type: 'application/pdf' });
   }
 
+  /**
+   * Performs add object for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private addObject(value: string) {
     this.objects.push(value);
     return this.objects.length;
   }
 
+  /**
+   * Performs set object for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private setObject(id: number, value: PdfObjectValue) {
     this.objects[id - 1] = value;
   }
 
+  /**
+   * Performs add stream for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private addStream(bytes: Uint8Array, dictionary: string) {
     this.objects.push(`${dictionary}\nstream\n${bytesToHexString(bytes)}>\nendstream`);
     return this.objects.length;
   }
 }
 
+/**
+ * Purpose: Encapsulates proposal pdf renderer behavior and its internal state for the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 class ProposalPdfRenderer {
   private currentPage: PageState;
   private pageNumber = 0;
   private y = PAGE_HEIGHT - 118;
   private includeProposalEnhancements = true;
 
+  /**
+   * Initializes proposal rendering state and allocates the first PDF page.
+   * Fallback/error behavior: nullable organization data is handled by downstream display defaults; PDF allocation failures propagate.
+   */
   constructor(
     private readonly pdf: PdfBuilder,
     private readonly proposal: ProposalPdfRecord,
@@ -329,11 +461,19 @@ class ProposalPdfRenderer {
     this.currentPage = this.pdf.addPage();
   }
 
+  /**
+   * Performs render for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   render() {
     this.renderCover();
     this.renderProposalContent();
   }
 
+  /**
+   * Performs render proposal content for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   renderProposalContent(options: { sectionTitle?: string; includeProposalEnhancements?: boolean } = {}) {
     const includeProposalEnhancements = options.includeProposalEnhancements ?? true;
     this.includeProposalEnhancements = includeProposalEnhancements;
@@ -428,6 +568,10 @@ class ProposalPdfRenderer {
     this.acceptanceBlock();
   }
 
+  /**
+   * Performs render closeout cover for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   renderCloseoutCover(rows: Array<[string, string]>) {
     this.pageNumber = 1;
     this.watermark(this.currentPage);
@@ -454,6 +598,10 @@ class ProposalPdfRenderer {
     this.footer(this.currentPage, this.pageNumber);
   }
 
+  /**
+   * Performs render table of contents for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   renderTableOfContents(groups: TocGroup[]) {
     this.startContentPage(false);
     this.pdf.drawText(this.currentPage, 'TABLE OF CONTENTS', MARGIN, this.y, { size: 15, font: 'bold', color: NAVY });
@@ -472,6 +620,10 @@ class ProposalPdfRenderer {
     });
   }
 
+  /**
+   * Performs render cover for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private renderCover() {
     this.pageNumber = 1;
     this.watermark(this.currentPage);
@@ -494,6 +646,10 @@ class ProposalPdfRenderer {
     this.footer(this.currentPage, this.pageNumber);
   }
 
+  /**
+   * Renders the start content interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   startContentPage(showPageNumber = true) {
     this.pageNumber += 1;
     this.currentPage = this.pdf.addPage();
@@ -503,6 +659,10 @@ class ProposalPdfRenderer {
     this.y = CONTENT_START_Y;
   }
 
+  /**
+   * Implements header for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private header(page: PageState) {
     const companyName = companyNameFor(this.organization);
     const credentials = this.includeProposalEnhancements && this.organization?.includeCompanyCredentialsInProposal !== false ? buildCompanyCredentials(this.organization) : '';
@@ -515,6 +675,10 @@ class ProposalPdfRenderer {
     if (logo) this.pdf.drawImage(page, PAGE_WIDTH - 88, PAGE_HEIGHT - 54, 31, (31 * logo.height) / logo.width);
   }
 
+  /**
+   * Implements footer for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private footer(page: PageState, pageNumber: number) {
     const y = 24;
     this.pdf.drawText(page, 'Prepared Using DroneSMS', MARGIN, y, { size: 7, color: GRAY });
@@ -522,6 +686,10 @@ class ProposalPdfRenderer {
     if (pageNumber > 1) this.pdf.drawText(page, `Page ${pageNumber}`, PAGE_WIDTH - MARGIN, y, { size: 7, color: GRAY, align: 'right' });
   }
 
+  /**
+   * Implements watermark for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private watermark(page: PageState) {
     const logo = this.pdf.getLogo();
     if (logo) {
@@ -531,6 +699,10 @@ class ProposalPdfRenderer {
     this.pdf.drawText(page, companyNameFor(this.organization), PAGE_WIDTH / 2, PAGE_HEIGHT / 2, { size: 36, font: 'bold', color: LIGHT_GRAY, align: 'center' });
   }
 
+  /**
+   * Implements section for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   section(title: string, subtitle?: string, firstContentHeight = 0) {
     const subtitleHeight = subtitle ? SECTION_SUBTITLE_GAP + 11 + SECTION_SUBTITLE_BOTTOM_GAP : 0;
     this.ensureSpace(this.sectionHeaderHeight() + subtitleHeight + firstContentHeight);
@@ -541,6 +713,10 @@ class ProposalPdfRenderer {
     }
   }
 
+  /**
+   * Implements major section for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   majorSection(title: string) {
     this.ensureSpace(this.sectionHeaderHeight());
     this.y -= SECTION_HEADER_TOP_PADDING;
@@ -553,6 +729,10 @@ class ProposalPdfRenderer {
     this.y -= SECTION_HEADER_LINE_GAP + SECTION_HEADER_BOTTOM_GAP;
   }
 
+  /**
+   * Performs draw section header for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private drawSectionHeader(title: string) {
     this.y -= SECTION_HEADER_TOP_PADDING;
     const topLineY = this.y;
@@ -564,10 +744,18 @@ class ProposalPdfRenderer {
     this.y = bottomLineY - SECTION_HEADER_BOTTOM_GAP;
   }
 
+  /**
+   * Implements section header height for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private sectionHeaderHeight() {
     return SECTION_HEADER_TOP_PADDING + SECTION_HEADER_LINE_GAP + SECTION_HEADER_BOTTOM_GAP;
   }
 
+  /**
+   * Implements legacy section for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private legacySection(title: string, subtitle?: string) {
     this.ensureSpace(subtitle ? 48 : 34);
     this.pdf.drawText(this.currentPage, title, MARGIN, this.y, { size: 12.5, font: 'bold', color: NAVY });
@@ -576,6 +764,10 @@ class ProposalPdfRenderer {
     if (subtitle) this.y = this.pdf.drawWrappedText(this.currentPage, subtitle, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 8.6, font: 'oblique', color: GRAY, lineHeight: 11 }) - 3;
   }
 
+  /**
+   * Implements paragraph for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   paragraph(text: string, spacing = 16) {
     const paragraphs = text.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
     if (paragraphs.length === 0) return;
@@ -587,6 +779,10 @@ class ProposalPdfRenderer {
     });
   }
 
+  /**
+   * Implements bullets for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   bullets(items: string[]) {
     for (const item of items) {
       this.ensureSpace(21);
@@ -596,15 +792,27 @@ class ProposalPdfRenderer {
     this.y -= 6;
   }
 
+  /**
+   * Implements key value table for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   keyValueTable(rows: Array<[string, string]>) {
     this.table([['Item', 'Details'], ...rows], [155, 332]);
   }
 
+  /**
+   * Implements table for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   table(rows: TableCell[][], columnWidths: number[], options: TableOptions = {}) {
     const columns = rows[0].map((header, index) => ({ header: String(header ?? ''), width: columnWidths[index] ?? 100 }));
     this.drawTable(columns, rows.slice(1), options);
   }
 
+  /**
+   * Renders the image document interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   imageDocumentPage(title: string, rows: Array<[string, string]>, image: PdfImage) {
     this.startContentPage();
     this.legacySection(title);
@@ -621,6 +829,10 @@ class ProposalPdfRenderer {
     this.y = y - 14;
   }
 
+  /**
+   * Performs draw table for the surrounding workflow.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private drawTable(columns: TableColumn[], rows: TableCell[][], options: TableOptions) {
     const x = MARGIN;
     const tableWidth = columns.reduce((sum, column) => sum + column.width, 0);
@@ -628,6 +840,10 @@ class ProposalPdfRenderer {
     const rowLineSets = rows.map((row) => row.map((cell, cellIndex) => wrapText(normalizeTableCellText(cell), columns[cellIndex].width - 12, 8)));
     const rowHeights = rowLineSets.map((cellLines) => Math.max(options.minRowHeight ?? 21, ...cellLines.map((lines) => lines.length * 10 + 10)));
 
+    /**
+     * Performs draw header for the surrounding workflow.
+     * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+     */
     const drawHeader = () => {
       this.ensureSpace(headerHeight + Math.min(rowHeights[0] ?? 21, 42) + 10);
       this.pdf.drawRect(this.currentPage, x, this.y - headerHeight + 6, tableWidth, headerHeight, { fill: NAVY });
@@ -676,6 +892,10 @@ class ProposalPdfRenderer {
     this.y -= 12;
   }
 
+  /**
+   * Implements cover info block for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private coverInfoBlock(startY: number) {
     const rows: Array<[string, string]> = [
       ['Proposal Number', proposalNumber(this.proposal)],
@@ -701,6 +921,10 @@ class ProposalPdfRenderer {
   }
 
 
+  /**
+   * Implements acceptance block for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private acceptanceBlock() {
     const acceptanceText = 'Signature constitutes acceptance of the scope, pricing, and conditions in this proposal.';
     const headingHeight = 34;
@@ -712,6 +936,10 @@ class ProposalPdfRenderer {
     this.signatureBlock();
   }
 
+  /**
+   * Implements signature block for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   private signatureBlock() {
     const panelHeight = 116;
     this.ensureSpace(panelHeight + 12);
@@ -732,17 +960,29 @@ class ProposalPdfRenderer {
     this.y = panelY - 10;
   }
 
+  /**
+   * Renders the signature field interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   private signatureField(label: string, x: number, y: number, width: number) {
     this.pdf.drawLine(this.currentPage, x, y, x + width, y, LIGHT_GRAY, 1);
     this.pdf.drawText(this.currentPage, label, x, y - 11, { size: 7.6, font: 'regular', color: GRAY });
   }
 
+  /**
+   * Implements ensure space for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   ensureSpace(required: number) {
     if (this.y - required > 52) return;
     this.startContentPage();
   }
 }
 
+/**
+ * Performs generate proposal pdf for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 export async function generateProposalPdf(proposalId: string) {
   const proposal = await loadProposalForPdf(proposalId);
   const organization = proposal.organization_id ? await loadOrganizationSettingsById(proposal.organization_id) : null;
@@ -765,19 +1005,68 @@ export async function generateProposalPdf(proposalId: string) {
 
 
 
+/**
+ * Purpose: Represents job packet record data read, written, or rendered by the proposal pdf workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPacketRecord = {
   id: string; organization_id: string; user_id: string | null; name: string; service_type: string | null; location: string | null; planned_date: string | null; status: string | null; source_proposal_id: string | null; source_proposal_number: string | null; client_name?: string | null; site_address?: string | null;
 };
 
+/**
+ * Purpose: Defines the job packet personnel assignment data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: { full_name: string | null; role: string | null; part_107_expiration_date: string | null; training_expiration_date: string | null; status: string | null } | null };
+/**
+ * Purpose: Represents job packet equipment reference document data read, written, or rendered by the proposal pdf workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPacketEquipmentReferenceDocument = { document_type: string; file_name: string | null; display_file_name: string | null; storage_path: string | null; mime_type: string | null; created_at: string | null };
+/**
+ * Purpose: Defines the job packet equipment assignment data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipment_type: string | null; status: string | null; make?: string | null; product_category?: string | null; typical_mix_ratio?: string | null; application_notes?: string | null; equipment_reference_documents?: JobPacketEquipmentReferenceDocument[] } | null };
+/**
+ * Purpose: Defines the job packet safety event data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
+/**
+ * Purpose: Defines the job packet jha data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPacketJha = { status: string | null; faa_airspace_class: string | null; laanc_required: string | null; relevant_airport_heliport: string | null; nearby_airport_heliport?: string | null; known_airspace_restrictions: string | null; additional_authorization_required: string | null; nearest_hospital: string | null; emergency_facility_address: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; ppe_requirements: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
+/**
+ * Purpose: Defines the job packet preflight data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPacketPreflight = Record<string, boolean | string | null> & { status: string | null; notes?: string | null; final_rpic_approval?: boolean | null };
+/**
+ * Purpose: Defines the job packet closeout data contract used by the proposal pdf module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
+/**
+ * Purpose: Represents job packet photo data read, written, or rendered by the proposal pdf workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPacketPhoto = { id: string; hazard_id: string | null; hazard_name: string | null; photo_url: string; caption: string | null; include_in_packet: boolean; created_at: string | null; category?: string | null };
 
+/**
+ * Performs generate job packet pdf for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 export async function generateJobPacketPdf(jobId: string) {
   const packet = await loadJobPacketForPdf(jobId);
   const organization = await loadOrganizationSettingsById(packet.job.organization_id);
@@ -844,6 +1133,10 @@ export async function generateJobPacketPdf(jobId: string) {
   } catch (error) { console.error('Unable to save job packet PDF to DroneSMS records.', error); return { saved: false, error }; }
 }
 
+/**
+ * Performs load job packet for pdf for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 async function loadJobPacketForPdf(jobId: string) {
   const [jobResult, assignmentsResult, equipmentResult, safetyResult, jhaResult, preflightResult, closeoutResult, documentsResult, photosResult] = await Promise.all([
     supabase.from('jobs').select('id, organization_id, user_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number, client_name, site_address').eq('id', jobId).single(),
@@ -863,6 +1156,10 @@ async function loadJobPacketForPdf(jobId: string) {
 }
 
 
+/**
+ * Performs render chemical reference appendix for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 async function renderChemicalReferenceAppendix(renderer: ProposalPdfRenderer, assignments: JobPacketEquipmentAssignment[], pdf: PdfBuilder) {
   const documentOrder = ['Safety Data Sheet (SDS)', 'Product Label', 'Technical Data Sheet (TDS)'];
   const documentLabel: Record<string, string> = { 'Safety Data Sheet (SDS)': 'SDS', 'Product Label': 'Product Label', 'Technical Data Sheet (TDS)': 'TDS' };
@@ -932,6 +1229,10 @@ async function renderChemicalReferenceAppendix(renderer: ProposalPdfRenderer, as
   }
 }
 
+/**
+ * Performs download equipment reference document for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 async function downloadEquipmentReferenceDocument(storagePath: string | null) {
   if (!storagePath) throw new Error('Missing equipment reference document storage path.');
   const { data, error } = await supabase.storage.from('equipment-reference-documents').download(storagePath);
@@ -940,12 +1241,20 @@ async function downloadEquipmentReferenceDocument(storagePath: string | null) {
   return new Uint8Array(await data.arrayBuffer());
 }
 
+/**
+ * Determines is pdf document for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isPdfDocument(document: JobPacketEquipmentReferenceDocument, bytes: Uint8Array) {
   const mimeType = document.mime_type?.toLowerCase() ?? '';
   const fileName = `${document.display_file_name ?? ''} ${document.file_name ?? ''}`.toLowerCase();
   return mimeType.includes('pdf') || fileName.includes('.pdf') || bytesToBinaryString(bytes.slice(0, 5)) === '%PDF-';
 }
 
+/**
+ * Performs decode reference image for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 async function decodeReferenceImage(bytes: Uint8Array, mimeType: string | null, fileName: string) {
   const jpegDimensions = readJpegDimensions(bytes);
   if (jpegDimensions) return { ...jpegDimensions, bytes };
@@ -969,6 +1278,10 @@ async function decodeReferenceImage(bytes: Uint8Array, mimeType: string | null, 
   return dimensions ? { ...dimensions, bytes: jpegBytes } : null;
 }
 
+/**
+ * Computes build closeout cover rows for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildCloseoutCoverRows(packet: Awaited<ReturnType<typeof loadJobPacketForPdf>>, proposal: ProposalPdfRecord, organization: OrganizationSettings | null): Array<[string, string]> {
   return [
     ['Project / Job Name', clean(packet.job.name)],
@@ -984,10 +1297,18 @@ function buildCloseoutCoverRows(packet: Awaited<ReturnType<typeof loadJobPacketF
   ].filter((row): row is [string, string] => Boolean(row[1]));
 }
 
+/**
+ * Computes get job hazard entries for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getJobHazardEntries(jha: JobPacketJha | null) {
   return Array.isArray(jha?.hazard_entries) ? (jha.hazard_entries as Array<Record<string, unknown>>) : [];
 }
 
+/**
+ * Performs load packet photo images for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 async function loadPacketPhotoImages(photos: JobPacketPhoto[]): Promise<PacketPhotoImage[]> {
   const loaded = await Promise.all(photos.map(async (photo) => {
     try {
@@ -1006,6 +1327,10 @@ async function loadPacketPhotoImages(photos: JobPacketPhoto[]): Promise<PacketPh
   return loaded.filter(Boolean) as PacketPhotoImage[];
 }
 
+/**
+ * Computes read jpeg dimensions for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function readJpegDimensions(bytes: Uint8Array): Pick<PdfImage, 'width' | 'height'> | null {
   if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
   let offset = 2;
@@ -1019,6 +1344,10 @@ function readJpegDimensions(bytes: Uint8Array): Pick<PdfImage, 'width' | 'height
   return null;
 }
 
+/**
+ * Computes build closeout table of contents for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildCloseoutTableOfContents(packet: Awaited<ReturnType<typeof loadJobPacketForPdf>>, photos: PacketPhotoImage[]): TocGroup[] {
   const environmentalRows = buildEnvironmentalRows(packet.jha);
   return [
@@ -1028,6 +1357,10 @@ function buildCloseoutTableOfContents(packet: Awaited<ReturnType<typeof loadJobP
   ];
 }
 
+/**
+ * Renders the render jha summary interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function renderJhaSummary(renderer: ProposalPdfRenderer, pdf: PdfBuilder, jha: JobPacketJha | null, photos: PacketPhotoImage[]) {
   const entries = getJobHazardEntries(jha);
   if (!entries.length) {
@@ -1043,11 +1376,19 @@ function renderJhaSummary(renderer: ProposalPdfRenderer, pdf: PdfBuilder, jha: J
   });
 }
 
+/**
+ * Performs render photo documentation for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function renderPhotoDocumentation(renderer: ProposalPdfRenderer, pdf: PdfBuilder, photos: PacketPhotoImage[]) {
   renderer.section('PHOTO DOCUMENTATION');
   renderPhotoGrid(renderer, pdf, 'General Documentation', photos);
 }
 
+/**
+ * Performs render photo grid for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function renderPhotoGrid(renderer: ProposalPdfRenderer, pdf: PdfBuilder, title: string, photos: PacketPhotoImage[]) {
   renderer.ensureSpace(34);
   (pdf as any).drawText((renderer as any).currentPage, title, MARGIN, (renderer as any).y, { size: 10, font: 'bold', color: BLUE });
@@ -1071,6 +1412,10 @@ function renderPhotoGrid(renderer: ProposalPdfRenderer, pdf: PdfBuilder, title: 
   });
 }
 
+/**
+ * Computes format photo timestamp for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatPhotoTimestamp(value: string | null) {
   if (!value) return '';
   const date = new Date(value);
@@ -1079,12 +1424,20 @@ function formatPhotoTimestamp(value: string | null) {
 }
 
 
+/**
+ * Computes build preflight rows for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildPreflightRows(preflight: JobPacketPreflight | null) {
   if (!preflight) return [['Status', 'Preflight checklist not started.']];
   const labels: Record<string, string> = { aircraft_selected: 'Aircraft selected', battery_condition_checked: 'Battery condition checked', propellers_inspected: 'Propellers inspected', firmware_app_status_checked: 'Firmware/app status checked', gps_signal_confirmed: 'GPS signal confirmed', home_point_verified: 'Home point verified', storage_media_checked: 'Storage media checked', weather_verified: 'Weather verified', wind_conditions_acceptable: 'Wind conditions acceptable', airspace_reviewed: 'Airspace reviewed', laanc_confirmed_if_required: 'LAANC confirmed if required', notam_tfr_checked: 'NOTAM/TFR checked', visual_observer_assigned_if_needed: 'Visual observer assigned if needed', emergency_procedures_reviewed: 'Emergency procedures reviewed', crew_communications_confirmed: 'Crew communications confirmed', final_rpic_approval: 'Final RPIC approval' };
   return [['Status', clean(preflight.status) || 'Draft'], ...Object.entries(labels).map(([key, label]) => [label, preflight[key] ? 'Complete' : 'Open'])];
 }
 
+/**
+ * Computes build environmental rows for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildEnvironmentalRows(jha: JobPacketJha | null): Array<[string, string]> {
   if (!jha) return [];
   const metadata = jha.ppe_requirements && typeof jha.ppe_requirements === 'object' && !Array.isArray(jha.ppe_requirements) ? jha.ppe_requirements as Record<string, unknown> : {};
@@ -1094,11 +1447,31 @@ function buildEnvironmentalRows(jha: JobPacketJha | null): Array<[string, string
   return [...(concern ? [['Environmental Considerations', categories.join(', ') || 'Mission-specific concern documented'] as [string, string]] : []), ...(clean(String(metadata.__environmentalConcernOther ?? '')) ? [['Other Environmental Condition', clean(String(metadata.__environmentalConcernOther))] as [string, string]] : []), ['Runoff Planning', jha.runoff_risk ? 'Documented as applicable' : 'Not marked applicable'], ['Containment Plan', clean(jha.containment_plan) || 'Not recorded'], ['Water Body Proximity', jha.water_body_proximity ? `Yes${jha.water_body_distance ? ` - ${jha.water_body_distance} feet` : ''}${jha.water_body_type ? ` (${jha.water_body_type})` : ''}` : 'Not marked applicable'], ['Secondary Containment', jha.secondary_containment_in_place ? 'In place' : 'Not recorded'], ['Reclamation Method', clean(jha.reclamation_method) || 'Not recorded'], ['Estimated Volume', jha.reclamation_volume_estimate ? `${jha.reclamation_volume_estimate} gallons` : 'Not recorded'], ['Vendor / Contact', clean(jha.disposal_vendor_name_contact) || 'Not recorded']];
 }
 
+/**
+ * Computes build packet placeholder proposal for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, relevant_airport_heliport: null, known_airspace_restrictions: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_amount: null, estimated_duration: null, payment_terms: null, valid_until: null, created_at: null }; }
+/**
+ * Computes build job packet storage file name for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildJobPacketStorageFileName(job: JobPacketRecord, userId: string) { const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); return `job_packet_pdf-user_${sanitizeFileName(userId)}-${timestamp}-${crypto.randomUUID()}-${sanitizeFileName(job.name)}.pdf`; }
+/**
+ * Computes build job packet display file name for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildJobPacketDisplayFileName(job: JobPacketRecord) { const jobNumber = clean(job.source_proposal_number); const jobName = sanitizeFileName(job.name).replace(/-/g, ' '); return jobNumber ? `JOB-${jobNumber} - ${jobName} - Closeout Packet.pdf` : `${jobName} - Closeout Packet.pdf`; }
+/**
+ * Computes get packet document label for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getPacketDocumentLabel(type: string) { return type === 'proposal_pdf' ? 'Proposal PDF' : type === 'job_packet_pdf' ? 'Job Packet PDF' : type.replace(/_/g, ' '); }
 
+/**
+ * Computes get generated document user id for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 async function getGeneratedDocumentUserId() {
   const { data: sessionData } = await supabase.auth.getSession();
   const sessionUserId = sessionData.session?.user.id;
@@ -1112,6 +1485,10 @@ async function getGeneratedDocumentUserId() {
   return userId;
 }
 
+/**
+ * Computes build proposal pdf file name for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildProposalPdfFileName(proposal: ProposalPdfRecord, userId: string) {
   const timestamp = new Date()
     .toISOString()
@@ -1121,12 +1498,20 @@ function buildProposalPdfFileName(proposal: ProposalPdfRecord, userId: string) {
   return `proposal_pdf-user_${sanitizeFileName(userId)}-${timestamp}-${randomId}-${sanitizeFileName(proposalNumber(proposal))}.pdf`;
 }
 
+/**
+ * Computes build proposal pdf display file name for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildProposalPdfDisplayFileName(proposal: ProposalPdfRecord) {
   const number = sanitizeFileName(proposalNumber(proposal));
   const client = sanitizeFileName(proposal.client_name ?? '');
   return client ? `${number} - ${client}.pdf` : `${number}.pdf`;
 }
 
+/**
+ * Performs retain proposal pdf for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 async function retainProposalPdf(
   blob: Blob,
   fileName: string,
@@ -1146,6 +1531,10 @@ async function retainProposalPdf(
   });
 }
 
+/**
+ * Performs load proposal for pdf for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 async function loadProposalForPdf(proposalId: string) {
   const { data, error } = await supabase
     .from('proposals')
@@ -1158,6 +1547,10 @@ async function loadProposalForPdf(proposalId: string) {
   return data as ProposalPdfRecord;
 }
 
+/**
+ * Performs load logo image for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 async function loadLogoImage(organization: OrganizationSettings | null): Promise<PdfImage | null> {
   const url = getOrganizationLogoUrl(organization);
   if (!url) return null;
@@ -1189,6 +1582,10 @@ async function loadLogoImage(organization: OrganizationSettings | null): Promise
   }
 }
 
+/**
+ * Renders the build executive summary interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: OrganizationSettings | null) {
   const operatorName = companyNameFor(organization);
   const contactName = clean(proposal.contact_name) || 'your team';
@@ -1209,78 +1606,100 @@ function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: Organi
   ].join('\n\n');
 }
 
+/**
+ * Computes build service description for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildServiceDescription(proposal: ProposalPdfRecord) {
   return toNounPhrase(clean(proposal.description) || clean(proposal.service_type)) || 'Aerial services to be confirmed with the client.';
 }
 
+/**
+ * Computes to noun phrase for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function toNounPhrase(serviceDescription: string) {
   const value = clean(serviceDescription).replace(/^\s*[^-–—:]{2,80}\s*[-–—:]\s+/, '').trim();
   return value || clean(serviceDescription);
 }
 
+/**
+ * Computes lower first for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function lowerFirst(value: string) {
   if (!value) return value;
   return value.charAt(0).toLowerCase() + value.slice(1);
 }
 
+/**
+ * Computes with leading article for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function withLeadingArticle(value: string) {
   if (!value || /^(the|a|an)\s+/i.test(value)) return value;
   return `the ${value}`;
 }
 
+/**
+ * Computes build deliverables for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildDeliverables(proposal: ProposalPdfRecord) {
   return clean(proposal.deliverables) || getProposalScopeDefaults(proposal.service_type).deliverables;
 }
 
+/**
+ * Computes build exclusions for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildExclusions(proposal: ProposalPdfRecord) {
   return clean(proposal.exclusions) || getProposalScopeDefaults(proposal.service_type).exclusions;
 }
 
 
 
+/**
+ * Implements proposal service commitment for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function proposalServiceCommitment(organization: OrganizationSettings | null) {
   const value = clean(organization?.serviceCommitment);
   return /warranty/i.test(value) ? DEFAULT_SERVICE_COMMITMENT : value;
 }
 
+/**
+ * Computes build company credentials for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildCompanyCredentials(organization: OrganizationSettings | null) {
   const credentials = [organization?.isLicensed ? 'Licensed' : '', organization?.isInsured ? 'Insured' : '', organization?.isBonded ? 'Bonded' : ''].filter(Boolean);
   return credentials.join(' • ');
 }
 
+/**
+ * Computes build estimated duration rows for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildEstimatedDurationRows(proposal: ProposalPdfRecord | null): Array<[string, string]> {
   const duration = clean(proposal?.estimated_duration);
   return duration ? [['Estimated Duration', duration]] : [];
 }
 
+/**
+ * Computes build material rows for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildMaterialRows(proposal: ProposalPdfRecord): TableCell[][] {
   return normalizeProposalEquipment(proposal.proposal_equipment)
     .filter((item) => item.equipment_type === 'Chemical / Material')
     .map((item) => [item.equipment_name, clean(item.purpose)]);
 }
 
-function normalizeProposalEquipment(value: unknown): ProposalEquipmentAssignment[] {
-  if (!Array.isArray(value)) return [];
-
-  return value
-    .map((item) => {
-      const record = item as Partial<ProposalEquipmentAssignment>;
-      const equipmentId = typeof record.equipment_id === 'string' ? record.equipment_id : '';
-      const equipmentName = typeof record.equipment_name === 'string' ? record.equipment_name : '';
-      if (!equipmentId || !equipmentName) return null;
-
-      return {
-        equipment_id: equipmentId,
-        equipment_name: equipmentName,
-        equipment_type: typeof record.equipment_type === 'string' ? record.equipment_type : '',
-        make: typeof record.make === 'string' ? record.make : null,
-        model: typeof record.model === 'string' ? record.model : null,
-        purpose: typeof record.purpose === 'string' ? record.purpose : ''
-      } satisfies ProposalEquipmentAssignment;
-    })
-    .filter((item): item is ProposalEquipmentAssignment => Boolean(item));
-}
-
+/**
+ * Computes build equipment rows for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildEquipmentRows(proposal: ProposalPdfRecord): TableCell[][] {
   const proposalEquipment = normalizeProposalEquipment(proposal.proposal_equipment);
   if (!proposalEquipment.length) {
@@ -1294,6 +1713,10 @@ function buildEquipmentRows(proposal: ProposalPdfRecord): TableCell[][] {
   });
 }
 
+/**
+ * Computes build hazard rows for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildHazardRows(proposal: ProposalPdfRecord): TableCell[][] {
   const hazards = normalizeSelectedHazards(proposal.hazard_assessment);
   if (!hazards.length) {
@@ -1307,6 +1730,10 @@ function buildHazardRows(proposal: ProposalPdfRecord): TableCell[][] {
   return displayedHazards.length ? displayedHazards : [['Preliminary hazards', 'General', clean(proposal.proposed_mitigation) || 'Final hazards verified before flight.']];
 }
 
+/**
+ * Computes build airspace findings for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildAirspaceFindings(proposal: ProposalPdfRecord) {
   if (proposal.laanc_required === true) {
     return 'LAANC authorization will be requested prior to operations. Final airspace conditions will be confirmed during mission planning.';
@@ -1319,10 +1746,18 @@ function buildAirspaceFindings(proposal: ProposalPdfRecord) {
   return 'No additional airspace authorization is anticipated based on the information available at proposal stage. Airspace conditions will be re-verified during mission planning and on the day of operations.';
 }
 
+/**
+ * Implements company name for for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function companyNameFor(organization: OrganizationSettings | null) {
   return clean(organization?.companyName) || 'Company Name Not Provided';
 }
 
+/**
+ * Implements client display for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function clientDisplay(proposal: ProposalPdfRecord) {
   const contact = clean(proposal.contact_name);
   const company = clean(proposal.client_name);
@@ -1330,19 +1765,35 @@ function clientDisplay(proposal: ProposalPdfRecord) {
   return contact || company || 'client to be confirmed';
 }
 
+/**
+ * Implements prepared by display for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function preparedByDisplay(proposal: ProposalPdfRecord, organization: OrganizationSettings | null) {
   return clean(proposal.proposed_rpic_name) || clean(proposal.proposed_rpic) || companyNameFor(organization);
 }
 
+/**
+ * Implements organization address for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function organizationAddress(organization: OrganizationSettings | null) {
   return clean(organization?.address) || 'Company address not provided in Settings';
 }
 
+/**
+ * Implements organization contact for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function organizationContact(organization: OrganizationSettings | null) {
   const website = clean(organization?.website);
   return [clean(organization?.phone), clean(organization?.email), website].filter(Boolean).join(' | ') || 'Company contact details not provided in Settings';
 }
 
+/**
+ * Implements proposal subtitle for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function proposalSubtitle(proposal: ProposalPdfRecord) {
   const serviceType = clean(proposal.service_type);
   if (!serviceType) return 'Commercial UAS Operations Proposal';
@@ -1351,28 +1802,52 @@ function proposalSubtitle(proposal: ProposalPdfRecord) {
   return serviceType;
 }
 
+/**
+ * Implements proposal number for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function proposalNumber(proposal: Pick<ProposalPdfRecord, 'proposal_number' | 'id'>) {
   return clean(proposal.proposal_number) || proposal.id.slice(0, 8).toUpperCase();
 }
 
+/**
+ * Implements boolean display for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function booleanDisplay(value: boolean | null) {
   if (value === true) return 'Yes';
   if (value === false) return 'No';
   return PLACEHOLDER;
 }
 
+/**
+ * Computes clean for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function clean(value: string | null | undefined) {
   return value?.trim() ?? '';
 }
 
+/**
+ * Computes format date for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatDate(value: string | null | undefined) {
   return formatProposalDate(value, { month: '2-digit', day: '2-digit', year: 'numeric' });
 }
 
+/**
+ * Computes format long date for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatLongDate(value: string | null | undefined) {
   return formatProposalDate(value, { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+/**
+ * Computes format proposal date for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatProposalDate(value: string | null | undefined, options: Intl.DateTimeFormatOptions) {
   if (!value) return '';
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
@@ -1391,6 +1866,10 @@ function formatProposalDate(value: string | null | undefined, options: Intl.Date
   return new Intl.DateTimeFormat('en-US', options).format(date);
 }
 
+/**
+ * Implements currency for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function currency(value: number | string | null) {
   if (value === null || value === undefined || value === '') return '';
   const amount = typeof value === 'number' ? value : Number(value);
@@ -1398,15 +1877,27 @@ function currency(value: number | string | null) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 }
 
+/**
+ * Computes hex to rgb for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function hexToRgb(hex: string) {
   const value = hex.replace('#', '');
   return { r: parseInt(value.slice(0, 2), 16) / 255, g: parseInt(value.slice(2, 4), 16) / 255, b: parseInt(value.slice(4, 6), 16) / 255 };
 }
 
+/**
+ * Computes format number for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatNumber(value: number) {
   return Number(value.toFixed(3)).toString();
 }
 
+/**
+ * Computes to pdf text for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function toPdfText(value: string) {
   return value
     .replace(/·/g, '-')
@@ -1416,10 +1907,18 @@ function toPdfText(value: string) {
     .replace(/[^\x09\x0A\x0D\x20-\x7E•]/g, '');
 }
 
+/**
+ * Computes normalize table cell text for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function normalizeTableCellText(value: TableCell) {
   return String(value ?? '').replace(/(?:\u00e2\u00a2|\u00e2\u20ac\u00a2|•)/g, '-');
 }
 
+/**
+ * Implements pdf text hex for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function pdfTextHex(value: string) {
   let hex = '';
   for (const character of value) {
@@ -1430,10 +1929,18 @@ function pdfTextHex(value: string) {
   return hex;
 }
 
+/**
+ * Computes measure text for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function measureText(value: string, size: number) {
   return value.length * size * 0.52;
 }
 
+/**
+ * Computes wrap text for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function wrapText(value: string, maxWidth: number, size: number) {
   const paragraphs = toPdfText(value || '').split(/\n+/);
   const lines: string[] = [];
@@ -1458,19 +1965,35 @@ function wrapText(value: string, maxWidth: number, size: number) {
   return lines.length ? lines : [''];
 }
 
+/**
+ * Computes byte length for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function byteLength(value: string) {
   return new TextEncoder().encode(value).length;
 }
 
+/**
+ * Implements object byte length for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function objectByteLength(value: PdfObjectValue) {
   return typeof value === 'string' ? byteLength(value) : value.byteLength;
 }
 
+/**
+ * Implements blob part for object for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function blobPartForObject(value: PdfObjectValue): BlobPart {
   if (typeof value === 'string') return value;
   return value.buffer instanceof ArrayBuffer ? value as Uint8Array<ArrayBuffer> : new Uint8Array(value);
 }
 
+/**
+ * Computes bytes to binary string for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function bytesToBinaryString(bytes: Uint8Array) {
   let output = '';
   for (let index = 0; index < bytes.length; index += 0x8000) {
@@ -1479,12 +2002,20 @@ function bytesToBinaryString(bytes: Uint8Array) {
   return output;
 }
 
+/**
+ * Computes binary string to bytes for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function binaryStringToBytes(value: string) {
   const bytes = new Uint8Array(value.length);
   for (let index = 0; index < value.length; index += 1) bytes[index] = value.charCodeAt(index) & 0xff;
   return bytes;
 }
 
+/**
+ * Computes bytes to hex string for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function bytesToHexString(bytes: Uint8Array) {
   let hex = '';
   bytes.forEach((byte) => {
@@ -1493,6 +2024,10 @@ function bytesToHexString(bytes: Uint8Array) {
   return hex;
 }
 
+/**
+ * Computes data url to bytes for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function dataUrlToBytes(dataUrl: string) {
   const base64 = dataUrl.split(',')[1] ?? '';
   const binary = atob(base64);
@@ -1501,10 +2036,18 @@ function dataUrlToBytes(dataUrl: string) {
   return bytes;
 }
 
+/**
+ * Computes sanitize file name for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function sanitizeFileName(value: string) {
   return value.replace(/[^a-z0-9-]+/gi, '-').replace(/^-|-$/g, '') || 'proposal';
 }
 
+/**
+ * Performs download blob for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

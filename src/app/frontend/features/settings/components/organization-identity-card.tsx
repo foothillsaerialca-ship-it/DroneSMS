@@ -1,9 +1,19 @@
+/**
+ * File purpose: Provides the reusable organization identity card React component and its local interaction behavior.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import {
   displayOrganizationValue,
   getOrganizationLogoUrl,
   type OrganizationSettings
 } from '@frontend/features/settings/lib/organization-settings';
 
+/**
+ * Purpose: Defines the input contract accepted by the organization identity card component.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type OrganizationIdentityCardProps = {
   organization: OrganizationSettings | null;
   title?: string;
@@ -11,6 +21,10 @@ type OrganizationIdentityCardProps = {
   isLoading?: boolean;
 };
 
+/**
+ * Renders the organization identity card interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function OrganizationIdentityCard({
   organization,
   title = 'Company Information',
@@ -47,6 +61,10 @@ export function OrganizationIdentityCard({
   );
 }
 
+/**
+ * Renders the identity field interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function IdentityField({ label, value }: { label: string; value: string }) {
   const isMissing = !value.trim();
 

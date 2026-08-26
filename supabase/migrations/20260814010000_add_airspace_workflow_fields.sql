@@ -1,3 +1,6 @@
+-- File purpose: Adds proposal and JHA airspace-review fields used by planning and operational workflows.
+-- Fallback/error behavior: IF NOT EXISTS preserves existing columns; incompatible existing types or insufficient privileges stop the migration.
+-- Known issues: reviewed statically but not applied to a disposable Supabase instance during the 2026-08-25 audit.
 alter table public.proposals
   add column if not exists relevant_airport_heliport text,
   add column if not exists known_airspace_restrictions text;

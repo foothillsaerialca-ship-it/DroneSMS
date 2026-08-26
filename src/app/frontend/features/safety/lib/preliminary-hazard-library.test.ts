@@ -1,3 +1,8 @@
+/**
+ * File purpose: Verifies the preliminary hazard library domain helpers with deterministic Node unit tests.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -11,6 +16,10 @@ import {
   type HazardLibraryEntry
 } from './preliminary-hazard-library.ts';
 
+/**
+ * Implements names for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 const names = (serviceType: string) => new Set(getSuggestedHazards(fallbackHazardLibrary, serviceType).map((hazard) => hazard.hazard_name));
 
 test('canonicalizes legacy service type aliases', () => {

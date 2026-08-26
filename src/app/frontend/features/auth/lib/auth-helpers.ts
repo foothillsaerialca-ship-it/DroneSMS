@@ -1,9 +1,17 @@
+/**
+ * Computes get app url for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function getAppUrl(path = '/') {
   const configuredUrl = (import.meta.env.VITE_APP_URL as string | undefined)?.trim();
   const baseUrl = configuredUrl || window.location.origin;
   return new URL(path, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
 }
 
+/**
+ * Implements friendly auth error for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 export function friendlyAuthError(error: unknown, fallback: string) {
   const message = error instanceof Error
     ? error.message.toLowerCase()

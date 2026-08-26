@@ -1,4 +1,8 @@
--- A structured, organization-scoped designation for future safety workflows.
+-- File purpose: Adds organization-scoped safety-representative designation, validation, indexing, and RLS access rules.
+-- Fallback/error behavior: membership validation raises a database exception for cross-organization personnel; migration failures require deployer intervention.
+-- Known issues: reviewed statically but not applied to a disposable Supabase instance during the 2026-08-25 audit.
+-- Data structure purpose: stores the single active organization Safety Manager designation used by operational JHA review.
+-- Fallback/known limitations: membership validation rejects inactive, unlinked, or cross-organization personnel; one row is allowed per organization.
 create table if not exists public.organization_safety_designations (
   organization_id uuid primary key references public.organizations(id) on delete cascade,
   personnel_id uuid not null references public.personnel(id) on delete restrict,
@@ -10,6 +14,8 @@ create table if not exists public.organization_safety_designations (
 create index if not exists organization_safety_designations_personnel_id_idx
   on public.organization_safety_designations(personnel_id);
 
+-- Function purpose: rejects safety-representative assignments when the selected person does not belong to the same organization.
+-- Fallback/known errors: a missing or mismatched personnel record raises an exception and aborts the write by design.
 create or replace function public.validate_safety_representative_membership()
 returns trigger language plpgsql set search_path = public as $$
 begin

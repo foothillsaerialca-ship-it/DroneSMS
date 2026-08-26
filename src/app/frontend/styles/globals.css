@@ -1,3 +1,4 @@
+/* File purpose: Defines global Tailwind layers and shared application presentation rules. Fallback/error behavior: unsupported rules degrade to browser defaults. Known issues: none identified during the 2026-08-25 audit. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

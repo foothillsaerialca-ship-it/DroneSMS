@@ -1,17 +1,23 @@
-export const serviceTypes = [
-  'Cleaning Operations',
-  'Thermal Inspection',
-  'Roof Inspection',
-  'Agricultural',
-  'Mapping / Surveying',
-  'Construction Progress',
-  'Real Estate / Property Media',
-  'Custom Operation'
-] as const;
+/**
+ * File purpose: Provides preliminary hazard library domain utilities and service adapters shared by the application.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
+import { serviceTypes, type ServiceType } from '../../jobs/lib/workflow-types.ts';
 
-export type ServiceType = (typeof serviceTypes)[number];
+export { serviceTypes, type ServiceType } from '../../jobs/lib/workflow-types.ts';
+/**
+ * Purpose: Defines the hazard source data contract used by the preliminary hazard library module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 export type HazardSource = 'library' | 'custom';
 
+/**
+ * Purpose: Defines the hazard library entry data contract used by the preliminary hazard library module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 export type HazardLibraryEntry = {
   id: string;
   hazard_name: string;
@@ -22,6 +28,11 @@ export type HazardLibraryEntry = {
   is_system_hazard: boolean;
 };
 
+/**
+ * Purpose: Maps service type aliases values to the canonical metadata consumed by preliminary hazard library.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const serviceTypeAliases: Record<string, ServiceType> = {
   'thermal imaging': 'Thermal Inspection',
   'mapping/surveying': 'Mapping / Surveying',
@@ -36,6 +47,11 @@ export function normalizeServiceType(value: string): string {
   return canonical ?? serviceTypeAliases[normalized.toLowerCase()] ?? normalized;
 }
 
+/**
+ * Purpose: Defines the selected preliminary hazard data contract used by the preliminary hazard library module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 export type SelectedPreliminaryHazard = {
   id: string;
   hazard_name: string;
@@ -46,6 +62,11 @@ export type SelectedPreliminaryHazard = {
   hazard?: string;
 };
 
+/**
+ * Purpose: Defines the legacy selected hazard data contract used by the preliminary hazard library module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type LegacySelectedHazard = {
   id?: string;
   hazard?: string;
@@ -57,6 +78,11 @@ type LegacySelectedHazard = {
   notes?: string;
 };
 
+/**
+ * Purpose: Stores the checked-in fallback hazard library used when service-backed data is unavailable or incomplete.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 export const fallbackHazardLibrary: HazardLibraryEntry[] = [
   { id: 'airspace-restrictions', hazard_name: 'Airspace Restrictions', category: 'Airspace', default_mitigation: 'Review current airspace, TFRs, NOTAMs, and site restrictions before flight. Confirm the mission remains inside approved operating limits before launch.', service_types: [], is_universal: true, is_system_hazard: true },
   { id: 'weather-conditions', hazard_name: 'Weather Conditions', category: 'Environmental', default_mitigation: 'Review forecast and on-site weather before operations. Delay or stop work when precipitation, visibility, temperature, or other weather conditions exceed aircraft or crew limits.', service_types: [], is_universal: true, is_system_hazard: true },
@@ -133,6 +159,10 @@ export function restoreSystemHazardMappings(library: HazardLibraryEntry[]) {
   });
 }
 
+/**
+ * Computes get suggested hazards for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function getSuggestedHazards(library: HazardLibraryEntry[], serviceType: string) {
   const canonicalServiceType = normalizeServiceType(serviceType);
   if (canonicalServiceType === 'Custom Operation') return library.filter((hazard) => hazard.is_universal);
@@ -142,6 +172,10 @@ export function getSuggestedHazards(library: HazardLibraryEntry[], serviceType: 
   );
 }
 
+/**
+ * Implements search hazards for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 export function searchHazards(library: HazardLibraryEntry[], query: string) {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return [];
@@ -151,10 +185,18 @@ export function searchHazards(library: HazardLibraryEntry[], query: string) {
   );
 }
 
+/**
+ * Computes get visible hazards for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function getVisibleHazards(library: HazardLibraryEntry[], serviceType: string, view: 'relevant' | 'all') {
   return view === 'all' ? library : getSuggestedHazards(library, serviceType);
 }
 
+/**
+ * Computes select library hazard for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 export function selectLibraryHazard(hazard: HazardLibraryEntry): SelectedPreliminaryHazard {
   return {
     id: hazard.id,
@@ -165,6 +207,10 @@ export function selectLibraryHazard(hazard: HazardLibraryEntry): SelectedPrelimi
   };
 }
 
+/**
+ * Computes create custom preliminary hazard for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 export function createCustomPreliminaryHazard(hazardName: string, category: string, mitigation: string): SelectedPreliminaryHazard {
   return {
     id: `custom-${Date.now()}`,
@@ -175,6 +221,10 @@ export function createCustomPreliminaryHazard(hazardName: string, category: stri
   };
 }
 
+/**
+ * Computes normalize selected hazard for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function normalizeSelectedHazard(hazard: LegacySelectedHazard): SelectedPreliminaryHazard | null {
   const hazardName = (hazard.hazard_name ?? hazard.hazard ?? '').trim();
   if (!hazardName) return null;
@@ -189,15 +239,27 @@ export function normalizeSelectedHazard(hazard: LegacySelectedHazard): SelectedP
   };
 }
 
+/**
+ * Computes normalize selected hazards for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function normalizeSelectedHazards(hazards: unknown): SelectedPreliminaryHazard[] {
   if (!Array.isArray(hazards)) return [];
   return hazards.map((hazard) => normalizeSelectedHazard(hazard as LegacySelectedHazard)).filter((hazard): hazard is SelectedPreliminaryHazard => Boolean(hazard));
 }
 
+/**
+ * Computes get selected hazard name for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 export function getSelectedHazardName(hazard: SelectedPreliminaryHazard) {
   return hazard.hazard_name || hazard.hazard || 'Unnamed hazard';
 }
 
+/**
+ * Computes summarize selected hazards for the surrounding workflow.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 export function summarizeSelectedHazards(selectedHazards: SelectedPreliminaryHazard[]) {
   return {
     hazard: selectedHazards.map((entry) => `${entry.category}: ${getSelectedHazardName(entry)}`).join('\n') || null,

@@ -1,4 +1,9 @@
+-- File purpose: Establishes the consolidated DroneSMS schema, RLS policies, storage buckets, indexes, triggers, and database functions through the initial MVP feature set.
+-- Fallback/error behavior: idempotent clauses protect repeatable objects where present; policy, dependency, or incompatible-schema errors stop the migration and must be handled by the deployer.
+-- Known issues: this historical merged migration was reviewed statically but was not applied to a disposable Supabase instance during the 2026-08-25 audit.
 -- MIGRATION: 20260524000000_create_organizations.sql
+-- Data structure purpose: stores tenant identity, ownership, branding, operational defaults, and SMS program settings.
+-- Fallback/known limitations: required ownership/name constraints reject incomplete tenants; client types are handwritten and must track schema changes.
 create table if not exists public.organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -8,6 +13,8 @@ create table if not exists public.organizations (
   updated_at timestamptz not null default now()
 );
 
+-- Data structure purpose: links an authenticated user identity to its organization and cached company metadata.
+-- Fallback/known limitations: missing organization links drive onboarding/recovery flows; RLS depends on a valid auth.uid() relationship.
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   organization_id uuid references public.organizations(id) on delete set null,
@@ -86,6 +93,8 @@ grant select, insert, update on public.profiles to authenticated;
 -- END MIGRATION: 20260524000000_create_organizations.sql
 
 -- MIGRATION: 20260525000000_create_jobs.sql
+-- Data structure purpose: stores organization-scoped operational jobs and their proposal lineage, schedule, site, and workflow status.
+-- Fallback/known limitations: nullable planning fields support direct job creation; downstream readiness depends on related assignment records.
 create table if not exists public.jobs (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -162,6 +171,8 @@ grant select, insert, update on public.jobs to authenticated;
 -- END MIGRATION: 20260525000000_create_jobs.sql
 
 -- MIGRATION: 20260525010000_create_jha_assessments.sql
+-- Data structure purpose: stores one operational hazard assessment per job, including site, airspace, environmental, control, and certification data.
+-- Fallback/known limitations: JSON hazard/PPE fields preserve flexible legacy data and therefore require client-side normalization.
 create table if not exists public.jha_assessments (
   id uuid primary key default gen_random_uuid(),
   job_id uuid not null references public.jobs(id) on delete cascade,
@@ -298,6 +309,8 @@ grant select, insert, update on public.jha_assessments to authenticated;
 -- END MIGRATION: 20260525010000_create_jha_assessments.sql
 
 -- MIGRATION: 202605280001_create_preflight_checklists.sql
+-- Data structure purpose: stores one pre-flight checklist and completion state per operational job.
+-- Fallback/known limitations: unchecked items default false; completion validity is enforced primarily by application workflow validation.
 create table if not exists public.preflight_checklists (
   id uuid primary key default gen_random_uuid(),
   job_id uuid not null references public.jobs(id) on delete cascade,
@@ -400,6 +413,8 @@ grant select, insert, update on public.preflight_checklists to authenticated;
 -- END MIGRATION: 202605280001_create_preflight_checklists.sql
 
 -- MIGRATION: 20260529000000_create_personnel.sql
+-- Data structure purpose: stores organization crew members, operational roles, credentials, expirations, biography, and readiness inputs.
+-- Fallback/known limitations: nullable credentials support non-RPIC roles; date readiness is calculated by the client.
 create table if not exists public.personnel (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -484,6 +499,8 @@ grant select, insert, update on public.personnel to authenticated;
 alter table public.personnel
   add column if not exists training_expiration_date date;
 
+-- Data structure purpose: joins personnel to jobs with assignment-specific operational roles.
+-- Fallback/known limitations: uniqueness prevents duplicate person/job assignments; readiness remains derived from the linked personnel record.
 create table if not exists public.job_personnel (
   id uuid primary key default gen_random_uuid(),
   job_id uuid not null references public.jobs(id) on delete cascade,
@@ -595,6 +612,8 @@ grant select, insert, update, delete on public.job_personnel to authenticated;
 -- END MIGRATION: 20260529010000_create_job_personnel.sql
 
 -- MIGRATION: 20260529020000_create_equipment.sql
+-- Data structure purpose: stores aircraft, payloads, support systems, materials, maintenance, and chemical-reference metadata.
+-- Fallback/known limitations: type-specific fields are nullable and interpreted by application rules rather than separate subtype tables.
 create table if not exists public.equipment (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -695,6 +714,8 @@ grant select, insert, update, delete on public.equipment to authenticated;
 -- END MIGRATION: 20260529020000_create_equipment.sql
 
 -- MIGRATION: 20260529030000_create_job_equipment.sql
+-- Data structure purpose: joins repository equipment to an operational job and records assignment context.
+-- Fallback/known limitations: uniqueness prevents duplicate equipment/job assignments; current equipment status remains authoritative.
 create table if not exists public.job_equipment (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -802,6 +823,8 @@ grant select, insert, update, delete on public.job_equipment to authenticated;
 -- END MIGRATION: 20260529030000_create_job_equipment.sql
 
 -- MIGRATION: 20260529040000_create_job_safety_events.sql
+-- Data structure purpose: records job-scoped incidents, observations, immediate actions, and outcomes.
+-- Fallback/known limitations: narrative completeness is enforced by the page workflow and may vary for legacy rows.
 create table if not exists public.job_safety_events (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -1019,6 +1042,8 @@ create policy "Users can delete organization logos"
 -- END MIGRATION: 20260530000000_extend_organization_settings.sql
 
 -- MIGRATION: 20260530010000_create_proposals.sql
+-- Data structure purpose: stores commercial proposal details, scope, airspace review, embedded hazard/equipment snapshots, and conversion state.
+-- Fallback/known limitations: JSON snapshots retain proposal-time context but can become stale relative to source records.
 create table if not exists public.proposals (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -1307,6 +1332,8 @@ comment on column public.jobs.deleted_at is 'Soft-delete timestamp used to hide 
 -- END MIGRATION: 20260612010000_add_soft_delete_to_proposals_and_jobs.sql
 
 -- MIGRATION: 20260612020000_create_hazard_library.sql
+-- Data structure purpose: stores system and organization-defined preliminary hazards, mitigations, categories, and service mappings.
+-- Fallback/known limitations: the checked-in client library restores canonical mappings when historical system rows were broadened.
 create table if not exists public.hazard_library (
   id uuid primary key default gen_random_uuid(),
   hazard_name text not null,
@@ -1411,6 +1438,8 @@ set public = excluded.public,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
 
+-- Data structure purpose: indexes job/JHA evidence-photo objects, captions, hazard links, packet inclusion, and soft deletion.
+-- Fallback/known limitations: Storage objects and metadata are separate resources and can diverge after partial upload/delete failures.
 create table if not exists public.job_hazard_photos (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -1571,6 +1600,8 @@ comment on column public.proposals.converted_at is 'Timestamp when the proposal 
 -- END MIGRATION: 20260612040000_add_proposal_conversion_fields.sql
 
 -- MIGRATION: 20260612050000_create_job_operation_closeouts.sql
+-- Data structure purpose: stores the final operational result, deviation narrative, and closeout update identity for each job.
+-- Fallback/known limitations: nullable narratives support successful operations; application validation determines when deviations require detail.
 create table if not exists public.job_operation_closeouts (
   id uuid primary key default gen_random_uuid(),
   job_id uuid not null references public.jobs(id) on delete cascade,
@@ -1703,6 +1734,8 @@ set public = excluded.public,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
 
+-- Data structure purpose: indexes retained proposal/job PDF objects with display names, ownership, generation time, and archive state.
+-- Fallback/known limitations: archived metadata does not guarantee object removal; missing Storage files surface during open/download.
 create table if not exists public.generated_documents (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -1947,6 +1980,8 @@ on conflict (id) do update
   set file_size_limit = excluded.file_size_limit,
       allowed_mime_types = excluded.allowed_mime_types;
 
+-- Data structure purpose: indexes SDS, labels, and technical reference files attached to chemical/material equipment.
+-- Fallback/known limitations: metadata and Storage objects can diverge after partial failures; allowed document categories are application-defined.
 create table if not exists public.equipment_reference_documents (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -2067,4 +2102,3 @@ comment on column public.organizations.include_service_commitment_in_proposal is
 comment on column public.organizations.include_company_credentials_in_proposal is 'Controls whether selected company credentials render in proposal PDF headers.';
 comment on column public.organizations.include_materials_used_in_proposal is 'Controls whether assigned Chemical / Material equipment renders in proposal PDFs.';
 -- END MIGRATION: 20260625000000_replace_warranty_with_service_commitment.sql
-

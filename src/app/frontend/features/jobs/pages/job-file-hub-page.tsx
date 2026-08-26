@@ -1,17 +1,53 @@
+/**
+ * File purpose: Implements the job file hub page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
+import { daysUntilDate, formatIsoDate, formatIsoDate as formatPlannedDate } from '@frontend/lib/date-utils';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 
+/**
+ * Purpose: Defines the ordered operation result options used for UI choices and workflow decisions in job file hub page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const operationResultOptions = ['Completed as Planned', 'Completed with Changes', 'Delayed', 'Aborted', 'Incident Occurred'];
+/**
+ * Purpose: Stores the shared results requiring narrative structure used by the job file hub page module.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const resultsRequiringNarrative = new Set(operationResultOptions.filter((result) => result !== 'Completed as Planned'));
 
+/**
+ * Purpose: Defines the ordered crew role options used for UI choices and workflow decisions in job file hub page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const crewRoleOptions = ['RPIC', 'Pilot', 'Visual Observer', 'Payload Operator', 'Ground Crew'];
+/**
+ * Purpose: Defines the ordered safety event categories used for UI choices and workflow decisions in job file hub page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const safetyEventCategories = ['Operational', 'Environmental', 'Equipment', 'Personnel', 'Public'];
+/**
+ * Purpose: Stores the shared safety event outcomes structure used by the job file hub page module.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const safetyEventOutcomes = ['Resolved', 'Operation Paused', 'Operation Terminated'];
 
+/**
+ * Purpose: Provides the stable default shape for initial safety event form state in the job file hub page workflow.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const initialSafetyEventFormState = {
   category: safetyEventCategories[0],
   description: '',
@@ -20,6 +56,11 @@ const initialSafetyEventFormState = {
   promoteToHazardLibrary: false
 };
 
+/**
+ * Purpose: Represents job data read, written, or rendered by the job file hub page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type Job = {
   id: string;
   organization_id: string;
@@ -32,6 +73,11 @@ type Job = {
   source_proposal_number: string | null;
 };
 
+/**
+ * Purpose: Defines the personnel option data contract used by the job file hub page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PersonnelOption = {
   id: string;
   full_name: string;
@@ -41,12 +87,22 @@ type PersonnelOption = {
   status: string;
 };
 
+/**
+ * Purpose: Defines the job personnel assignment data contract used by the job file hub page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobPersonnelAssignment = {
   id: string;
   assigned_role: string;
   personnel: PersonnelOption | null;
 };
 
+/**
+ * Purpose: Defines the equipment option data contract used by the job file hub page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type EquipmentOption = {
   id: string;
   name: string;
@@ -54,11 +110,21 @@ type EquipmentOption = {
   status: string;
 };
 
+/**
+ * Purpose: Defines the job equipment assignment data contract used by the job file hub page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobEquipmentAssignment = {
   id: string;
   equipment: EquipmentOption | null;
 };
 
+/**
+ * Purpose: Defines the job safety event data contract used by the job file hub page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobSafetyEvent = {
   id: string;
   category: string;
@@ -69,6 +135,11 @@ type JobSafetyEvent = {
   created_at: string;
 };
 
+/**
+ * Purpose: Defines the jha summary data contract used by the job file hub page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JhaSummary = {
   status: string;
   faa_airspace_class: string | null;
@@ -79,11 +150,21 @@ type JhaSummary = {
   certified_at: string | null;
 };
 
+/**
+ * Purpose: Defines the preflight summary data contract used by the job file hub page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PreflightSummary = {
   status: string;
   final_rpic_approval: boolean;
 };
 
+/**
+ * Purpose: Defines the operation closeout data contract used by the job file hub page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type OperationCloseout = {
   id: string;
   operation_result: string;
@@ -91,13 +172,28 @@ type OperationCloseout = {
   updated_at: string;
 };
 
+/**
+ * Purpose: Represents the complete closeout form state used by the job file hub page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type CloseoutFormState = {
   operationResult: string;
   deviationNarrative: string;
 };
 
+/**
+ * Purpose: Represents the complete safety event form state used by the job file hub page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type SafetyEventFormState = typeof initialSafetyEventFormState;
 
+/**
+ * Purpose: Defines the readiness indicator data contract used by the job file hub page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type ReadinessIndicator = {
   label: 'Current' | 'Expiring Soon' | 'Expired' | 'Missing';
   className: string;
@@ -108,42 +204,32 @@ const expiringClassName = 'border-amber-200 bg-amber-50 text-amber-700';
 const expiredClassName = 'border-red-200 bg-red-50 text-red-700';
 const missingClassName = 'border-slate-200 bg-slate-100 text-slate-600';
 
+/**
+ * Computes get error message for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to load job file. Please try again.';
 }
 
-function formatPlannedDate(plannedDate: string) {
-  if (!plannedDate) return 'Not scheduled';
-
-  const [year, month, day] = plannedDate.split('-');
-  if (!year || !month || !day) return plannedDate;
-
-  return `${month}/${day}/${year}`;
-}
-
+/**
+ * Computes format expiration date for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatExpirationDate(date: string | null) {
-  if (!date) return 'Not tracked';
-
-  const [year, month, day] = date.split('-');
-  if (!year || !month || !day) return date;
-
-  return `${month}/${day}/${year}`;
+  return formatIsoDate(date, 'Not tracked');
 }
 
-function getDaysUntil(date: string) {
-  const expirationDate = new Date(`${date}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  return Math.ceil((expirationDate.getTime() - today.getTime()) / 86_400_000);
-}
-
+/**
+ * Renders the get readiness indicator interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function getReadinessIndicator(date: string | null): ReadinessIndicator {
   if (!date) {
     return { label: 'Missing', className: missingClassName };
   }
 
-  const daysRemaining = getDaysUntil(date);
+  const daysRemaining = daysUntilDate(date);
 
   if (daysRemaining < 0) {
     return { label: 'Expired', className: expiredClassName };
@@ -156,14 +242,26 @@ function getReadinessIndicator(date: string | null): ReadinessIndicator {
   return { label: 'Current', className: currentClassName };
 }
 
+/**
+ * Computes get status class name for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getStatusClassName(status: string | undefined) {
   return status === 'Active' || status === 'Available' ? currentClassName : missingClassName;
 }
 
+/**
+ * Computes get workflow status class name for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getWorkflowStatusClassName(isComplete: boolean) {
   return isComplete ? currentClassName : missingClassName;
 }
 
+/**
+ * Renders the get personnel readiness summary interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function getPersonnelReadinessSummary(assignments: JobPersonnelAssignment[]) {
   if (assignments.length === 0) return 'No assigned crew members yet.';
 
@@ -179,6 +277,10 @@ function getPersonnelReadinessSummary(assignments: JobPersonnelAssignment[]) {
   return `${currentAndQualified} assigned ${crewLabel} current and qualified`;
 }
 
+/**
+ * Computes normalize assignment for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function normalizeAssignment(row: unknown): JobPersonnelAssignment {
   const assignment = row as JobPersonnelAssignment & { personnel: PersonnelOption | PersonnelOption[] | null };
   const personnel = Array.isArray(assignment.personnel) ? assignment.personnel[0] ?? null : assignment.personnel;
@@ -190,6 +292,10 @@ function normalizeAssignment(row: unknown): JobPersonnelAssignment {
   };
 }
 
+/**
+ * Computes normalize equipment assignment for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function normalizeEquipmentAssignment(row: unknown): JobEquipmentAssignment {
   const assignment = row as JobEquipmentAssignment & { equipment: EquipmentOption | EquipmentOption[] | null };
   const equipment = Array.isArray(assignment.equipment) ? assignment.equipment[0] ?? null : assignment.equipment;
@@ -200,6 +306,10 @@ function normalizeEquipmentAssignment(row: unknown): JobEquipmentAssignment {
   };
 }
 
+/**
+ * Renders the job file hub interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function JobFileHubPage() {
   const { jobId } = useParams();
   const [job, setJob] = useState<Job | null>(null);
@@ -242,6 +352,10 @@ export function JobFileHubPage() {
   const [closeoutError, setCloseoutError] = useState<string | null>(null);
   const [closeoutMessage, setCloseoutMessage] = useState<string | null>(null);
 
+  /**
+   * Performs load assignments for the surrounding workflow.
+   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+   */
   async function loadAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
       .from('job_personnel')
@@ -254,6 +368,10 @@ export function JobFileHubPage() {
     setAssignments((data ?? []).map(normalizeAssignment));
   }
 
+  /**
+   * Performs load equipment assignments for the surrounding workflow.
+   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+   */
   async function loadEquipmentAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
       .from('job_equipment')
@@ -266,6 +384,10 @@ export function JobFileHubPage() {
     setEquipmentAssignments((data ?? []).map(normalizeEquipmentAssignment));
   }
 
+  /**
+   * Performs load safety events for the surrounding workflow.
+   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+   */
   async function loadSafetyEvents(currentJobId: string) {
     const { data, error: safetyEventsError } = await supabase
       .from('job_safety_events')
@@ -278,15 +400,27 @@ export function JobFileHubPage() {
     setSafetyEvents((data ?? []) as JobSafetyEvent[]);
   }
 
+  /**
+   * Handles reset safety event form while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function resetSafetyEventForm() {
     setSafetyEventFormData(initialSafetyEventFormState);
     setEditingSafetyEventId(null);
   }
 
+  /**
+   * Renders the update safety event field interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   function updateSafetyEventField<Key extends keyof SafetyEventFormState>(field: Key, value: SafetyEventFormState[Key]) {
     setSafetyEventFormData((currentFormData) => ({ ...currentFormData, [field]: value }));
   }
 
+  /**
+   * Renders the update closeout field interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   function updateCloseoutField<Key extends keyof CloseoutFormState>(field: Key, value: CloseoutFormState[Key]) {
     setCloseoutFormData((currentFormData) => ({ ...currentFormData, [field]: value }));
     setCloseoutError(null);
@@ -296,6 +430,10 @@ export function JobFileHubPage() {
   useEffect(() => {
     let isMounted = true;
 
+    /**
+     * Performs load job file for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadJobFile() {
       if (!jobId) {
         setError('Missing job id.');
@@ -442,6 +580,10 @@ export function JobFileHubPage() {
   const personnelReadinessSummary = getPersonnelReadinessSummary(assignments);
   const closeoutNarrativeRequired = resultsRequiringNarrative.has(closeoutFormData.operationResult);
 
+  /**
+   * Handles add assignment while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleAddAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -474,6 +616,10 @@ export function JobFileHubPage() {
     }
   }
 
+  /**
+   * Handles start editing assignment role while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function startEditingAssignmentRole(assignment: JobPersonnelAssignment) {
     setCrewError(null);
     setCrewMessage(null);
@@ -481,11 +627,19 @@ export function JobFileHubPage() {
     setEditedAssignmentRole(assignment.assigned_role);
   }
 
+  /**
+   * Handles cancel editing assignment role while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function cancelEditingAssignmentRole() {
     setEditingAssignmentId(null);
     setEditedAssignmentRole(crewRoleOptions[0]);
   }
 
+  /**
+   * Handles update assignment role while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleUpdateAssignmentRole(assignment: JobPersonnelAssignment) {
     if (!job) return;
 
@@ -516,6 +670,10 @@ export function JobFileHubPage() {
     }
   }
 
+  /**
+   * Handles remove assignment while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleRemoveAssignment(assignmentId: string) {
     if (!job) return;
 
@@ -537,6 +695,10 @@ export function JobFileHubPage() {
     }
   }
 
+  /**
+   * Handles add equipment assignment while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleAddEquipmentAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -574,6 +736,10 @@ export function JobFileHubPage() {
     }
   }
 
+  /**
+   * Handles remove equipment assignment while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleRemoveEquipmentAssignment(assignmentId: string) {
     if (!job) return;
 
@@ -595,6 +761,10 @@ export function JobFileHubPage() {
     }
   }
 
+  /**
+   * Handles save safety event while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSaveSafetyEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -649,6 +819,10 @@ export function JobFileHubPage() {
     }
   }
 
+  /**
+   * Handles edit safety event while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function handleEditSafetyEvent(safetyEvent: JobSafetyEvent) {
     setEditingSafetyEventId(safetyEvent.id);
     setSafetyEventFormData({
@@ -663,6 +837,10 @@ export function JobFileHubPage() {
     setIsSafetyEventFormOpen(true);
   }
 
+  /**
+   * Handles delete safety event while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleDeleteSafetyEvent(safetyEvent: JobSafetyEvent) {
     if (!job) return;
 
@@ -691,6 +869,10 @@ export function JobFileHubPage() {
     }
   }
 
+  /**
+   * Handles save closeout while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSaveCloseout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -736,6 +918,10 @@ export function JobFileHubPage() {
     }
   }
 
+  /**
+   * Handles export packet while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleExportPacket() {
     if (!job) return;
 

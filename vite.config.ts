@@ -1,3 +1,8 @@
+/**
+ * File purpose: Configures Vite, React transforms, source aliases, development hosting, builds, and vendor-license output.
+ * Fallback/error behavior: Vite reports invalid plugins, aliases, or output paths during startup/build; no runtime fallback is provided.
+ * Known issues: the production bundle currently triggers Vite's 500 kB chunk-size warning; see docs/documentation.md.
+ */
 import path from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';

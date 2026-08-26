@@ -1,9 +1,32 @@
+/**
+ * File purpose: Implements the personnel page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@frontend/lib/supabase';
+import { getCurrentOrganizationId } from '@frontend/lib/organization';
+import { daysUntilDate, formatIsoDate } from '@frontend/lib/date-utils';
+import { type ReadinessState } from '@frontend/lib/readiness';
 
+/**
+ * Purpose: Defines the ordered role options used for UI choices and workflow decisions in personnel page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const roleOptions = ['Remote Pilot in Command', 'Visual Observer', 'Crew Member', 'Payload Operator', 'Safety Manager'];
+/**
+ * Purpose: Defines the ordered status options used for UI choices and workflow decisions in personnel page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const statusOptions = ['Active', 'Training', 'Inactive'];
 
+/**
+ * Purpose: Provides the stable default shape for initial form state in the personnel page workflow.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const initialFormState = {
   fullName: '',
   role: roleOptions[0],
@@ -21,6 +44,11 @@ const initialFormState = {
   notes: ''
 };
 
+/**
+ * Purpose: Represents personnel data read, written, or rendered by the personnel page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type Personnel = {
   id: string;
   full_name: string;
@@ -40,48 +68,42 @@ type Personnel = {
   updated_at: string;
 };
 
+/**
+ * Purpose: Represents the complete personnel form state used by the personnel page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type PersonnelFormState = typeof initialFormState;
 
-type ReadinessState = {
-  label: string;
-  detail: string;
-  className: string;
-  sortOrder: number;
-};
-
+/**
+ * Purpose: Defines the training status data contract used by the personnel page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type TrainingStatus = {
   label: string;
   detail: string;
   className: string;
 };
 
+/**
+ * Computes get error message for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to load personnel. Please try again.';
 }
 
-function formatDate(date: string | null) {
-  if (!date) return 'Not tracked';
-
-  const [year, month, day] = date.split('-');
-  if (!year || !month || !day) return date;
-
-  return `${month}/${day}/${year}`;
-}
-
-function daysUntil(date: string) {
-  const expirationDate = new Date(`${date}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  return Math.ceil((expirationDate.getTime() - today.getTime()) / 86_400_000);
-}
-
+/**
+ * Computes get training status for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getTrainingStatus(person: Personnel): TrainingStatus | null {
   if (!person.training_expiration_date) {
     return null;
   }
 
-  const remainingDays = daysUntil(person.training_expiration_date);
+  const remainingDays = daysUntilDate(person.training_expiration_date);
 
   if (remainingDays < 0) {
     return {
@@ -102,6 +124,10 @@ function getTrainingStatus(person: Personnel): TrainingStatus | null {
   return null;
 }
 
+/**
+ * Computes get readiness state for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getReadinessState(person: Personnel): ReadinessState {
   if (person.status !== 'Active') {
     return {
@@ -145,7 +171,7 @@ function getReadinessState(person: Personnel): ReadinessState {
     };
   }
 
-  const remainingDays = daysUntil(person.part_107_expiration_date);
+  const remainingDays = daysUntilDate(person.part_107_expiration_date);
 
   if (remainingDays < 0) {
     return {
@@ -179,12 +205,16 @@ function getReadinessState(person: Personnel): ReadinessState {
 
   return {
     label: 'Pilot Ready',
-    detail: `Part 107 current through ${formatDate(person.part_107_expiration_date)}.`,
+    detail: `Part 107 current through ${formatIsoDate(person.part_107_expiration_date, 'Not tracked')}.`,
     className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
     sortOrder: 4
   };
 }
 
+/**
+ * Computes to form state for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function toFormState(person: Personnel): PersonnelFormState {
   return {
     fullName: person.full_name,
@@ -204,14 +234,10 @@ function toFormState(person: Personnel): PersonnelFormState {
   };
 }
 
-async function getCurrentOrganizationId(userId: string) {
-  const { data, error } = await supabase.from('profiles').select('organization_id').eq('id', userId).maybeSingle();
-
-  if (error) throw error;
-
-  return data?.organization_id ?? null;
-}
-
+/**
+ * Computes build personnel payload for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildPersonnelPayload(formData: PersonnelFormState) {
   return {
     full_name: formData.fullName.trim(),
@@ -232,6 +258,10 @@ function buildPersonnelPayload(formData: PersonnelFormState) {
   };
 }
 
+/**
+ * Renders the personnel interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function PersonnelPage() {
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
   const [formData, setFormData] = useState<PersonnelFormState>(initialFormState);
@@ -242,6 +272,10 @@ export function PersonnelPage() {
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
+  /**
+   * Performs load personnel for the surrounding workflow.
+   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+   */
   async function loadPersonnel() {
     setIsLoading(true);
     setError(null);
@@ -292,11 +326,19 @@ export function PersonnelPage() {
     });
   }, [personnel]);
 
+  /**
+   * Renders the update field interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   function updateField(field: keyof PersonnelFormState, value: string) {
     setFormData((current) => ({ ...current, [field]: value }));
     setSaveMessage(null);
   }
 
+  /**
+   * Handles reset form while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function resetForm() {
     setFormData(initialFormState);
     setEditingPersonId(null);
@@ -305,6 +347,10 @@ export function PersonnelPage() {
     setSaveMessage(null);
   }
 
+  /**
+   * Handles add while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function handleAdd() {
     setFormData(initialFormState);
     setEditingPersonId(null);
@@ -313,6 +359,10 @@ export function PersonnelPage() {
     setSaveMessage(null);
   }
 
+  /**
+   * Implements validate form for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function validateForm() {
     if (!formData.fullName.trim()) return 'Full name is required.';
     if (!formData.role) return 'Role is required.';
@@ -320,6 +370,10 @@ export function PersonnelPage() {
     return null;
   }
 
+  /**
+   * Handles submit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -372,6 +426,10 @@ export function PersonnelPage() {
     }
   }
 
+  /**
+   * Handles edit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function handleEdit(person: Personnel) {
     setEditingPersonId(person.id);
     setIsFormOpen(true);
@@ -681,12 +739,12 @@ export function PersonnelPage() {
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
                   <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Part 107</dt>
-                  <dd className="mt-1 text-slate-700">{person.part_107_certificate_number || 'No certificate'} • {formatDate(person.part_107_expiration_date)}</dd>
+                  <dd className="mt-1 text-slate-700">{person.part_107_certificate_number || 'No certificate'} • {formatIsoDate(person.part_107_expiration_date, 'Not tracked')}</dd>
                 </div>
                 <div className={`rounded-lg p-3 ${trainingStatus ? trainingStatus.className.replace('border', 'bg').split(' ').slice(1).join(' ') : 'bg-slate-50'}`}>
                   <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Training</dt>
                   <dd className="mt-1 text-slate-700">
-                    {formatDate(person.training_expiration_date)}
+                    {formatIsoDate(person.training_expiration_date, 'Not tracked')}
                     {trainingStatus ? <p className="mt-1 text-xs font-semibold">{trainingStatus.label}</p> : null}
                   </dd>
                 </div>

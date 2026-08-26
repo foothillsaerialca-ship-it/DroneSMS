@@ -1,18 +1,12 @@
-# This project is a Node.js/React app and does not require Python packages.
-# No pip-installable Python dependencies are needed to run the app.
-# To install the app dependencies, use npm as described in install.md.
-
-# Dependency information is maintained in package.json/package-lock.json.
-
-# Architecture license references
-# Node.js: https://github.com/nodejs/node/blob/main/LICENSE
-# React: https://github.com/facebook/react/blob/main/LICENSE
-# Vite: https://github.com/vitejs/vite/blob/main/LICENSE
-# TypeScript: https://github.com/microsoft/TypeScript/blob/main/LICENSE.txt
-# Tailwind CSS: https://github.com/tailwindlabs/tailwindcss/blob/master/LICENSE.md
-# Supabase JS: https://github.com/supabase/supabase-js/blob/master/LICENSE
-# PostCSS: https://github.com/postcss/postcss/blob/main/LICENSE
-# ESLint: https://github.com/eslint/eslint/blob/main/LICENSE
-# @vitejs/plugin-react: https://github.com/vitejs/vite/tree/main/packages/plugin-react#license
-# Vite React plugin / React Refresh: https://github.com/vitejs/vite/tree/main/packages/plugin-react#license
-# GitHub Copilot / tools are not part of runtime dependencies; see individual package licenses above.
+# DroneSMS has no Python runtime or tooling requirements as of version 0.1.0.
+# Do not run pip install for this application.
+#
+# Node/npm requirements:
+# - Node.js 20.19+ or 22.12+ (a current LTS release is recommended)
+# - npm
+# - Packages declared in ../package.json and locked in ../package-lock.json
+#
+# External service requirements:
+# - Supabase project with Authentication, Postgres, and Storage
+# - Environment variables documented in install.md
+# - SQL migrations under ../supabase/migrations applied in filename order

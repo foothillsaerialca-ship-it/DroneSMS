@@ -1,3 +1,8 @@
+/**
+ * File purpose: Defines public and protected application routes and the landing-page entry experience.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './frontend/shell';
 import { DashboardPage } from './frontend/features/dashboard/pages/dashboard-page';
@@ -23,6 +28,10 @@ import { ForgotPasswordPage } from './frontend/features/auth/pages/forgot-passwo
 import { ResetPasswordPage } from './frontend/features/auth/pages/reset-password-page';
 import { AuthCallbackPage } from './frontend/features/auth/pages/auth-callback-page';
 
+/**
+ * Renders the landing interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function LandingPage() {
   return (
     <section className="mx-auto w-full max-w-xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
@@ -52,6 +61,10 @@ function LandingPage() {
   );
 }
 
+/**
+ * Implements app router for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 export function AppRouter() {
   return (
     <Routes>

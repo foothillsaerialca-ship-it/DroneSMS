@@ -1,7 +1,17 @@
+/**
+ * File purpose: Provides the reusable responsive nav React component and its local interaction behavior.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 
+/**
+ * Purpose: Defines the ordered nav items used for UI choices and workflow decisions in responsive nav.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', end: true },
   { to: '/proposals', label: 'Proposals' },
@@ -14,20 +24,37 @@ const navItems = [
   { to: '/about', label: 'About', end: true }
 ];
 
+/**
+ * Determines is proposals active for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isProposalsActive(pathname: string) {
   return pathname === '/proposals' || pathname.startsWith('/proposals/');
 }
 
+/**
+ * Determines is jobs active for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isJobsActive(pathname: string) {
   if (!pathname.startsWith('/jobs')) return false;
   return pathname === '/jobs' || (pathname.startsWith('/jobs/') && !isProposalsActive(pathname));
 }
 
+/**
+ * Purpose: Defines the input contract accepted by the navigation links component.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type NavigationLinksProps = {
   onNavigate?: () => void;
   layout: 'sidebar' | 'drawer';
 };
 
+/**
+ * Renders the navigation links interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function NavigationLinks({ onNavigate, layout }: NavigationLinksProps) {
   const location = useLocation();
   const baseClass =
@@ -63,13 +90,26 @@ function NavigationLinks({ onNavigate, layout }: NavigationLinksProps) {
   );
 }
 
+/**
+ * Purpose: Defines the input contract accepted by the logout button component.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type LogoutButtonProps = {
   onLogout?: () => void;
 };
 
+/**
+ * Renders the logout button interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function LogoutButton({ onLogout }: LogoutButtonProps) {
   const navigate = useNavigate();
 
+  /**
+   * Handles logout while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleLogout() {
     await supabase.auth.signOut();
     onLogout?.();
@@ -87,11 +127,19 @@ function LogoutButton({ onLogout }: LogoutButtonProps) {
   );
 }
 
+/**
+ * Implements support link for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function SupportLink({ onNavigate }: { onNavigate?: () => void }) {
   const href = 'mailto:support@dronesms.app?subject=DroneSMS%20Support%20Request&body=DroneSMS%20Support%20Request%0A%0APlease%20describe%20the%20issue%20or%20question%20below%3A%0A%0A';
   return <a href={href} onClick={onNavigate} className="mb-2 flex w-full items-center rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2">Need Help? / Report a Problem</a>;
 }
 
+/**
+ * Renders the brand mark interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function BrandMark() {
   return (
     <Link to="/dashboard" className="flex min-w-0 items-center gap-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2">
@@ -104,6 +152,10 @@ function BrandMark() {
   );
 }
 
+/**
+ * Renders the desktop sidebar interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function DesktopSidebar() {
   return (
     <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white px-4 py-5 shadow-sm md:flex md:flex-col" aria-label="Main sidebar">
@@ -119,9 +171,17 @@ export function DesktopSidebar() {
   );
 }
 
+/**
+ * Renders the mobile top bar interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function MobileTopBar() {
   const [isOpen, setIsOpen] = useState(false);
 
+  /**
+   * Handles close drawer while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function closeDrawer() {
     setIsOpen(false);
   }

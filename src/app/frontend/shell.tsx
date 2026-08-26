@@ -1,6 +1,15 @@
+/**
+ * File purpose: Defines the authenticated application shell shared by feature routes.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { Outlet } from 'react-router-dom';
 import { DesktopSidebar, MobileTopBar } from './features/navigation/components/responsive-nav';
 
+/**
+ * Implements app shell for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 export function AppShell() {
   return (
     <div className="app-shell flex w-full bg-slate-50">

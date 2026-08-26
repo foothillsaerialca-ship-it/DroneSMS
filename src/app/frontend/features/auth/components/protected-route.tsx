@@ -1,6 +1,15 @@
+/**
+ * File purpose: Provides the reusable protected route React component and its local interaction behavior.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from './use-auth';
 
+/**
+ * Renders the protected route interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function ProtectedRoute() {
   const { status, profileState, profileError } = useAuth();
   const location = useLocation();

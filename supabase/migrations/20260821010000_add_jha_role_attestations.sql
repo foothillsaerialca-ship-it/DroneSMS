@@ -1,3 +1,6 @@
+-- File purpose: Adds independent Safety Manager and RPIC JHA attestations plus database-enforced role validation.
+-- Fallback/error behavior: RPC functions raise authorization, membership, or missing-record exceptions; callers must display those errors.
+-- Known issues: reviewed statically but not applied to a disposable Supabase instance during the 2026-08-25 audit.
 -- Persist the two independent Phase 3A acknowledgements on the existing JHA.
 alter table public.jha_assessments
   add column if not exists safety_manager_personnel_id uuid references public.personnel(id) on delete restrict,
@@ -17,6 +20,8 @@ comment on column public.jha_assessments.rpic_accepted_at is
 -- These functions resolve the authoritative role at the moment of acknowledgement and
 -- require its personnel record to be linked to the authenticated user. The two updates
 -- deliberately touch separate columns so a dual-role person must perform both actions.
+-- Function purpose: records the current designated Safety Manager's review on a job JHA.
+-- Fallback/known errors: raises an exception when the user, JHA, designation, or personnel link is missing or unauthorized.
 create or replace function public.review_operational_jha_as_safety_manager(p_job_id uuid)
 returns public.jha_assessments
 language plpgsql
@@ -49,6 +54,8 @@ begin
 end;
 $$;
 
+-- Function purpose: records the assigned RPIC's acceptance independently from the Safety Manager review.
+-- Fallback/known errors: raises an exception when the user, JHA, or RPIC assignment is missing or unauthorized.
 create or replace function public.accept_operational_jha_as_rpic(p_job_id uuid)
 returns public.jha_assessments
 language plpgsql
@@ -88,6 +95,8 @@ grant execute on function public.review_operational_jha_as_safety_manager(uuid) 
 grant execute on function public.accept_operational_jha_as_rpic(uuid) to authenticated;
 
 -- Update Phase 1 user-facing language without renaming its established technical objects.
+-- Function purpose: updates the designation trigger so the selected safety representative is an active organization member.
+-- Fallback/known errors: mismatched membership raises an exception and aborts the designation change by design.
 create or replace function public.validate_safety_representative_membership()
 returns trigger language plpgsql set search_path = public as $$
 begin

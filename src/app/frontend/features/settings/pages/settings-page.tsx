@@ -1,3 +1,8 @@
+/**
+ * File purpose: Implements the settings page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../../lib/supabase';
@@ -11,9 +16,23 @@ import {
 } from '../lib/sms-defaults';
 
 // Requires a www-prefixed website, with optional http:// or https:// and a standard domain suffix.
+/**
+ * Purpose: Defines the domain format data contract used by the settings page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type DomainFormat = `www.${string}.${string}`;
+/**
+ * Purpose: Defines the flexible url data contract used by the settings page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type FlexibleUrl = DomainFormat | `https://${DomainFormat}` | `http://${DomainFormat}`;
 
+/**
+ * Determines is valid flexible url for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isValidFlexibleUrl(url: string): url is FlexibleUrl {
   const trimmedUrl = url.trim();
   if (!trimmedUrl) return true;
@@ -22,6 +41,11 @@ function isValidFlexibleUrl(url: string): url is FlexibleUrl {
   return urlRegex.test(trimmedUrl);
 }
 
+/**
+ * Purpose: Defines the settings form data contract used by the settings page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type SettingsForm = {
   companyName: string;
   phoneNumber: string;
@@ -47,8 +71,18 @@ type SettingsForm = {
   logoUrl: string;
 };
 
+/**
+ * Purpose: Defines the editable section data contract used by the settings page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type EditableSection = 'organization' | 'safety';
 
+/**
+ * Purpose: Provides the stable default shape for empty settings form in the settings page workflow.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const emptySettingsForm: SettingsForm = {
   companyName: '',
   phoneNumber: '',
@@ -74,6 +108,11 @@ const emptySettingsForm: SettingsForm = {
   logoUrl: ''
 };
 
+/**
+ * Purpose: Stores the shared organization fields structure used by the settings page module.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const organizationFields = [
   { key: 'companyName', label: 'Company Name', type: 'text', autoComplete: 'organization' },
   { key: 'phoneNumber', label: 'Phone Number', type: 'tel', autoComplete: 'tel' },
@@ -87,10 +126,18 @@ const organizationFields = [
   { key: 'serviceCommitment', label: 'Service Commitment', type: 'textarea', autoComplete: 'off' }
 ] as const;
 
+/**
+ * Computes get error message for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+/**
+ * Computes normalize settings for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function normalizeSettings(organization: Record<string, unknown> | null | undefined): SettingsForm {
   return {
     companyName: String(organization?.name ?? ''),
@@ -118,15 +165,27 @@ function normalizeSettings(organization: Record<string, unknown> | null | undefi
   };
 }
 
+/**
+ * Implements display value for this module.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function displayValue(value: string) {
   return value.trim() || 'Not provided';
 }
 
+/**
+ * Computes build logo path for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function buildLogoPath(organizationId: string, file: File) {
   const extension = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
   return `${organizationId}/logo-${Date.now()}.${extension}`;
 }
 
+/**
+ * Implements field display for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 function FieldDisplay({ label, value }: { label: string; value: string }) {
   const isEmpty = !value.trim();
 
@@ -141,6 +200,10 @@ function FieldDisplay({ label, value }: { label: string; value: string }) {
 }
 
 
+/**
+ * Renders the settings input interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function SettingsInput({
   label,
   name,
@@ -187,6 +250,10 @@ function SettingsInput({
 }
 
 
+/**
+ * Renders the checkbox field interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 function CheckboxField({ label, name, value, disabled, onChange }: { label: string; name: keyof SettingsForm; value: string; disabled: boolean; onChange: (name: keyof SettingsForm, value: string) => void }) {
   return (
     <label className="flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
@@ -196,6 +263,10 @@ function CheckboxField({ label, name, value, disabled, onChange }: { label: stri
   );
 }
 
+/**
+ * Renders the settings interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function SettingsPage() {
   const { session } = useAuth();
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -213,6 +284,10 @@ export function SettingsPage() {
   useEffect(() => {
     let isMounted = true;
 
+    /**
+     * Performs load settings for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadSettings() {
       if (!session?.user.id) return;
 
@@ -262,6 +337,10 @@ export function SettingsPage() {
     };
   }, [session?.user.id]);
 
+  /**
+   * Handles begin edit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function beginEdit(section: EditableSection) {
     setDraft(settings);
     setEditingSection(section);
@@ -269,6 +348,10 @@ export function SettingsPage() {
     setError(null);
   }
 
+  /**
+   * Handles cancel edit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function cancelEdit() {
     setDraft(settings);
     setEditingSection(null);
@@ -276,10 +359,18 @@ export function SettingsPage() {
     setMessage(null);
   }
 
+  /**
+   * Handles update draft while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function updateDraft(name: keyof SettingsForm, value: string) {
     setDraft((currentDraft) => ({ ...currentDraft, [name]: value }));
   }
 
+  /**
+   * Handles save while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingSection) return;
@@ -362,6 +453,10 @@ export function SettingsPage() {
     }
   }
 
+  /**
+   * Handles logo change while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleLogoChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';

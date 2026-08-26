@@ -1,13 +1,26 @@
+/**
+ * File purpose: Implements the company onboarding page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { useAuth } from '../components/use-auth';
 import { DEFAULT_SERVICE_COMMITMENT } from '@frontend/features/settings/lib/organization-settings';
 
+/**
+ * Computes get error message for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unable to save company details. Please try again.';
 }
 
+/**
+ * Implements find owned organization id for this module.
+ * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+ */
 async function findOwnedOrganizationId(userId: string) {
   const { data, error } = await supabase.from('organizations').select('id').eq('owner_user_id', userId).limit(1);
 
@@ -16,6 +29,10 @@ async function findOwnedOrganizationId(userId: string) {
   return data?.[0]?.id ?? null;
 }
 
+/**
+ * Performs save organization for the surrounding workflow.
+ * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ */
 async function saveOrganization({
   organizationId,
   userId,
@@ -77,6 +94,10 @@ async function saveOrganization({
   return data.id;
 }
 
+/**
+ * Renders the company onboarding interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function CompanyOnboardingPage() {
   const navigate = useNavigate();
   const { refreshProfileState } = useAuth();
@@ -85,6 +106,10 @@ export function CompanyOnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  /**
+   * Handles submit while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 

@@ -1,8 +1,17 @@
+/**
+ * File purpose: Provides the reusable account security card React component and its local interaction behavior.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, useMemo, useState } from 'react';
 import { supabase } from '@frontend/lib/supabase';
 import { areAllRequirementsMet, validatePasswordRequirements } from '@frontend/lib/password-utils';
 import { friendlyAuthError, getAppUrl } from '../../auth/lib/auth-helpers';
 
+/**
+ * Renders the account security card interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function AccountSecurityCard({ currentEmail }: { currentEmail?: string }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
@@ -16,6 +25,10 @@ export function AccountSecurityCard({ currentEmail }: { currentEmail?: string })
   const requirementsMet = useMemo(() => areAllRequirementsMet(validatePasswordRequirements(password)), [password]);
   const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100';
 
+  /**
+   * Handles change password while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPasswordError(null);
@@ -39,6 +52,10 @@ export function AccountSecurityCard({ currentEmail }: { currentEmail?: string })
     setPasswordMessage('Password successfully changed. Use the new password the next time you sign in.');
   }
 
+  /**
+   * Handles change email while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function changeEmail(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setEmailError(null);

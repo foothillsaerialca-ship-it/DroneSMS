@@ -1,8 +1,23 @@
+/**
+ * File purpose: Implements the sms page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../auth/components/use-auth';
 
+/**
+ * Purpose: Defines the member data contract used by the sms page module.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type Member = { id: string; full_name: string; role: string };
+/**
+ * Purpose: Stores the shared pillars structure used by the sms page module.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const pillars = [
   { title: 'Safety Policy & Objectives', items: ['Safety Policy Statement', 'Safety Objectives'] },
   { title: 'Safety Risk Management', items: ['Risk Acceptance Criteria', 'Risk Matrix Configuration'] },
@@ -10,10 +25,18 @@ const pillars = [
   { title: 'Safety Promotion', items: ['Training Program Summary', 'Safety Meeting Frequency'] }
 ] as const;
 
+/**
+ * Determines is rpic for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function isRpic(member: Member) {
   return /\brpic\b|remote pilot in command/i.test(member.role);
 }
 
+/**
+ * Renders the sms interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function SmsPage() {
   const { session } = useAuth();
   const [organizationId, setOrganizationId] = useState('');
@@ -28,6 +51,10 @@ export function SmsPage() {
 
   useEffect(() => {
     let mounted = true;
+    /**
+     * Performs load for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function load() {
       if (!session?.user.id) return;
       setLoading(true);
@@ -58,6 +85,10 @@ export function SmsPage() {
     return () => { mounted = false; };
   }, [session?.user.id]);
 
+  /**
+   * Performs save designation for the surrounding workflow.
+   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+   */
   async function saveDesignation(event: FormEvent) {
     event.preventDefault();
     if (!organizationId || !selectedId || !session?.user.id) return setError('Select an active organization member.');
@@ -68,6 +99,10 @@ export function SmsPage() {
     setMessage('Safety Manager saved.');
   }
 
+  /**
+   * Performs save program language for the surrounding workflow.
+   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+   */
   async function saveProgramLanguage(event: FormEvent) {
     event.preventDefault();
     if (!organizationId) return;

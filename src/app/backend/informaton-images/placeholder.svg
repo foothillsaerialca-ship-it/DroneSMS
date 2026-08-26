@@ -1,3 +1,4 @@
+<!-- File purpose: Provides a static placeholder image for backend-managed informational media. Fallback/error behavior: consumers must supply their own alternate text or replacement when this asset cannot load. Known issues: none identified during the 2026-08-25 audit. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">

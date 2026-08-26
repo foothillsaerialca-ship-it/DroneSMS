@@ -1,20 +1,27 @@
+/**
+ * File purpose: Implements the job detail page application page, including its presentation, state, validation, and service interactions.
+ * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
+ * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ */
 import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
+import { formatIsoDate as formatPlannedDate } from '@frontend/lib/date-utils';
+import { getGenericErrorMessage as getErrorMessage } from '@frontend/lib/error-utils';
+import { serviceTypes } from '@frontend/features/jobs/lib/workflow-types';
 
-const serviceTypes = [
-  'Cleaning Operations',
-  'Thermal Inspection',
-  'Roof Inspection',
-  'Agricultural',
-  'Mapping / Surveying',
-  'Construction Progress',
-  'Real Estate / Property Media',
-  'Custom Operation'
-];
-
+/**
+ * Purpose: Defines the ordered status options used for UI choices and workflow decisions in job detail page.
+ * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
+ * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
+ */
 const statusOptions = ['Planned', 'In Progress', 'Needs Review', 'Complete'];
 
+/**
+ * Purpose: Represents job data read, written, or rendered by the job detail page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type Job = {
   id: string;
   name: string;
@@ -29,6 +36,11 @@ type Job = {
   source_proposal_number: string | null;
 };
 
+/**
+ * Purpose: Represents the complete job form state used by the job detail page workflow.
+ * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
+ * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
+ */
 type JobFormState = {
   name: string;
   serviceType: string;
@@ -40,19 +52,10 @@ type JobFormState = {
   notes: string;
 };
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
-}
-
-function formatPlannedDate(plannedDate: string) {
-  if (!plannedDate) return 'Not scheduled';
-
-  const [year, month, day] = plannedDate.split('-');
-  if (!year || !month || !day) return plannedDate;
-
-  return `${month}/${day}/${year}`;
-}
-
+/**
+ * Computes to form state for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function toFormState(job: Job): JobFormState {
   return {
     name: job.name,
@@ -66,6 +69,10 @@ function toFormState(job: Job): JobFormState {
   };
 }
 
+/**
+ * Renders the job detail interface and coordinates its user interactions.
+ * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+ */
 export function JobDetailPage() {
   const { jobId } = useParams();
   const [job, setJob] = useState<Job | null>(null);
@@ -79,6 +86,10 @@ export function JobDetailPage() {
   useEffect(() => {
     let isMounted = true;
 
+    /**
+     * Performs load job for the surrounding workflow.
+     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+     */
     async function loadJob() {
       if (!jobId) {
         setLoadError('Missing job id.');
@@ -124,10 +135,18 @@ export function JobDetailPage() {
     };
   }, [jobId]);
 
+  /**
+   * Renders the update field interface and coordinates its user interactions.
+   * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
+   */
   function updateField(field: keyof JobFormState, value: string) {
     setFormData((current) => (current ? { ...current, [field]: value } : current));
   }
 
+  /**
+   * Implements validate form for this module.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   function validateForm() {
     if (!formData?.name.trim()) return 'Job name is required.';
     if (!formData.serviceType) return 'Service type is required.';
@@ -137,6 +156,10 @@ export function JobDetailPage() {
     return null;
   }
 
+  /**
+   * Handles save while keeping the feature state consistent.
+   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
+   */
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
