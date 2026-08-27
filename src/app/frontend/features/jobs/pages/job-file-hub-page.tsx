@@ -75,7 +75,6 @@ type JhaSummary = {
   laanc_required: string | null;
   crew_briefed: boolean;
   controls_in_place: boolean;
-  stop_work_authority_acknowledged: boolean;
   certified_at: string | null;
 };
 
@@ -341,7 +340,7 @@ export function JobFileHubPage() {
           .order('created_at', { ascending: false });
         const jhaSummaryQuery = supabase
           .from('jha_assessments')
-          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, stop_work_authority_acknowledged, certified_at')
+          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at')
           .eq('job_id', jobId)
           .maybeSingle();
         const preflightSummaryQuery = supabase

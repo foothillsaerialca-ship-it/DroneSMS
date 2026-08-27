@@ -773,7 +773,7 @@ type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: {
 type JobPacketEquipmentReferenceDocument = { document_type: string; file_name: string | null; display_file_name: string | null; storage_path: string | null; mime_type: string | null; created_at: string | null };
 type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipment_type: string | null; status: string | null; make?: string | null; product_category?: string | null; typical_mix_ratio?: string | null; application_notes?: string | null; equipment_reference_documents?: JobPacketEquipmentReferenceDocument[] } | null };
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
-type JobPacketJha = { status: string | null; faa_airspace_class: string | null; laanc_required: string | null; relevant_airport_heliport: string | null; nearby_airport_heliport?: string | null; known_airspace_restrictions: string | null; additional_authorization_required: string | null; nearest_hospital: string | null; emergency_facility_address: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; ppe_requirements: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
+type JobPacketJha = { status: string | null; safety_manager_name: string | null; safety_manager_role_label: string | null; safety_manager_reviewed_at: string | null; safety_manager_review_stale: boolean | null; rpic_name: string | null; rpic_role_label: string | null; rpic_accepted_at: string | null; rpic_acceptance_stale: boolean | null; faa_airspace_class: string | null; laanc_required: string | null; relevant_airport_heliport: string | null; nearby_airport_heliport?: string | null; known_airspace_restrictions: string | null; additional_authorization_required: string | null; nearest_hospital: string | null; emergency_facility_address: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; ppe_requirements: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
 type JobPacketPreflight = Record<string, boolean | string | null> & { status: string | null; notes?: string | null; final_rpic_approval?: boolean | null };
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
 type JobPacketPhoto = { id: string; hazard_id: string | null; hazard_name: string | null; photo_url: string; caption: string | null; include_in_packet: boolean; created_at: string | null; category?: string | null };
@@ -817,6 +817,12 @@ export async function generateJobPacketPdf(jobId: string) {
     ['Nearest Hospital / Emergency Facility', clean(packet.jha?.nearest_hospital) || 'Not recorded'],
     ...(clean(packet.jha?.emergency_facility_address) ? [['Emergency Facility Address', clean(packet.jha?.emergency_facility_address)] as [string, string]] : []),
   ]);
+  renderer.section('OPERATIONAL CONFIRMATIONS');
+  renderer.keyValueTable([['Crew briefing completed', packet.jha?.crew_briefed ? 'Confirmed' : 'Not confirmed'], ['Required controls in place', packet.jha?.controls_in_place ? 'Confirmed' : 'Not confirmed']]);
+  renderer.section('SAFETY MANAGER REVIEW');
+  renderer.keyValueTable([['Safety Manager', packet.jha?.safety_manager_name ? `${clean(packet.jha.safety_manager_name)} — ${clean(packet.jha.safety_manager_role_label) || 'Safety Manager'}` : 'No Safety Manager Review recorded'], ['Review Status', packet.jha?.safety_manager_review_stale ? 'Re-review required' : packet.jha?.safety_manager_reviewed_at ? 'Reviewed' : 'Pending'], ['Reviewed', packet.jha?.safety_manager_reviewed_at ? formatAttestationDateTime(packet.jha.safety_manager_reviewed_at) : 'Not recorded']]);
+  renderer.section('RPIC ACCEPTANCE');
+  renderer.keyValueTable([['RPIC', packet.jha?.rpic_name ? `${clean(packet.jha.rpic_name)} — ${clean(packet.jha.rpic_role_label) || 'RPIC'}` : 'No RPIC Acceptance recorded'], ['Acceptance Status', packet.jha?.rpic_acceptance_stale ? 'Re-acceptance required' : packet.jha?.rpic_accepted_at ? 'Accepted' : 'Pending'], ['Accepted', packet.jha?.rpic_accepted_at ? formatAttestationDateTime(packet.jha.rpic_accepted_at) : 'Not recorded']]);
   renderer.startContentPage();
   renderer.majorSection('CLOSEOUT & SUPPORTING DOCUMENTATION');
   const environmentalRows = buildEnvironmentalRows(packet.jha);
@@ -850,7 +856,7 @@ async function loadJobPacketForPdf(jobId: string) {
     supabase.from('job_personnel').select('assigned_role, personnel:personnel_id(full_name, role, part_107_expiration_date, training_expiration_date, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status, make, product_category, typical_mix_ratio, application_notes, equipment_reference_documents(document_type, file_name, display_file_name, storage_path, mime_type, created_at))').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_safety_events').select('category, description, immediate_actions_taken, outcome, created_at').eq('job_id', jobId).order('created_at', { ascending: false }),
-    supabase.from('jha_assessments').select('status, faa_airspace_class, laanc_required, relevant_airport_heliport, nearby_airport_heliport, known_airspace_restrictions, additional_authorization_required, nearest_hospital, emergency_facility_address, crew_briefed, controls_in_place, certified_at, hazard_entries, ppe_requirements, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
+    supabase.from('jha_assessments').select('status, safety_manager_name, safety_manager_role_label, safety_manager_reviewed_at, safety_manager_review_stale, rpic_name, rpic_role_label, rpic_accepted_at, rpic_acceptance_stale, faa_airspace_class, laanc_required, relevant_airport_heliport, nearby_airport_heliport, known_airspace_restrictions, additional_authorization_required, nearest_hospital, emergency_facility_address, crew_briefed, controls_in_place, certified_at, hazard_entries, ppe_requirements, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
     supabase.from('preflight_checklists').select('*').eq('job_id', jobId).maybeSingle(),
     supabase.from('job_operation_closeouts').select('operation_result, deviation_narrative, updated_at').eq('job_id', jobId).maybeSingle(),
     supabase.from('generated_documents').select('document_type, file_name, display_file_name').eq('record_type', 'job').eq('record_id', jobId).is('archived_at', null).neq('document_type', 'job_packet_pdf').order('generated_at', { ascending: false }),
@@ -1363,6 +1369,10 @@ function booleanDisplay(value: boolean | null) {
 
 function clean(value: string | null | undefined) {
   return value?.trim() ?? '';
+}
+
+function formatAttestationDateTime(value: string) {
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
 function formatDate(value: string | null | undefined) {
