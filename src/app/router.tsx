@@ -1,4 +1,4 @@
-import { Link, Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './frontend/shell';
 import { DashboardPage } from './frontend/features/dashboard/pages/dashboard-page';
 import { JobsPage } from './frontend/features/jobs/pages/jobs-page';
@@ -10,7 +10,7 @@ import { JobHazardAnalysisPage } from './frontend/features/jobs/pages/job-hazard
 import { PreflightChecklistPage } from './frontend/features/preflight/pages/preflight-checklist-page';
 import { PersonnelPage } from './frontend/features/personnel/pages/personnel-page';
 import { EquipmentPage } from './frontend/features/equipment/pages/equipment-page';
-import { LoginPage } from './frontend/features/auth/pages/login-page';
+import { BetaWelcomePage } from './frontend/features/auth/pages/beta-welcome-page';
 import { RegisterPage } from './frontend/features/auth/pages/register-page';
 import { CompanyOnboardingPage } from './frontend/features/auth/pages/company-onboarding-page';
 import { SettingsPage } from './frontend/features/settings/pages/settings-page';
@@ -23,41 +23,11 @@ import { ForgotPasswordPage } from './frontend/features/auth/pages/forgot-passwo
 import { ResetPasswordPage } from './frontend/features/auth/pages/reset-password-page';
 import { AuthCallbackPage } from './frontend/features/auth/pages/auth-callback-page';
 
-function LandingPage() {
-  return (
-    <section className="mx-auto w-full max-w-xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-      <div className="space-y-4 text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-brand-700">Welcome to</p>
-        <h1 className="text-4xl font-bold tracking-tight text-slate-900">DroneSMS</h1>
-        <div className="mx-auto max-w-lg space-y-2 text-sm leading-6 text-slate-600">
-          <p>A Safety Management System built for commercial drone operators.</p>
-          <p>Aviation-grade safety. Made practical.</p>
-        </div>
-      </div>
-
-      <div className="mt-8 grid gap-3 sm:grid-cols-2">
-        <Link
-          to="/login"
-          className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-800"
-        >
-          Sign In
-        </Link>
-        <Link
-          to="/register"
-          className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
-        >
-          Register
-        </Link>
-      </div>
-    </section>
-  );
-}
-
 export function AppRouter() {
   return (
     <Routes>
-      <Route index element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
+      <Route index element={<BetaWelcomePage />} />
+      <Route path="/login" element={<BetaWelcomePage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />

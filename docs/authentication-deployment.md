@@ -8,3 +8,7 @@ Before inviting beta users, configure the Supabase project Authentication URL se
 - Keep email confirmation enabled and review **Secure email change** according to the beta security policy.
 
 Set `VITE_APP_URL` to the deployed DroneSMS origin in the production build environment. When it is omitted, the frontend uses the current browser origin, which preserves local development and preview behavior. Never place a Supabase service-role key in a `VITE_` variable.
+
+# Beta welcome screen
+
+The pre-sign-in beta notice is enabled by default. Set `VITE_BETA_WELCOME_ENABLED=false` in the frontend build environment to disable it when beta testing ends.
