@@ -29,9 +29,10 @@ function LandingPage() {
       <div className="space-y-4 text-center">
         <p className="text-sm font-semibold uppercase tracking-[0.24em] text-brand-700">Welcome to</p>
         <h1 className="text-4xl font-bold tracking-tight text-slate-900">DroneSMS</h1>
-        <p className="mx-auto max-w-lg text-sm leading-6 text-slate-600">
-          A practical operational safety system for drone operators, helping teams identify hazards, document mitigations, capture evidence, generate operational records, and demonstrate due diligence throughout every stage of flight operations.
-        </p>
+        <div className="mx-auto max-w-lg space-y-2 text-sm leading-6 text-slate-600">
+          <p>A Safety Management System built for commercial drone operators.</p>
+          <p>Aviation-grade safety. Made practical.</p>
+        </div>
       </div>
 
       <div className="mt-8 grid gap-3 sm:grid-cols-2">
