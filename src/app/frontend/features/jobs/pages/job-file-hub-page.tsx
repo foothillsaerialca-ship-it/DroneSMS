@@ -216,7 +216,6 @@ export function JobFileHubPage() {
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
   const [safetyEventFormData, setSafetyEventFormData] = useState<SafetyEventFormState>(initialSafetyEventFormState);
   const [closeoutFormData, setCloseoutFormData] = useState<CloseoutFormState>({ operationResult: operationResultOptions[0], deviationNarrative: '' });
-  const [editingSafetyEventId, setEditingSafetyEventId] = useState<string | null>(null);
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
   const [editedAssignmentRole, setEditedAssignmentRole] = useState(crewRoleOptions[0]);
   const [isCrewFormOpen, setIsCrewFormOpen] = useState(false);
@@ -230,7 +229,6 @@ export function JobFileHubPage() {
   const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null);
   const [savingRoleAssignmentId, setSavingRoleAssignmentId] = useState<string | null>(null);
   const [removingEquipmentAssignmentId, setRemovingEquipmentAssignmentId] = useState<string | null>(null);
-  const [removingSafetyEventId, setRemovingSafetyEventId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [crewError, setCrewError] = useState<string | null>(null);
   const [crewMessage, setCrewMessage] = useState<string | null>(null);
@@ -279,7 +277,6 @@ export function JobFileHubPage() {
 
   function resetSafetyEventForm() {
     setSafetyEventFormData(initialSafetyEventFormState);
-    setEditingSafetyEventId(null);
   }
 
   function updateSafetyEventField<Key extends keyof SafetyEventFormState>(field: Key, value: SafetyEventFormState[Key]) {
@@ -614,79 +611,32 @@ export function JobFileHubPage() {
         description: safetyEventFormData.description.trim(),
         immediate_actions_taken: safetyEventFormData.immediateActionsTaken.trim() || null,
         outcome: safetyEventFormData.outcome,
-        promote_to_hazard_library: safetyEventFormData.promoteToHazardLibrary
+        promote_to_hazard_library: false
       };
 
-      if (editingSafetyEventId) {
-        const { error: updateError } = await supabase.from('job_safety_events').update(payload).eq('id', editingSafetyEventId);
-        if (updateError) throw updateError;
-      } else {
-        const { data: userResult, error: userError } = await supabase.auth.getUser();
-        if (userError) throw userError;
+      const { data: userResult, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
 
-        const userId = userResult.user?.id;
-        if (!userId) throw new Error('Sign in again before documenting a safety event.');
+      const userId = userResult.user?.id;
+      if (!userId) throw new Error('Sign in again before documenting a safety event.');
 
-        const { error: insertError } = await supabase.from('job_safety_events').insert({
-          ...payload,
-          job_id: job.id,
-          organization_id: job.organization_id,
-          created_by: userId
-        });
+      const { error: insertError } = await supabase.from('job_safety_events').insert({
+        ...payload,
+        job_id: job.id,
+        organization_id: job.organization_id,
+        created_by: userId
+      });
 
-        if (insertError) throw insertError;
-      }
+      if (insertError) throw insertError;
 
       await loadSafetyEvents(job.id);
-      setSafetyEventMessage(editingSafetyEventId ? 'Safety event updated.' : 'Safety event added to this Job File.');
+      setSafetyEventMessage('Safety event added to this Job File and queued for Safety Manager Review.');
       resetSafetyEventForm();
       setIsSafetyEventFormOpen(false);
     } catch (saveError) {
       setSafetyEventError(getErrorMessage(saveError));
     } finally {
       setIsSavingSafetyEvent(false);
-    }
-  }
-
-  function handleEditSafetyEvent(safetyEvent: JobSafetyEvent) {
-    setEditingSafetyEventId(safetyEvent.id);
-    setSafetyEventFormData({
-      category: safetyEvent.category,
-      description: safetyEvent.description,
-      immediateActionsTaken: safetyEvent.immediate_actions_taken ?? '',
-      outcome: safetyEvent.outcome,
-      promoteToHazardLibrary: safetyEvent.promote_to_hazard_library
-    });
-    setSafetyEventError(null);
-    setSafetyEventMessage(null);
-    setIsSafetyEventFormOpen(true);
-  }
-
-  async function handleDeleteSafetyEvent(safetyEvent: JobSafetyEvent) {
-    if (!job) return;
-
-    const confirmed = window.confirm('Delete this safety event from the Job File? This cannot be undone.');
-    if (!confirmed) return;
-
-    setSafetyEventError(null);
-    setSafetyEventMessage(null);
-    setRemovingSafetyEventId(safetyEvent.id);
-
-    try {
-      const { error: deleteError } = await supabase.from('job_safety_events').delete().eq('id', safetyEvent.id);
-      if (deleteError) throw deleteError;
-
-      if (editingSafetyEventId === safetyEvent.id) {
-        resetSafetyEventForm();
-        setIsSafetyEventFormOpen(false);
-      }
-
-      await loadSafetyEvents(job.id);
-      setSafetyEventMessage('Safety event deleted from this Job File.');
-    } catch (deleteError) {
-      setSafetyEventError(getErrorMessage(deleteError));
-    } finally {
-      setRemovingSafetyEventId(null);
     }
   }
 
@@ -1286,13 +1236,7 @@ export function JobFileHubPage() {
                     <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
                       {safetyEvent.outcome}
                     </span>
-                    <span
-                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                        safetyEvent.promote_to_hazard_library ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-600'
-                      }`}
-                    >
-                      {safetyEvent.promote_to_hazard_library ? 'Promote to Hazard Library' : 'Do not promote'}
-                    </span>
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Safety Manager Review</span>
                   </div>
                   <p className="text-sm text-slate-800">{safetyEvent.description}</p>
                   {safetyEvent.immediate_actions_taken ? (
@@ -1301,24 +1245,7 @@ export function JobFileHubPage() {
                     </p>
                   ) : null}
                 </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <button
-                    type="button"
-                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
-                    onClick={() => handleEditSafetyEvent(safetyEvent)}
-                    disabled={isSavingSafetyEvent || removingSafetyEventId === safetyEvent.id}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
-                    onClick={() => void handleDeleteSafetyEvent(safetyEvent)}
-                    disabled={removingSafetyEventId === safetyEvent.id}
-                  >
-                    {removingSafetyEventId === safetyEvent.id ? 'Deleting...' : 'Delete'}
-                  </button>
-                </div>
+                <p className="text-xs font-medium text-slate-500">Submitted records are preserved as historical evidence.</p>
               </div>
             </article>
           ))}
@@ -1336,7 +1263,7 @@ export function JobFileHubPage() {
           <form id="safety-event-form" className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3" onSubmit={handleSaveSafetyEvent}>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-brand-900">{editingSafetyEventId ? 'Edit Safety Event' : 'Add Safety Event'}</h3>
+                <h3 className="text-sm font-semibold text-brand-900">Add Safety Event</h3>
                 <p className="mt-1 text-sm text-slate-600">Capture the condition, response, outcome, and whether it should be promoted later.</p>
               </div>
               <button
@@ -1405,26 +1332,14 @@ export function JobFileHubPage() {
               </label>
             </div>
 
-            <label className="mt-4 flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
-              <input
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700"
-                type="checkbox"
-                checked={safetyEventFormData.promoteToHazardLibrary}
-                onChange={(event) => updateSafetyEventField('promoteToHazardLibrary', event.target.checked)}
-                disabled={isSavingSafetyEvent}
-              />
-              <span>
-                <span className="font-medium text-slate-800">Promote to Hazard Library</span>
-                <span className="mt-1 block text-slate-600">Flag this event for a future hazard library review. This does not create a Hazard Library item yet.</span>
-              </span>
-            </label>
+            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Submitting creates a Safety Event Review in SMS. No hazard is created or proposed automatically.</p>
 
             <button
               type="submit"
               className="mt-4 min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
               disabled={isSavingSafetyEvent}
             >
-              {isSavingSafetyEvent ? 'Saving...' : editingSafetyEventId ? 'Save Safety Event' : 'Add Safety Event'}
+              {isSavingSafetyEvent ? 'Saving...' : 'Add Safety Event'}
             </button>
           </form>
         ) : null}
