@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
+import { resetBetaAuthAttempt } from '../../auth/lib/beta-welcome';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', end: true },
@@ -72,6 +73,7 @@ function LogoutButton({ onLogout }: LogoutButtonProps) {
 
   async function handleLogout() {
     await supabase.auth.signOut();
+    resetBetaAuthAttempt();
     onLogout?.();
     navigate('/login', { replace: true });
   }
