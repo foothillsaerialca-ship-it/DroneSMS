@@ -1,71 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
-
-type ChecklistKey =
-  | 'aircraft_selected'
-  | 'battery_condition_checked'
-  | 'propellers_inspected'
-  | 'firmware_app_status_checked'
-  | 'gps_signal_confirmed'
-  | 'home_point_verified'
-  | 'storage_media_checked'
-  | 'weather_verified'
-  | 'wind_conditions_acceptable'
-  | 'airspace_reviewed'
-  | 'laanc_confirmed_if_required'
-  | 'notam_tfr_checked'
-  | 'visual_observer_assigned_if_needed'
-  | 'emergency_procedures_reviewed'
-  | 'crew_communications_confirmed'
-  | 'final_rpic_approval';
-
-type ChecklistItem = { key: ChecklistKey; label: string };
-
-const sections: { title: string; items: ChecklistItem[] }[] = [
-  {
-    title: 'Aircraft & Equipment',
-    items: [
-      { key: 'aircraft_selected', label: 'Aircraft selected' },
-      { key: 'battery_condition_checked', label: 'Battery condition checked' },
-      { key: 'propellers_inspected', label: 'Propellers inspected' },
-      { key: 'firmware_app_status_checked', label: 'Firmware/app status checked' },
-      { key: 'gps_signal_confirmed', label: 'GPS/signal confirmed' },
-      { key: 'home_point_verified', label: 'Home point verified' },
-      { key: 'storage_media_checked', label: 'Storage/media checked' }
-    ]
-  },
-  {
-    title: 'Environment & Airspace',
-    items: [
-      { key: 'weather_verified', label: 'Weather verified' },
-      { key: 'wind_conditions_acceptable', label: 'Wind conditions acceptable' },
-      { key: 'airspace_reviewed', label: 'Airspace reviewed' },
-      { key: 'laanc_confirmed_if_required', label: 'LAANC confirmed if required' },
-      { key: 'notam_tfr_checked', label: 'NOTAM/TFR checked' }
-    ]
-  },
-  {
-    title: 'Crew & Safety',
-    items: [
-      { key: 'visual_observer_assigned_if_needed', label: 'Visual observer assigned if needed' },
-      { key: 'emergency_procedures_reviewed', label: 'Emergency procedures reviewed' },
-      { key: 'crew_communications_confirmed', label: 'Crew communications confirmed' },
-      { key: 'final_rpic_approval', label: 'Final RPIC approval' }
-    ]
-  }
-];
-
-const allItems = sections.flatMap((section) => section.items);
-
-const requiredForCompletion: ChecklistKey[] = ['weather_verified', 'airspace_reviewed', 'final_rpic_approval'];
+import { checklistItems, checklistSections, emptyChecklistStates, getCompletionError, readChecklistStates, type ChecklistItemState, type ChecklistKey, type ChecklistStates } from '../lib/preflight-checklist';
 const statusLabels = { Draft: 'Draft', Complete: 'Complete' } as const;
 
 type ChecklistStatus = keyof typeof statusLabels;
 type Job = { id: string; organization_id: string; name: string; service_type: string; location: string; planned_date: string | null; status: string };
-type Checklist = Record<ChecklistKey, boolean> & { notes: string; status: ChecklistStatus };
-type PreflightChecklistRow = Partial<Record<ChecklistKey, boolean>> & { id: string; notes: string | null; status: string | null };
+type Checklist = { states: ChecklistStates; notes: string; status: ChecklistStatus };
+type PreflightChecklistRow = Partial<Record<ChecklistKey, boolean>> & { id: string; checklist_states?: unknown; notes: string | null; status: string | null };
 type ChecklistPayload = Record<ChecklistKey, boolean> & {
+  checklist_states: ChecklistStates;
   job_id: string;
   organization_id: string;
   user_id: string;
@@ -75,22 +19,7 @@ type ChecklistPayload = Record<ChecklistKey, boolean> & {
 };
 
 const emptyChecklist: Checklist = {
-  aircraft_selected: false,
-  battery_condition_checked: false,
-  propellers_inspected: false,
-  firmware_app_status_checked: false,
-  gps_signal_confirmed: false,
-  home_point_verified: false,
-  storage_media_checked: false,
-  weather_verified: false,
-  wind_conditions_acceptable: false,
-  airspace_reviewed: false,
-  laanc_confirmed_if_required: false,
-  notam_tfr_checked: false,
-  visual_observer_assigned_if_needed: false,
-  emergency_procedures_reviewed: false,
-  crew_communications_confirmed: false,
-  final_rpic_approval: false,
+  states: emptyChecklistStates,
   notes: '',
   status: 'Draft'
 };
@@ -109,8 +38,7 @@ function toChecklist(row: PreflightChecklistRow | null): Checklist {
   if (!row) return emptyChecklist;
 
   return {
-    ...emptyChecklist,
-    ...Object.fromEntries(allItems.map(({ key }) => [key, Boolean(row[key])])),
+    states: readChecklistStates(row.checklist_states, row),
     notes: row.notes ?? '',
     status: row.status === 'Complete' ? 'Complete' : 'Draft'
   };
@@ -132,8 +60,8 @@ export function PreflightChecklistPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  const totalItems = useMemo(() => allItems.length, []);
-  const completedItems = useMemo(() => allItems.filter(({ key }) => checklist[key]).length, [checklist]);
+  const totalItems = useMemo(() => checklistItems.length, []);
+  const completedItems = useMemo(() => checklistItems.filter(({ key }) => checklist.states[key] === 'confirmed' || checklist.states[key] === 'not_applicable').length, [checklist.states]);
   const completionPercent = Math.round((completedItems / totalItems) * 100);
 
   useEffect(() => {
@@ -184,23 +112,17 @@ export function PreflightChecklistPage() {
     };
   }, [jobId]);
 
-  function updateChecklist(key: ChecklistKey, checked: boolean) {
-    setChecklist((current) => ({ ...current, [key]: checked }));
+  function updateChecklist(key: ChecklistKey, state: ChecklistItemState) {
+    setChecklist((current) => ({ ...current, states: { ...current.states, [key]: state }, status: 'Draft' }));
     setSaveMessage(null);
     setSaveError(null);
-  }
-
-  function getCompletionError() {
-    const missingLabels = allItems.filter(({ key }) => requiredForCompletion.includes(key) && !checklist[key]).map(({ label }) => label);
-
-    return missingLabels.length ? `Complete these required items before completing the checklist: ${missingLabels.join(', ')}.` : null;
   }
 
   async function saveChecklist(status: ChecklistStatus) {
     if (!job) return;
 
     if (status === 'Complete') {
-      const validationError = getCompletionError();
+      const validationError = getCompletionError(checklist.states);
       if (validationError) {
         setSaveError(validationError);
         setSaveMessage(null);
@@ -218,7 +140,8 @@ export function PreflightChecklistPage() {
       if (!userData.user) throw new Error('You must be signed in to save a pre-flight checklist.');
 
       const payload: ChecklistPayload = {
-        ...(Object.fromEntries(allItems.map(({ key }) => [key, checklist[key]])) as Record<ChecklistKey, boolean>),
+        ...(Object.fromEntries(checklistItems.map(({ key }) => [key, checklist.states[key] === 'confirmed'])) as Record<ChecklistKey, boolean>),
+        checklist_states: checklist.states,
         job_id: job.id,
         organization_id: job.organization_id,
         user_id: userData.user.id,
@@ -246,7 +169,7 @@ export function PreflightChecklistPage() {
 
       setChecklist((current) => ({
         ...current,
-        ...(Object.fromEntries(allItems.map(({ key }) => [key, payload[key]])) as Record<ChecklistKey, boolean>),
+        states: payload.checklist_states,
         notes: payload.notes ?? '',
         status: payload.status
       }));
@@ -298,7 +221,7 @@ export function PreflightChecklistPage() {
 
         <div className="mt-5">
           <div className="flex items-center justify-between text-sm">
-            <span className="font-medium text-slate-700">{completedItems} of {totalItems} complete</span>
+            <span className="font-medium text-slate-700">{completedItems} of {totalItems} resolved</span>
             <span className="font-semibold text-brand-700">{completionPercent}%</span>
           </div>
           <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-100" aria-label="Checklist completion">
@@ -310,16 +233,30 @@ export function PreflightChecklistPage() {
       {saveError ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">{saveError}</div> : null}
       {saveMessage ? <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700" role="status">{saveMessage}</div> : null}
 
-      {sections.map((section) => (
+      {checklistSections.map((section) => (
         <fieldset key={section.title} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" disabled={isSaving}>
           <legend className="px-1 text-base font-semibold text-brand-900">{section.title}</legend>
           <div className="mt-3 space-y-3">
-            {section.items.map(({ key, label }) => (
-              <label key={key} className="flex min-h-12 items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm font-medium text-slate-700">
-                <input className="mt-1 h-5 w-5 rounded border-slate-300 text-brand-700 focus:ring-brand-700" type="checkbox" checked={checklist[key]} onChange={(event) => updateChecklist(key, event.target.checked)} />
-                <span>{label}</span>
-              </label>
-            ))}
+            {section.items.map(({ key, label }) => {
+              const state = checklist.states[key];
+              const tone = state === 'confirmed' ? 'border-green-200 bg-green-50' : state === 'not_applicable' ? 'border-slate-300 bg-slate-50' : state === 'not_confirmed' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50';
+              return (
+                <div key={key} className={`rounded-lg border p-3 ${tone}`}>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm font-medium text-slate-800">{label}</span>
+                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={label}>
+                      {([['confirmed', 'Confirmed'], ['not_confirmed', 'Not Confirmed'], ['not_applicable', 'Not Applicable']] as const).map(([value, text]) => (
+                        <label key={value} className="flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700">
+                          <input type="radio" name={key} value={value} checked={state === value} onChange={() => updateChecklist(key, value)} />
+                          {text}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs font-medium text-slate-600">{state === 'confirmed' ? 'Confirmed' : state === 'not_confirmed' ? 'Not Confirmed — resolve before completion' : state === 'not_applicable' ? 'Not Applicable' : 'Unresolved — select a state'}</p>
+                </div>
+              );
+            })}
           </div>
         </fieldset>
       ))}

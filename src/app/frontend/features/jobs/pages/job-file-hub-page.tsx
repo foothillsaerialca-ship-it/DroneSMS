@@ -433,7 +433,7 @@ export function JobFileHubPage() {
   const jhaComplete = jhaSummary?.status === 'Complete';
   const crewBriefingComplete = Boolean(jhaSummary?.crew_briefed && jhaComplete);
   const airspaceReviewComplete = Boolean(jhaSummary && (jhaSummary.faa_airspace_class || jhaSummary.laanc_required));
-  const preflightComplete = preflightSummary?.status === 'Complete' || Boolean(preflightSummary?.final_rpic_approval);
+  const preflightComplete = preflightSummary?.status === 'Complete';
   const closeoutComplete = Boolean(operationCloseout);
   const personnelReadinessSummary = getPersonnelReadinessSummary(assignments);
   const closeoutNarrativeRequired = resultsRequiringNarrative.has(closeoutFormData.operationResult);
