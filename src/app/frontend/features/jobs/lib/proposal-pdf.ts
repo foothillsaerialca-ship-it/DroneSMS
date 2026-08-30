@@ -11,6 +11,7 @@ import {
   normalizeSelectedHazards,
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
 import { getProposalScopeDefaults } from '@frontend/features/jobs/lib/proposal-scope';
+import { buildPreflightPacketRows } from '@frontend/features/preflight/lib/preflight-checklist';
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -774,7 +775,7 @@ type JobPacketEquipmentReferenceDocument = { document_type: string; file_name: s
 type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipment_type: string | null; status: string | null; make?: string | null; product_category?: string | null; typical_mix_ratio?: string | null; application_notes?: string | null; equipment_reference_documents?: JobPacketEquipmentReferenceDocument[] } | null };
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
 type JobPacketJha = { status: string | null; safety_manager_name: string | null; safety_manager_role_label: string | null; safety_manager_reviewed_at: string | null; safety_manager_review_stale: boolean | null; rpic_name: string | null; rpic_role_label: string | null; rpic_accepted_at: string | null; rpic_acceptance_stale: boolean | null; faa_airspace_class: string | null; laanc_required: string | null; relevant_airport_heliport: string | null; nearby_airport_heliport?: string | null; known_airspace_restrictions: string | null; additional_authorization_required: string | null; nearest_hospital: string | null; emergency_facility_address: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; ppe_requirements: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
-type JobPacketPreflight = Record<string, boolean | string | null> & { status: string | null; notes?: string | null; final_rpic_approval?: boolean | null };
+type JobPacketPreflight = Record<string, unknown> & { status: string | null; notes?: string | null; checklist_states?: unknown; final_rpic_approval?: boolean | null };
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
 type JobPacketPhoto = { id: string; hazard_id: string | null; hazard_name: string | null; photo_url: string; caption: string | null; include_in_packet: boolean; created_at: string | null; category?: string | null };
 
@@ -1085,10 +1086,9 @@ function formatPhotoTimestamp(value: string | null) {
 }
 
 
-function buildPreflightRows(preflight: JobPacketPreflight | null) {
+export function buildPreflightRows(preflight: JobPacketPreflight | null) {
   if (!preflight) return [['Status', 'Preflight checklist not started.']];
-  const labels: Record<string, string> = { aircraft_selected: 'Aircraft selected', battery_condition_checked: 'Battery condition checked', propellers_inspected: 'Propellers inspected', firmware_app_status_checked: 'Firmware/app status checked', gps_signal_confirmed: 'GPS signal confirmed', home_point_verified: 'Home point verified', storage_media_checked: 'Storage media checked', weather_verified: 'Weather verified', wind_conditions_acceptable: 'Wind conditions acceptable', airspace_reviewed: 'Airspace reviewed', laanc_confirmed_if_required: 'LAANC confirmed if required', notam_tfr_checked: 'NOTAM/TFR checked', visual_observer_assigned_if_needed: 'Visual observer assigned if needed', emergency_procedures_reviewed: 'Emergency procedures reviewed', crew_communications_confirmed: 'Crew communications confirmed', final_rpic_approval: 'Final RPIC approval' };
-  return [['Status', clean(preflight.status) || 'Draft'], ...Object.entries(labels).map(([key, label]) => [label, preflight[key] ? 'Complete' : 'Open'])];
+  return [['Status', clean(preflight.status) || 'Draft'], ...buildPreflightPacketRows(preflight)];
 }
 
 function buildEnvironmentalRows(jha: JobPacketJha | null): Array<[string, string]> {
