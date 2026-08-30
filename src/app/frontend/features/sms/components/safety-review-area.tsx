@@ -1,6 +1,9 @@
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../../lib/supabase';
+import { HazardLibrarySelector } from '../../safety/components/hazard-library-selector';
+import { type HazardLibraryRecord } from '../../safety/lib/hazard-library';
+import { loadHazardLibrary } from '../../safety/lib/hazard-library-service';
 
 type Review = {
   id: string; source_type: 'Custom Hazard' | 'Safety Event'; source_job_id: string; safety_event_id: string | null;
@@ -8,14 +11,13 @@ type Review = {
   mitigations_snapshot: string[]; rpic_name_snapshot: string | null; created_at: string; status: 'Pending' | 'Reviewed'; resolution: string | null;
   jobs: { name: string } | null; job_safety_events: { category: string; description: string; immediate_actions_taken: string | null; outcome: string } | null;
 };
-type LibraryHazard = { id: string; hazard_name: string; category: string; default_mitigation: string; mitigations: string[] };
 type Mode = 'create' | 'link' | 'none';
 
 const blankForm = { name: '', description: '', category: '', mitigations: [''] };
 
 export function SafetyReviewArea({ organizationId }: { organizationId: string }) {
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [library, setLibrary] = useState<LibraryHazard[]>([]);
+  const [library, setLibrary] = useState<HazardLibraryRecord[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [mode, setMode] = useState<Mode>('create');
   const [form, setForm] = useState(blankForm);
@@ -29,18 +31,17 @@ export function SafetyReviewArea({ organizationId }: { organizationId: string })
     if (!organizationId) return;
     const [reviewResult, libraryResult] = await Promise.all([
       supabase.from('hazard_library_reviews').select('*, jobs(name), job_safety_events(category, description, immediate_actions_taken, outcome)').eq('organization_id', organizationId).order('created_at', { ascending: false }),
-      supabase.from('hazard_library').select('id, hazard_name, category, default_mitigation, mitigations').order('hazard_name')
+      loadHazardLibrary()
     ]);
     if (reviewResult.error || libraryResult.error) return setError(reviewResult.error?.message || libraryResult.error?.message || 'Unable to load reviews.');
     setReviews((reviewResult.data || []) as unknown as Review[]);
-    setLibrary((libraryResult.data || []) as LibraryHazard[]);
+    setLibrary((libraryResult.data || []) as HazardLibraryRecord[]);
   }
 
   useEffect(() => { void load(); }, [organizationId]);
   const selected = reviews.find((review) => review.id === selectedId) ?? null;
   const pendingCustom = reviews.filter((review) => review.status === 'Pending' && review.source_type === 'Custom Hazard');
   const pendingEvents = reviews.filter((review) => review.status === 'Pending' && review.source_type === 'Safety Event');
-  const matchingHazards = useMemo(() => library.filter((hazard) => !form.name || hazard.hazard_name.toLowerCase().includes(form.name.toLowerCase())), [library, form.name]);
 
   function openReview(review: Review) {
     setSelectedId(review.id); setMode(review.source_type === 'Custom Hazard' ? 'create' : 'none'); setLinkedHazardId(''); setNewMitigation(''); setFeedback(null); setError(null);
@@ -102,7 +103,7 @@ export function SafetyReviewArea({ organizationId }: { organizationId: string })
       {selected.job_safety_events ? <div className="mt-3 rounded-lg bg-white p-3 text-sm text-slate-700"><p>{selected.job_safety_events.description}</p>{selected.job_safety_events.immediate_actions_taken ? <p className="mt-2"><b>Immediate actions:</b> {selected.job_safety_events.immediate_actions_taken}</p> : null}<p className="mt-2 text-xs font-semibold uppercase text-slate-500">Outcome: {selected.job_safety_events.outcome}</p></div> : null}
       <fieldset className="mt-4"><legend className="text-sm font-semibold text-slate-800">Hazard Library Action</legend><div className="mt-2 flex flex-wrap gap-2">{(['create', 'link', 'none'] as Mode[]).map((value) => <button key={value} type="button" onClick={() => setMode(value)} className={`rounded-lg px-3 py-2 text-sm font-medium ${mode === value ? 'bg-brand-700 text-white' : 'border border-slate-300 bg-white text-slate-700'}`}>{value === 'create' ? selected.source_type === 'Custom Hazard' ? 'Add / Edit & Add' : 'Create New Hazard' : value === 'link' ? 'Link to Existing' : 'No Library Action'}</button>)}</div></fieldset>
       {mode === 'create' ? <div className="mt-4 grid gap-3 sm:grid-cols-2"><Field label="Hazard name" value={form.name} onChange={(name) => setForm((current) => ({ ...current, name }))} /><Field label="Category" value={form.category} onChange={(category) => setForm((current) => ({ ...current, category }))} /><label className="block text-sm font-medium text-slate-700 sm:col-span-2">Description<textarea className="mt-1 min-h-20 w-full rounded-lg border border-slate-300 p-2" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></label>{form.mitigations.map((mitigation, index) => <div key={index} className="sm:col-span-2"><Field label={`Mitigation ${index + 1}`} value={mitigation} onChange={(value) => setForm((current) => ({ ...current, mitigations: current.mitigations.map((item, itemIndex) => itemIndex === index ? value : item) }))} /></div>)}<button type="button" className="w-fit text-sm font-semibold text-brand-700" onClick={() => setForm((current) => ({ ...current, mitigations: [...current.mitigations, ''] }))}>+ Add mitigation</button></div> : null}
-      {mode === 'link' ? <div className="mt-4 grid gap-3"><label className="text-sm font-medium text-slate-700">Existing Hazard<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white p-2" value={linkedHazardId} onChange={(event) => setLinkedHazardId(event.target.value)}><option value="">Search / select a hazard</option>{matchingHazards.map((hazard) => <option key={hazard.id} value={hazard.id}>{hazard.hazard_name} — {hazard.category}</option>)}</select></label><Field label="Optional new mitigation learned" value={newMitigation} onChange={setNewMitigation} /></div> : null}
+      {mode === 'link' ? <div className="mt-4 grid gap-3"><HazardLibrarySelector hazards={library} value={linkedHazardId} onChange={setLinkedHazardId} disabled={busy} /><Field label="Optional new mitigation learned" value={newMitigation} onChange={setNewMitigation} /></div> : null}
       {error ? <p className="mt-3 text-sm text-red-700" role="alert">{error}</p> : null}{feedback ? <p className="mt-3 text-sm text-emerald-700" role="status">{feedback}</p> : null}<div className="mt-4 flex flex-wrap gap-2"><button disabled={busy} className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400">{mode === 'none' ? 'Record No Library Action' : 'Save Library Action'}</button>{mode !== 'none' ? <button type="button" disabled={busy} onClick={() => void completeReview(mode === 'link' ? 'Linked to Existing' : 'Added to Hazard Library', mode === 'link' ? linkedHazardId || null : null)} className="rounded-lg border border-brand-300 bg-white px-4 py-2 text-sm font-semibold text-brand-700">Complete Review</button> : null}</div><p className="mt-2 text-xs text-slate-500">Library actions do not close a Safety Event. Complete the review separately after all needed hazards have been created or linked.</p></form> : null}
   </article>;
 }
