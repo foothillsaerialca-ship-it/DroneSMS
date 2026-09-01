@@ -1,0 +1,55 @@
+export type OperationReadinessStatus = 'Not Ready' | 'Ready to Operate' | 'Approval Stale';
+
+export type ReadinessPrerequisites = {
+  jhaComplete: boolean;
+  safetyManagerReviewCurrent: boolean;
+  rpicAcceptanceCurrent: boolean;
+  controlsInPlace: boolean;
+  preflightComplete: boolean;
+  assignedRpicId: string | null;
+  fitnessForDutyConfirmed: boolean;
+};
+
+export type OperationReadinessRecord = {
+  approved_at: string | null;
+  approval_stale: boolean;
+  fitness_for_duty_confirmed: boolean;
+  rpic_personnel_id: string | null;
+};
+
+export function getReadinessBlockingReasons(input: ReadinessPrerequisites) {
+  return [
+    !input.jhaComplete ? 'Complete the JHA.' : null,
+    !input.safetyManagerReviewCurrent ? 'Current Safety Manager Review is required.' : null,
+    !input.rpicAcceptanceCurrent ? 'Current RPIC JHA Acceptance is required.' : null,
+    !input.controlsInPlace ? 'Confirm required controls are in place.' : null,
+    !input.preflightComplete ? 'Complete the pre-flight checklist.' : null,
+    !input.assignedRpicId ? 'Assign an active RPIC.' : null,
+    !input.fitnessForDutyConfirmed ? 'The assigned RPIC must confirm fitness for duty.' : null,
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+export function getOperationReadinessStatus(record: OperationReadinessRecord | null): OperationReadinessStatus {
+  if (record?.approval_stale && record.approved_at) return 'Approval Stale';
+  if (record?.approved_at && record.fitness_for_duty_confirmed) return 'Ready to Operate';
+  return 'Not Ready';
+}
+
+export function isApprovalCurrent(record: OperationReadinessRecord | null, assignedRpicId: string | null) {
+  return getOperationReadinessStatus(record) === 'Ready to Operate'
+    && Boolean(assignedRpicId)
+    && record?.rpic_personnel_id === assignedRpicId;
+}
+
+export function buildReadinessPacketRows(record: (OperationReadinessRecord & { rpic_name?: string | null; approved_by_user_id?: string | null }) | null, formatTimestamp = (value: string) => value): Array<[string, string]> {
+  if (!record) return [['Ready to Operate', 'Not recorded (legacy or not yet approved)'], ['Fitness for Duty', 'Not confirmed']];
+  const status = getOperationReadinessStatus(record);
+  return [
+    ['Ready to Operate', status],
+    ['Fitness for Duty', record.fitness_for_duty_confirmed ? 'Confirmed' : 'Not confirmed'],
+    ['Assigned RPIC', record.rpic_name || 'Personnel identity unavailable'],
+    ['Approved By User', record.approved_by_user_id || 'Not recorded'],
+    ['Approval Timestamp', record.approved_at ? formatTimestamp(record.approved_at) : 'Not recorded'],
+    ['Current for Operation', status === 'Ready to Operate' ? 'Yes' : 'No'],
+  ];
+}
