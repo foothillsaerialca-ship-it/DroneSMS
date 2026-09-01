@@ -4,6 +4,7 @@ import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
+import { getOperationReadinessStatus, getReadinessBlockingReasons, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
 
 const operationResultOptions = ['Completed as Planned', 'Completed with Changes', 'Delayed', 'Aborted', 'Incident Occurred'];
 const resultsRequiringNarrative = new Set(operationResultOptions.filter((result) => result !== 'Completed as Planned'));
@@ -39,6 +40,7 @@ type PersonnelOption = {
   part_107_expiration_date: string | null;
   training_expiration_date: string | null;
   status: string;
+  user_id: string | null;
 };
 
 type JobPersonnelAssignment = {
@@ -76,6 +78,11 @@ type JhaSummary = {
   crew_briefed: boolean;
   controls_in_place: boolean;
   certified_at: string | null;
+  safety_manager_reviewed_at: string | null;
+  safety_manager_review_stale: boolean;
+  rpic_accepted_at: string | null;
+  rpic_acceptance_stale: boolean;
+  rpic_personnel_id: string | null;
 };
 
 type PreflightSummary = {
@@ -210,6 +217,12 @@ export function JobFileHubPage() {
   const [jhaSummary, setJhaSummary] = useState<JhaSummary | null>(null);
   const [preflightSummary, setPreflightSummary] = useState<PreflightSummary | null>(null);
   const [operationCloseout, setOperationCloseout] = useState<OperationCloseout | null>(null);
+  const [operationReadiness, setOperationReadiness] = useState<OperationReadinessRecord | null>(null);
+  const [fitnessConfirmed, setFitnessConfirmed] = useState(false);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [readinessMessage, setReadinessMessage] = useState<string | null>(null);
+  const [isSavingReadiness, setIsSavingReadiness] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
   const [selectedPersonnelId, setSelectedPersonnelId] = useState('');
   const [selectedRole, setSelectedRole] = useState(crewRoleOptions[0]);
@@ -242,7 +255,7 @@ export function JobFileHubPage() {
   async function loadAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
       .from('job_personnel')
-      .select('id, assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status)')
+      .select('id, assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status, user_id)')
       .eq('job_id', currentJobId)
       .order('created_at', { ascending: true });
 
@@ -313,11 +326,11 @@ export function JobFileHubPage() {
           .maybeSingle();
         const personnelQuery = supabase
           .from('personnel')
-          .select('id, full_name, role, part_107_expiration_date, training_expiration_date, status')
+          .select('id, full_name, role, part_107_expiration_date, training_expiration_date, status, user_id')
           .order('full_name', { ascending: true });
         const assignmentsQuery = supabase
           .from('job_personnel')
-          .select('id, assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status)')
+          .select('id, assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status, user_id)')
           .eq('job_id', jobId)
           .order('created_at', { ascending: true });
         const equipmentQuery = supabase
@@ -337,7 +350,7 @@ export function JobFileHubPage() {
           .order('created_at', { ascending: false });
         const jhaSummaryQuery = supabase
           .from('jha_assessments')
-          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at')
+          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, safety_manager_reviewed_at, safety_manager_review_stale, rpic_accepted_at, rpic_acceptance_stale, rpic_personnel_id')
           .eq('job_id', jobId)
           .maybeSingle();
         const preflightSummaryQuery = supabase
@@ -350,8 +363,10 @@ export function JobFileHubPage() {
           .select('id, operation_result, deviation_narrative, updated_at')
           .eq('job_id', jobId)
           .maybeSingle();
+        const readinessQuery = supabase.from('job_operation_readiness').select('approved_at, approval_stale, fitness_for_duty_confirmed, rpic_personnel_id').eq('job_id', jobId).maybeSingle();
+        const userQuery = supabase.auth.getUser();
 
-        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult, jhaSummaryResult, preflightSummaryResult, closeoutResult] = await Promise.all([
+        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult, jhaSummaryResult, preflightSummaryResult, closeoutResult, readinessResult, userResult] = await Promise.all([
           jobQuery,
           personnelQuery,
           assignmentsQuery,
@@ -360,7 +375,9 @@ export function JobFileHubPage() {
           safetyEventsQuery,
           jhaSummaryQuery,
           preflightSummaryQuery,
-          closeoutQuery
+          closeoutQuery,
+          readinessQuery,
+          userQuery
         ]);
 
         if (jobResult.error) throw jobResult.error;
@@ -372,6 +389,7 @@ export function JobFileHubPage() {
         if (jhaSummaryResult.error) throw jhaSummaryResult.error;
         if (preflightSummaryResult.error) throw preflightSummaryResult.error;
         if (closeoutResult.error) throw closeoutResult.error;
+        if (readinessResult.error) throw readinessResult.error;
         if (!isMounted) return;
 
         if (!jobResult.data) {
@@ -402,6 +420,9 @@ export function JobFileHubPage() {
         setSafetyEvents((safetyEventsResult.data ?? []) as JobSafetyEvent[]);
         setJhaSummary(jhaSummaryResult.data as JhaSummary | null);
         setPreflightSummary(preflightSummaryResult.data as PreflightSummary | null);
+        setOperationReadiness(readinessResult.data as OperationReadinessRecord | null);
+        setFitnessConfirmed(Boolean(readinessResult.data?.fitness_for_duty_confirmed && !readinessResult.data?.approval_stale));
+        setCurrentUserId(userResult.data.user?.id ?? null);
         const loadedCloseout = closeoutResult.data as OperationCloseout | null;
         setOperationCloseout(loadedCloseout);
         setCloseoutFormData({
@@ -437,6 +458,28 @@ export function JobFileHubPage() {
   const closeoutComplete = Boolean(operationCloseout);
   const personnelReadinessSummary = getPersonnelReadinessSummary(assignments);
   const closeoutNarrativeRequired = resultsRequiringNarrative.has(closeoutFormData.operationResult);
+  const assignedRpic = assignments.find((assignment) => assignment.assigned_role === 'RPIC' && assignment.personnel?.status === 'Active')?.personnel ?? null;
+  const readinessPrerequisites = {
+    jhaComplete,
+    safetyManagerReviewCurrent: Boolean(jhaSummary?.safety_manager_reviewed_at && !jhaSummary.safety_manager_review_stale),
+    rpicAcceptanceCurrent: Boolean(jhaSummary?.rpic_accepted_at && !jhaSummary.rpic_acceptance_stale && jhaSummary.rpic_personnel_id === assignedRpic?.id),
+    controlsInPlace: Boolean(jhaSummary?.controls_in_place), preflightComplete,
+    assignedRpicId: assignedRpic?.id ?? null, fitnessForDutyConfirmed: fitnessConfirmed,
+  };
+  const readinessBlockingReasons = getReadinessBlockingReasons(readinessPrerequisites);
+  const readinessStatus = getOperationReadinessStatus(operationReadiness);
+
+  async function recordOperationReadiness(fitness: boolean) {
+    if (!job) return;
+    setIsSavingReadiness(true); setReadinessError(null); setReadinessMessage(null);
+    try {
+      const { data, error: readinessSaveError } = await supabase.rpc('confirm_job_ready_to_operate', { target_job_id: job.id, fitness_confirmed: fitness });
+      if (readinessSaveError) throw readinessSaveError;
+      setOperationReadiness(data as OperationReadinessRecord); setFitnessConfirmed(fitness);
+      setReadinessMessage(fitness ? 'Ready to Operate approval recorded.' : 'Not Ready saved; no operation approval was recorded.');
+    } catch (saveError) { setReadinessError(getErrorMessage(saveError)); }
+    finally { setIsSavingReadiness(false); }
+  }
 
   async function handleAddAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1137,7 +1180,7 @@ export function JobFileHubPage() {
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">4</span>
             <div>
               <h2 className="text-lg font-semibold text-brand-900">Pre-Flight Checklist</h2>
-              <p className="mt-1 text-sm text-slate-600">Final aircraft, equipment, weather, airspace, crew communications, and RPIC approval check before launch.</p>
+              <p className="mt-1 text-sm text-slate-600">Aircraft, equipment, weather, airspace, crew communications, and RPIC preflight review before the final Ready to Operate decision.</p>
               <span className={`mt-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(preflightComplete)}`}>
                 {preflightComplete ? 'Complete' : preflightSummary ? 'In progress' : 'Not started'}
               </span>
@@ -1152,10 +1195,34 @@ export function JobFileHubPage() {
         </div>
       </section>
 
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="ready-to-operate-heading">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">5</span>
+            <div>
+              <h2 id="ready-to-operate-heading" className="text-lg font-semibold text-brand-900">Ready to Operate</h2>
+              <p className="mt-1 text-sm text-slate-600">Final operation approval by the assigned RPIC after the safety workflow is current.</p>
+              <span className={`mt-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${readinessStatus === 'Ready to Operate' ? currentClassName : readinessStatus === 'Approval Stale' ? expiringClassName : missingClassName}`}>{readinessStatus}</span>
+              {operationReadiness?.approved_at ? <p className="mt-2 text-xs text-slate-500">{readinessStatus === 'Approval Stale' ? 'Previously approved' : 'Approved'} by {assignedRpic?.full_name ?? 'assigned RPIC'} on {new Date(operationReadiness.approved_at).toLocaleString()}.</p> : null}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          <p>I have reviewed the hazards and controls for this operation. Required controls are in place, preflight requirements are complete, and current conditions are acceptable to proceed.</p>
+          <label className="mt-4 flex items-start gap-3 font-medium text-slate-800"><input type="checkbox" className="mt-1 h-4 w-4" checked={fitnessConfirmed} onChange={(event) => { setFitnessConfirmed(event.target.checked); setReadinessMessage(null); }} disabled={isSavingReadiness || currentUserId !== assignedRpic?.user_id} /><span>I am fit to safely perform my assigned duties and am not impaired by fatigue, illness, medication, alcohol, drugs, or another condition that could affect safe operation.</span></label>
+          <p className="mt-2 text-xs text-slate-500">Only the confirmation is recorded. Do not enter medical details.</p>
+        </div>
+        {readinessBlockingReasons.length ? <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-semibold">Before approval:</p><ul className="mt-1 list-disc pl-5">{readinessBlockingReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null}
+        {assignedRpic && currentUserId !== assignedRpic.user_id ? <p className="mt-3 text-sm text-slate-600">Only assigned RPIC {assignedRpic.full_name} can complete this confirmation while signed in.</p> : null}
+        {readinessError ? <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{readinessError}</p> : null}
+        {readinessMessage ? <p className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700" role="status">{readinessMessage}</p> : null}
+        <div className="mt-4 flex flex-wrap gap-2"><button type="button" className="min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={isSavingReadiness || readinessBlockingReasons.length > 0 || currentUserId !== assignedRpic?.user_id} onClick={() => void recordOperationReadiness(true)}>{isSavingReadiness ? 'Saving...' : 'Approve Ready to Operate'}</button><button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:text-slate-400" disabled={isSavingReadiness || !assignedRpic || currentUserId !== assignedRpic.user_id} onClick={() => void recordOperationReadiness(false)}>Save as Not Ready</button></div>
+      </section>
+
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">5</span>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">6</span>
             <div>
               <h2 className="text-base font-semibold text-brand-900">Operation Execution</h2>
               <p className="mt-1 text-sm text-slate-600">Conduct the operation under the approved JHA and pre-flight controls. This section is informational only and does not duplicate data entry.</p>

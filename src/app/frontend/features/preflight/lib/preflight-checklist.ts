@@ -19,7 +19,8 @@ export const checklistSections = [
     { key: 'visual_observer_assigned_if_needed', label: 'Visual observer assigned if needed' },
     { key: 'emergency_procedures_reviewed', label: 'Emergency procedures reviewed' },
     { key: 'crew_communications_confirmed', label: 'Crew communications confirmed' },
-    { key: 'final_rpic_approval', label: 'Final RPIC approval' },
+    // Keep the legacy storage key for compatibility; final operation approval now lives in Ready to Operate.
+    { key: 'final_rpic_approval', label: 'RPIC preflight review' },
   ]},
 ] as const;
 
@@ -59,7 +60,7 @@ export function getCompletionError(states: ChecklistStates) {
   const messages: string[] = [];
   if (unresolved.length) messages.push(`Select a state for: ${unresolved.join(', ')}`);
   if (notConfirmed.length) messages.push(`Resolve checks marked Not Confirmed: ${notConfirmed.join(', ')}`);
-  if (finalApprovalMissing && !unresolved.includes('Final RPIC approval') && !notConfirmed.includes('Final RPIC approval')) messages.push('Final RPIC approval must be Confirmed');
+  if (finalApprovalMissing && !unresolved.includes('RPIC preflight review') && !notConfirmed.includes('RPIC preflight review')) messages.push('RPIC preflight review must be Confirmed');
   return messages.length ? `${messages.join('. ')}.` : null;
 }
 
