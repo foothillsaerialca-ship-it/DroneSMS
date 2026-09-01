@@ -8,6 +8,7 @@ export type MocStatus = (typeof mocStatuses)[number];
 
 export type MocAction = { required_before_operational_use: boolean; status: string };
 export type EventReviewAnswers = { existingControl: string; controlResult: string; newHazardOrControl: string; changeNeeded: string };
+export type UserIdentity = { full_name?: string | null; email?: string | null } | null | undefined;
 
 export function formatMocId(number: number) { return `MOC-${String(number).padStart(3, '0')}`; }
 export function formatMocName(number: number, title: string) { return `${formatMocId(number)} — ${title}`; }
@@ -31,3 +32,10 @@ export function eventReviewRoute(answers: EventReviewAnswers) {
 }
 
 export function csvCell(value: unknown) { return `"${String(value ?? '').replace(/"/g, '""')}"`; }
+
+export function displayUserIdentity(identity: UserIdentity, fallbackEmail?: string | null) {
+  const fullName = identity?.full_name?.trim();
+  if (fullName) return fullName;
+  const email = identity?.email?.trim() || fallbackEmail?.trim();
+  return email || 'Unknown user';
+}
