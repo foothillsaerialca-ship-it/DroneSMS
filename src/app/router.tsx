@@ -16,6 +16,8 @@ import { CompanyOnboardingPage } from './frontend/features/auth/pages/company-on
 import { SettingsPage } from './frontend/features/settings/pages/settings-page';
 import { AccountSettingsPage } from './frontend/features/settings/pages/account-settings-page';
 import { SmsPage } from './frontend/features/sms/pages/sms-page';
+import { MocRegisterPage } from './frontend/features/sms/pages/moc-register-page';
+import { MocDetailPage } from './frontend/features/sms/pages/moc-detail-page';
 import { ReportsPage } from './frontend/features/reports/pages/reports-page';
 import { AboutPage } from './frontend/features/information/team';
 import { ProtectedRoute } from './frontend/features/auth/components/protected-route';
@@ -54,6 +56,8 @@ export function AppRouter() {
           <Route path="/settings/account" element={<AccountSettingsPage />} />
           <Route path="/settings/organization" element={<SettingsPage />} />
           <Route path="/sms" element={<SmsPage />} />
+          <Route path="/sms/moc" element={<MocRegisterPage />} />
+          <Route path="/sms/moc/:mocId" element={<MocDetailPage />} />
         </Route>
       </Route>
 
