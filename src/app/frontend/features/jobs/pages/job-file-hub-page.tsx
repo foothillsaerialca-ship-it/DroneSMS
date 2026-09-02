@@ -85,6 +85,9 @@ type JhaSummary = {
   rpic_acceptance_stale: boolean;
   rpic_personnel_id: string | null;
   hazard_entries: Array<{ id?: string; description?: string; mitigation?: string }>;
+  public_right_of_way_restriction_required: boolean | null;
+  permit_authorization_required: boolean | null;
+  permit_authorization_status: 'Pending' | 'Approved' | null;
 };
 
 type PreflightSummary = {
@@ -358,7 +361,7 @@ export function JobFileHubPage() {
           .order('created_at', { ascending: false });
         const jhaSummaryQuery = supabase
           .from('jha_assessments')
-          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, safety_manager_reviewed_at, safety_manager_review_stale, rpic_accepted_at, rpic_acceptance_stale, rpic_personnel_id, hazard_entries')
+          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, safety_manager_reviewed_at, safety_manager_review_stale, rpic_accepted_at, rpic_acceptance_stale, rpic_personnel_id, hazard_entries, public_right_of_way_restriction_required, permit_authorization_required, permit_authorization_status')
           .eq('job_id', jobId)
           .maybeSingle();
         const preflightSummaryQuery = supabase
@@ -474,6 +477,9 @@ export function JobFileHubPage() {
     rpicAcceptanceCurrent: Boolean(jhaSummary?.rpic_accepted_at && !jhaSummary.rpic_acceptance_stale && jhaSummary.rpic_personnel_id === assignedRpic?.id),
     controlsInPlace: Boolean(jhaSummary?.controls_in_place), preflightComplete,
     assignedRpicId: assignedRpic?.id ?? null, fitnessForDutyConfirmed: fitnessConfirmed,
+    publicRightOfWayRestrictionRequired: jhaSummary?.public_right_of_way_restriction_required,
+    permitAuthorizationRequired: jhaSummary?.permit_authorization_required,
+    permitAuthorizationStatus: jhaSummary?.permit_authorization_status,
   };
   const readinessBlockingReasons = getReadinessBlockingReasons(readinessPrerequisites);
   const readinessStatus = getOperationReadinessStatus(operationReadiness);

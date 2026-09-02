@@ -8,6 +8,9 @@ export type ReadinessPrerequisites = {
   preflightComplete: boolean;
   assignedRpicId: string | null;
   fitnessForDutyConfirmed: boolean;
+  publicRightOfWayRestrictionRequired?: boolean | null;
+  permitAuthorizationRequired?: boolean | null;
+  permitAuthorizationStatus?: 'Pending' | 'Approved' | null;
 };
 
 export type OperationReadinessRecord = {
@@ -16,6 +19,22 @@ export type OperationReadinessRecord = {
   fitness_for_duty_confirmed: boolean;
   rpic_personnel_id: string | null;
 };
+
+export type PermitPlanningInput = {
+  publicRightOfWayRestrictionRequired: string;
+  permitAuthorizationRequired: string;
+  permitIssuingAuthority: string;
+  permitAuthorizationNumber: string;
+  permitAuthorizationStatus: string;
+};
+
+export function getPermitPlanningValidationMessage(input: PermitPlanningInput, requireCompletion: boolean) {
+  if (!requireCompletion) return null;
+  if (!input.publicRightOfWayRestrictionRequired) return 'Indicate whether the exclusion zone will restrict a public right-of-way.';
+  if (input.publicRightOfWayRestrictionRequired === 'Yes' && !input.permitAuthorizationRequired) return 'Record the operator determination about whether a permit or authorization is required.';
+  if (input.permitAuthorizationRequired === 'Yes' && (!input.permitIssuingAuthority.trim() || !input.permitAuthorizationNumber.trim() || !input.permitAuthorizationStatus)) return 'Issuing authority, permit or authorization number, and status are required when a permit is required.';
+  return null;
+}
 
 export function getReadinessBlockingReasons(input: ReadinessPrerequisites) {
   return [
@@ -26,6 +45,9 @@ export function getReadinessBlockingReasons(input: ReadinessPrerequisites) {
     !input.preflightComplete ? 'Complete the pre-flight checklist.' : null,
     !input.assignedRpicId ? 'Assign an active RPIC.' : null,
     !input.fitnessForDutyConfirmed ? 'The assigned RPIC must confirm fitness for duty.' : null,
+    input.permitAuthorizationRequired === true && input.permitAuthorizationStatus !== 'Approved'
+      ? 'Required public right-of-way permit or authorization must be Approved.'
+      : null,
   ].filter((reason): reason is string => Boolean(reason));
 }
 
