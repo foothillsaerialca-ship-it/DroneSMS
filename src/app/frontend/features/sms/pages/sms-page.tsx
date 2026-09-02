@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../auth/components/use-auth';
 import { SafetyReviewArea } from '../components/safety-review-area';
+import { SafetyAssuranceArea } from '../components/safety-assurance-area';
 
 type Member = { id: string; full_name: string };
 const pillars = [
@@ -86,6 +87,7 @@ export function SmsPage() {
       {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p> : null}
       {message ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{message}</p> : null}
       <SafetyReviewArea organizationId={organizationId} />
+      <SafetyAssuranceArea organizationId={organizationId} />
       <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <h2 className="text-lg font-semibold text-brand-900">Safety Manager Configuration</h2><p className="mt-1 text-sm text-slate-600">Designate an active organization member responsible for SMS review and safety oversight.</p>
         {loading ? <p className="mt-4 text-sm text-slate-500">Loading Safety Manager...</p> : <form className="mt-4 space-y-3" onSubmit={saveDesignation}><label className="block text-sm font-medium text-slate-700">Safety Manager<select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base sm:py-2 sm:text-sm" value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={!canManage || saving}><option value="">Select an active member</option>{members.map((member) => <option key={member.id} value={member.id}>{member.full_name} — Safety Manager</option>)}</select></label>{canManage ? <button className="min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving || !selectedId}>{saving ? 'Saving...' : 'Save Designation'}</button> : <p className="text-sm text-slate-500">Only the organization owner can change this designation.</p>}</form>}
