@@ -20,6 +20,21 @@ export type OperationReadinessRecord = {
   rpic_personnel_id: string | null;
 };
 
+type ReadinessApproverPersonnel = { full_name?: string | null; email?: string | null; user_id?: string | null };
+
+export function resolveReadinessApproverIdentity(
+  assignedRpic: ReadinessApproverPersonnel | null,
+  approvedByUserId: string | null,
+  authenticatedUser?: { id: string; email?: string | null } | null,
+) {
+  if (assignedRpic?.user_id === approvedByUserId) {
+    const assignedRpicIdentity = assignedRpic.full_name?.trim() || assignedRpic.email?.trim();
+    if (assignedRpicIdentity) return assignedRpicIdentity;
+  }
+  if (authenticatedUser?.id === approvedByUserId) return authenticatedUser.email?.trim() || null;
+  return null;
+}
+
 export type PermitPlanningInput = {
   publicRightOfWayRestrictionRequired: string;
   permitAuthorizationRequired: string;
@@ -63,14 +78,14 @@ export function isApprovalCurrent(record: OperationReadinessRecord | null, assig
     && record?.rpic_personnel_id === assignedRpicId;
 }
 
-export function buildReadinessPacketRows(record: (OperationReadinessRecord & { rpic_name?: string | null; approved_by_user_id?: string | null }) | null, formatTimestamp = (value: string) => value): Array<[string, string]> {
+export function buildReadinessPacketRows(record: (OperationReadinessRecord & { rpic_name?: string | null; approved_by_name?: string | null; approved_by_user_id?: string | null }) | null, formatTimestamp = (value: string) => value): Array<[string, string]> {
   if (!record) return [['Ready to Operate', 'Not recorded (legacy or not yet approved)'], ['Fitness for Duty', 'Not confirmed']];
   const status = getOperationReadinessStatus(record);
   return [
     ['Ready to Operate', status],
     ['Fitness for Duty', record.fitness_for_duty_confirmed ? 'Confirmed' : 'Not confirmed'],
     ['Assigned RPIC', record.rpic_name || 'Personnel identity unavailable'],
-    ['Approved By User', record.approved_by_user_id || 'Not recorded'],
+    ['Approved By', record.approved_by_name || record.approved_by_user_id || 'Not recorded'],
     ['Approval Timestamp', record.approved_at ? formatTimestamp(record.approved_at) : 'Not recorded'],
     ['Current for Operation', status === 'Ready to Operate' ? 'Yes' : 'No'],
   ];

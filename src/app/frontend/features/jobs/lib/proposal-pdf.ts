@@ -1,6 +1,6 @@
 import { supabase } from '@frontend/lib/supabase';
 import { saveGeneratedDocument } from '@frontend/features/jobs/lib/generated-documents';
-import { buildReadinessPacketRows, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
+import { buildReadinessPacketRows, resolveReadinessApproverIdentity, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
 import {
   getOrganizationLogoUrl,
   DEFAULT_SERVICE_COMMITMENT,
@@ -777,7 +777,7 @@ type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipmen
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
 type JobPacketJha = { status: string | null; safety_manager_name: string | null; safety_manager_role_label: string | null; safety_manager_reviewed_at: string | null; safety_manager_review_stale: boolean | null; rpic_name: string | null; rpic_role_label: string | null; rpic_accepted_at: string | null; rpic_acceptance_stale: boolean | null; faa_airspace_class: string | null; laanc_required: string | null; relevant_airport_heliport: string | null; nearby_airport_heliport?: string | null; known_airspace_restrictions: string | null; additional_authorization_required: string | null; nearest_hospital: string | null; emergency_facility_address: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; ppe_requirements: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
 type JobPacketPreflight = Record<string, unknown> & { status: string | null; notes?: string | null; checklist_states?: unknown; final_rpic_approval?: boolean | null };
-type JobPacketReadiness = OperationReadinessRecord & { rpic_name: string | null; approved_by_user_id: string | null };
+type JobPacketReadiness = OperationReadinessRecord & { rpic_name: string | null; approved_by_name: string | null; approved_by_user_id: string | null };
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
 type JobPacketPhoto = { id: string; hazard_id: string | null; hazard_name: string | null; photo_url: string; caption: string | null; include_in_packet: boolean; created_at: string | null; category?: string | null };
 
@@ -863,7 +863,7 @@ async function loadJobPacketForPdf(jobId: string) {
     supabase.from('job_safety_events').select('category, description, immediate_actions_taken, outcome, created_at').eq('job_id', jobId).order('created_at', { ascending: false }),
     supabase.from('jha_assessments').select('status, safety_manager_name, safety_manager_role_label, safety_manager_reviewed_at, safety_manager_review_stale, rpic_name, rpic_role_label, rpic_accepted_at, rpic_acceptance_stale, faa_airspace_class, laanc_required, relevant_airport_heliport, nearby_airport_heliport, known_airspace_restrictions, additional_authorization_required, nearest_hospital, emergency_facility_address, crew_briefed, controls_in_place, certified_at, hazard_entries, ppe_requirements, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
     supabase.from('preflight_checklists').select('*').eq('job_id', jobId).maybeSingle(),
-    supabase.from('job_operation_readiness').select('approved_at, approval_stale, fitness_for_duty_confirmed, rpic_personnel_id, approved_by_user_id, rpic:personnel!rpic_personnel_id(full_name)').eq('job_id', jobId).maybeSingle(),
+    supabase.from('job_operation_readiness').select('approved_at, approval_stale, fitness_for_duty_confirmed, rpic_personnel_id, approved_by_user_id, rpic:personnel!rpic_personnel_id(full_name, email, user_id)').eq('job_id', jobId).maybeSingle(),
     supabase.from('job_operation_closeouts').select('operation_result, deviation_narrative, updated_at').eq('job_id', jobId).maybeSingle(),
     supabase.from('generated_documents').select('document_type, file_name, display_file_name').eq('record_type', 'job').eq('record_id', jobId).is('archived_at', null).neq('document_type', 'job_packet_pdf').order('generated_at', { ascending: false }),
     supabase.from('job_hazard_photos').select('id, hazard_id, hazard_name, photo_url, caption, include_in_packet, created_at').eq('job_id', jobId).eq('include_in_packet', true).is('deleted_at', null).order('created_at', { ascending: true }),
@@ -871,9 +871,14 @@ async function loadJobPacketForPdf(jobId: string) {
   if (jobResult.error) throw jobResult.error; if (assignmentsResult.error) throw assignmentsResult.error; if (equipmentResult.error) throw equipmentResult.error; if (safetyResult.error) throw safetyResult.error; if (jhaResult.error) throw jhaResult.error; if (preflightResult.error) throw preflightResult.error; if (readinessResult.error) throw readinessResult.error; if (closeoutResult.error) throw closeoutResult.error; if (documentsResult.error) throw documentsResult.error; if (photosResult.error) throw photosResult.error;
   const job = jobResult.data as JobPacketRecord;
   const proposal = job.source_proposal_id ? await loadProposalForPdf(job.source_proposal_id).catch(() => null) : null;
-  const rawReadiness = readinessResult.data as (OperationReadinessRecord & { approved_by_user_id: string | null; rpic: { full_name: string | null } | Array<{ full_name: string | null }> | null }) | null;
+  const rawReadiness = readinessResult.data as (OperationReadinessRecord & { approved_by_user_id: string | null; rpic: { full_name: string | null; email: string | null; user_id: string | null } | Array<{ full_name: string | null; email: string | null; user_id: string | null }> | null }) | null;
   const rpic = Array.isArray(rawReadiness?.rpic) ? rawReadiness.rpic[0] : rawReadiness?.rpic;
-  const readiness = rawReadiness ? { ...rawReadiness, rpic_name: rpic?.full_name ?? null } as JobPacketReadiness : null;
+  let approvedByName = resolveReadinessApproverIdentity(rpic ?? null, rawReadiness?.approved_by_user_id ?? null);
+  if (rawReadiness?.approved_by_user_id && !approvedByName) {
+    const userResult = await supabase.auth.getUser();
+    approvedByName = resolveReadinessApproverIdentity(rpic ?? null, rawReadiness.approved_by_user_id, userResult.data.user);
+  }
+  const readiness = rawReadiness ? { ...rawReadiness, rpic_name: rpic?.full_name ?? null, approved_by_name: approvedByName } as JobPacketReadiness : null;
   return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, readiness, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}>, photos: (photosResult.data ?? []) as JobPacketPhoto[] };
 }
 
