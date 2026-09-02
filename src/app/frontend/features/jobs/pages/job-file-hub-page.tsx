@@ -5,6 +5,7 @@ import { OrganizationIdentityCard } from '@frontend/features/settings/components
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 import { getOperationReadinessStatus, getReadinessBlockingReasons, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
+import { followUpAreas, requiresOpenReview, validateSafetyAssurance, type SafetyAssuranceInput } from '@frontend/features/sms/lib/safety-assurance';
 
 const operationResultOptions = ['Completed as Planned', 'Completed with Changes', 'Delayed', 'Aborted', 'Incident Occurred'];
 const resultsRequiringNarrative = new Set(operationResultOptions.filter((result) => result !== 'Completed as Planned'));
@@ -83,6 +84,7 @@ type JhaSummary = {
   rpic_accepted_at: string | null;
   rpic_acceptance_stale: boolean;
   rpic_personnel_id: string | null;
+  hazard_entries: Array<{ id?: string; description?: string; mitigation?: string }>;
 };
 
 type PreflightSummary = {
@@ -100,7 +102,13 @@ type OperationCloseout = {
 type CloseoutFormState = {
   operationResult: string;
   deviationNarrative: string;
+  assurance: SafetyAssuranceInput;
+  relatedHazardId: string;
+  relatedControlId: string;
+  relatedSafetyEventId: string;
 };
+
+const blankAssurance: SafetyAssuranceInput = { controlEffectiveness: '', effectivenessNarrative: '', operationalAction: '', followUpRequired: null, followUpAreas: [], unexpectedIssue: '', unexpectedIssueNarrative: '' };
 
 type SafetyEventFormState = typeof initialSafetyEventFormState;
 
@@ -228,7 +236,7 @@ export function JobFileHubPage() {
   const [selectedRole, setSelectedRole] = useState(crewRoleOptions[0]);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
   const [safetyEventFormData, setSafetyEventFormData] = useState<SafetyEventFormState>(initialSafetyEventFormState);
-  const [closeoutFormData, setCloseoutFormData] = useState<CloseoutFormState>({ operationResult: operationResultOptions[0], deviationNarrative: '' });
+  const [closeoutFormData, setCloseoutFormData] = useState<CloseoutFormState>({ operationResult: operationResultOptions[0], deviationNarrative: '', assurance: blankAssurance, relatedHazardId: '', relatedControlId: '', relatedSafetyEventId: '' });
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
   const [editedAssignmentRole, setEditedAssignmentRole] = useState(crewRoleOptions[0]);
   const [isCrewFormOpen, setIsCrewFormOpen] = useState(false);
@@ -350,7 +358,7 @@ export function JobFileHubPage() {
           .order('created_at', { ascending: false });
         const jhaSummaryQuery = supabase
           .from('jha_assessments')
-          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, safety_manager_reviewed_at, safety_manager_review_stale, rpic_accepted_at, rpic_acceptance_stale, rpic_personnel_id')
+          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, safety_manager_reviewed_at, safety_manager_review_stale, rpic_accepted_at, rpic_acceptance_stale, rpic_personnel_id, hazard_entries')
           .eq('job_id', jobId)
           .maybeSingle();
         const preflightSummaryQuery = supabase
@@ -427,7 +435,8 @@ export function JobFileHubPage() {
         setOperationCloseout(loadedCloseout);
         setCloseoutFormData({
           operationResult: loadedCloseout?.operation_result ?? operationResultOptions[0],
-          deviationNarrative: loadedCloseout?.deviation_narrative ?? ''
+          deviationNarrative: loadedCloseout?.deviation_narrative ?? '', assurance: blankAssurance,
+          relatedHazardId: '', relatedControlId: '', relatedSafetyEventId: ''
         });
         const settings = await loadOrganizationSettingsById((jobResult.data as Job).organization_id);
         if (isMounted) setOrganizationSettings(settings);
@@ -692,6 +701,8 @@ export function JobFileHubPage() {
       setCloseoutError('Describe changes, delays, deviations, operational issues, or reasons for aborting the mission.');
       return;
     }
+    const assuranceError = validateSafetyAssurance(closeoutFormData.assurance);
+    if (assuranceError) { setCloseoutError(assuranceError); return; }
 
     setCloseoutError(null);
     setCloseoutMessage(null);
@@ -718,6 +729,27 @@ export function JobFileHubPage() {
         .single();
 
       if (upsertError) throw upsertError;
+
+      const assurance = closeoutFormData.assurance;
+      const { data: previousAssurance, error: previousAssuranceError } = await supabase.from('safety_assurance_reviews').select('id').eq('closeout_id', data.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (previousAssuranceError) throw previousAssuranceError;
+      const { error: assuranceError } = await supabase.from('safety_assurance_reviews').insert({
+        organization_id: job.organization_id, job_id: job.id, closeout_id: data.id,
+        control_effectiveness: assurance.controlEffectiveness,
+        effectiveness_narrative: assurance.effectivenessNarrative.trim() || null,
+        operational_action: assurance.operationalAction.trim() || null,
+        unexpected_issue: assurance.unexpectedIssue === 'Yes',
+        unexpected_issue_narrative: assurance.unexpectedIssueNarrative.trim() || null,
+        follow_up_required: Boolean(assurance.followUpRequired),
+        follow_up_areas: assurance.followUpAreas,
+        related_jha_hazard_ids: closeoutFormData.relatedHazardId ? [closeoutFormData.relatedHazardId] : [],
+        related_control_ids: closeoutFormData.relatedControlId ? [closeoutFormData.relatedControlId] : [],
+        related_safety_event_ids: closeoutFormData.relatedSafetyEventId ? [closeoutFormData.relatedSafetyEventId] : [],
+        review_status: requiresOpenReview(assurance) ? 'Open' : 'Not Required', created_by: userId,
+        service_type_snapshot: job.service_type, job_name_snapshot: job.name,
+        supersedes_review_id: previousAssurance?.id ?? null
+      });
+      if (assuranceError) throw assuranceError;
 
       setOperationCloseout(data as OperationCloseout);
       setCloseoutMessage('Operation closeout saved.');
@@ -1444,6 +1476,18 @@ export function JobFileHubPage() {
               ))}
             </select>
           </label>
+
+          <fieldset className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+            <legend className="px-1 text-sm font-semibold text-brand-900">Post-operation Safety Assurance</legend>
+            <label className="block text-sm font-medium text-slate-700">Were the safety controls used for this operation effective?<select className="mt-1 w-full rounded-lg border border-slate-300 p-2" value={closeoutFormData.assurance.controlEffectiveness} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,controlEffectiveness:e.target.value,followUpRequired:false,followUpAreas:[]})}><option value="">Select…</option>{['Yes','Partially','No','Not Applicable'].map(value=><option key={value}>{value}</option>)}</select><span className="mt-1 block text-xs font-normal text-slate-500">Think about the controls identified during planning and the JHA. Did they work as intended during the operation?</span></label>
+            {closeoutFormData.assurance.controlEffectiveness==='Partially'||closeoutFormData.assurance.controlEffectiveness==='No'?<label className="block text-sm font-medium text-slate-700">{closeoutFormData.assurance.controlEffectiveness==='No'?"What didn’t work?":"What didn’t work as expected?"}<textarea className="mt-1 min-h-20 w-full rounded-lg border p-2" value={closeoutFormData.assurance.effectivenessNarrative} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,effectivenessNarrative:e.target.value})} required/></label>:null}
+            {closeoutFormData.assurance.controlEffectiveness==='No'?<label className="block text-sm font-medium text-slate-700">What action was taken during the operation?<textarea className="mt-1 min-h-20 w-full rounded-lg border p-2" value={closeoutFormData.assurance.operationalAction} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,operationalAction:e.target.value})} required/></label>:null}
+            {closeoutFormData.assurance.controlEffectiveness==='Partially'?<fieldset><legend className="text-sm font-medium text-slate-700">Does anything need to change before a future operation?</legend><div className="mt-2 flex gap-4">{['Yes','No'].map(value=><label key={value} className="flex items-center gap-2 text-sm"><input type="radio" checked={closeoutFormData.assurance.followUpRequired===(value==='Yes')} onChange={()=>updateCloseoutField('assurance',{...closeoutFormData.assurance,followUpRequired:value==='Yes'})}/>{value}</label>)}</div>{closeoutFormData.assurance.followUpRequired?<div className="mt-3 grid gap-2 sm:grid-cols-2">{followUpAreas.map(area=><label key={area} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={closeoutFormData.assurance.followUpAreas.includes(area)} onChange={()=>updateCloseoutField('assurance',{...closeoutFormData.assurance,followUpAreas:closeoutFormData.assurance.followUpAreas.includes(area)?closeoutFormData.assurance.followUpAreas.filter(item=>item!==area):[...closeoutFormData.assurance.followUpAreas,area]})}/>{area}</label>)}</div>:null}</fieldset>:null}
+            <label className="block text-sm font-medium text-slate-700">Did anything occur that wasn’t adequately covered by the existing hazards or controls?<select className="mt-1 w-full rounded-lg border p-2" value={closeoutFormData.assurance.unexpectedIssue} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,unexpectedIssue:e.target.value})}><option value="">Select…</option><option>Yes</option><option>No</option></select></label>
+            {closeoutFormData.assurance.unexpectedIssue==='Yes'?<label className="block text-sm font-medium text-slate-700">Briefly describe it.<textarea className="mt-1 min-h-20 w-full rounded-lg border p-2" value={closeoutFormData.assurance.unexpectedIssueNarrative} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,unexpectedIssueNarrative:e.target.value})} required/></label>:null}
+            {['Partially','No'].includes(closeoutFormData.assurance.controlEffectiveness)||closeoutFormData.assurance.unexpectedIssue==='Yes'?<div className="grid gap-3 sm:grid-cols-3"><label className="text-sm font-medium">Related JHA hazard (optional)<select className="mt-1 w-full rounded-lg border p-2" value={closeoutFormData.relatedHazardId} onChange={e=>updateCloseoutField('relatedHazardId',e.target.value)}><option value="">Unlinked</option>{(jhaSummary?.hazard_entries||[]).map((hazard,index)=><option key={hazard.id||index} value={hazard.id||String(index)}>{hazard.description||`Hazard ${index+1}`}</option>)}</select></label><label className="text-sm font-medium">Related control (optional)<select className="mt-1 w-full rounded-lg border p-2" value={closeoutFormData.relatedControlId} onChange={e=>updateCloseoutField('relatedControlId',e.target.value)}><option value="">Unlinked</option>{(jhaSummary?.hazard_entries||[]).map((hazard,index)=><option key={hazard.id||index} value={`${hazard.id||index}:control`}>{hazard.mitigation||`Control ${index+1}`}</option>)}</select></label><label className="text-sm font-medium">Related safety event (optional)<select className="mt-1 w-full rounded-lg border p-2" value={closeoutFormData.relatedSafetyEventId} onChange={e=>updateCloseoutField('relatedSafetyEventId',e.target.value)}><option value="">Unlinked</option>{safetyEvents.map(item=><option key={item.id} value={item.id}>{item.category}: {item.description}</option>)}</select></label></div>:null}
+            {closeoutFormData.assurance.controlEffectiveness==='Not Applicable'?<label className="block text-sm font-medium text-slate-700">Optional note<textarea className="mt-1 min-h-16 w-full rounded-lg border p-2" value={closeoutFormData.assurance.effectivenessNarrative} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,effectivenessNarrative:e.target.value})}/></label>:null}
+          </fieldset>
 
           <label className="block text-sm font-medium text-slate-700">
             Describe changes, delays, deviations, operational issues, or reasons for aborting the mission.
