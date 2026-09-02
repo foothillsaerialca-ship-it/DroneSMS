@@ -35,5 +35,12 @@ test('evidence has no direct insert or update grant and completion is narrowly c
 test('all supplied relationship IDs are checked against the originating job and organization', () => {
   assert.match(migration, /Related JHA hazard is not part of this job/);
   assert.match(migration, /Related control is not part of this job/);
-  assert.match(migration, /event\.job_id<>target_job\.id or event\.organization_id<>target_job\.organization_id/);
+  assert.match(migration, /safety_event\.job_id<>target_job\.id or safety_event\.organization_id<>target_job\.organization_id/);
+});
+
+test('migration can be safely retried after a partial SQL Editor run', () => {
+  assert.match(migration, /create table if not exists public\.safety_assurance_reviews/);
+  assert.match(migration, /create index if not exists safety_assurance_reviews_org_date_idx/);
+  assert.match(migration, /drop policy if exists "Organization members view Safety Assurance"/);
+  assert.equal((migration.match(/create or replace function public\./g) || []).length, 2);
 });
