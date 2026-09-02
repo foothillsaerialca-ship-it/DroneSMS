@@ -777,7 +777,7 @@ type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipmen
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
 type JobPacketJha = { status: string | null; safety_manager_name: string | null; safety_manager_role_label: string | null; safety_manager_reviewed_at: string | null; safety_manager_review_stale: boolean | null; rpic_name: string | null; rpic_role_label: string | null; rpic_accepted_at: string | null; rpic_acceptance_stale: boolean | null; faa_airspace_class: string | null; laanc_required: string | null; relevant_airport_heliport: string | null; nearby_airport_heliport?: string | null; known_airspace_restrictions: string | null; additional_authorization_required: string | null; nearest_hospital: string | null; emergency_facility_address: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; ppe_requirements: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
 type JobPacketPreflight = Record<string, unknown> & { status: string | null; notes?: string | null; checklist_states?: unknown; final_rpic_approval?: boolean | null };
-type JobPacketReadiness = OperationReadinessRecord & { rpic_name: string | null; approved_by_user_id: string | null };
+type JobPacketReadiness = OperationReadinessRecord & { rpic_name: string | null; approved_by_name: string | null; approved_by_user_id: string | null };
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
 type JobPacketPhoto = { id: string; hazard_id: string | null; hazard_name: string | null; photo_url: string; caption: string | null; include_in_packet: boolean; created_at: string | null; category?: string | null };
 
@@ -873,7 +873,28 @@ async function loadJobPacketForPdf(jobId: string) {
   const proposal = job.source_proposal_id ? await loadProposalForPdf(job.source_proposal_id).catch(() => null) : null;
   const rawReadiness = readinessResult.data as (OperationReadinessRecord & { approved_by_user_id: string | null; rpic: { full_name: string | null } | Array<{ full_name: string | null }> | null }) | null;
   const rpic = Array.isArray(rawReadiness?.rpic) ? rawReadiness.rpic[0] : rawReadiness?.rpic;
-  const readiness = rawReadiness ? { ...rawReadiness, rpic_name: rpic?.full_name ?? null } as JobPacketReadiness : null;
+  let approvedByName: string | null = null;
+  if (rawReadiness?.approved_by_user_id) {
+    const identityResult = await supabase
+      .from('personnel')
+      .select('full_name, email')
+      .eq('organization_id', job.organization_id)
+      .eq('user_id', rawReadiness.approved_by_user_id)
+      .limit(1)
+      .maybeSingle();
+    approvedByName = identityResult.data?.full_name?.trim()
+      || identityResult.data?.email?.trim()
+      || rpic?.full_name?.trim()
+      || null;
+
+    if (!approvedByName) {
+      const userResult = await supabase.auth.getUser();
+      approvedByName = userResult.data.user?.id === rawReadiness.approved_by_user_id
+        ? userResult.data.user.email?.trim() || null
+        : null;
+    }
+  }
+  const readiness = rawReadiness ? { ...rawReadiness, rpic_name: rpic?.full_name ?? null, approved_by_name: approvedByName } as JobPacketReadiness : null;
   return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, readiness, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}>, photos: (photosResult.data ?? []) as JobPacketPhoto[] };
 }
 

@@ -50,9 +50,12 @@ test('approval is current only for the assigned RPIC and becomes stale explicitl
 
 test('legacy jobs without a readiness record remain readable as Not Ready', () => assert.equal(getOperationReadinessStatus(null), 'Not Ready'));
 
-test('packet output includes final approval, fitness confirmation, identity, timestamp, and currency', () => {
-  const rows = buildReadinessPacketRows({ approved_at: '2026-09-01T12:00:00Z', approval_stale: false, fitness_for_duty_confirmed: true, rpic_personnel_id: 'rpic-1', rpic_name: 'A. Pilot', approved_by_user_id: 'user-1' });
-  assert.deepEqual(rows.map(([label]) => label), ['Ready to Operate', 'Fitness for Duty', 'Assigned RPIC', 'Approved By User', 'Approval Timestamp', 'Current for Operation']);
+test('packet output includes a human-readable approver instead of the stored user UUID', () => {
+  const approverUuid = '7936f3c9-263b-4987-b4a6-bc246e488bfa';
+  const rows = buildReadinessPacketRows({ approved_at: '2026-09-01T12:00:00Z', approval_stale: false, fitness_for_duty_confirmed: true, rpic_personnel_id: 'rpic-1', rpic_name: 'A. Pilot', approved_by_name: 'Alex Pilot', approved_by_user_id: approverUuid });
+  assert.deepEqual(rows.map(([label]) => label), ['Ready to Operate', 'Fitness for Duty', 'Assigned RPIC', 'Approved By', 'Approval Timestamp', 'Current for Operation']);
+  assert.deepEqual(rows.find(([label]) => label === 'Approved By'), ['Approved By', 'Alex Pilot']);
+  assert.equal(rows.some(([, value]) => value === approverUuid), false);
   assert.equal(rows[1][1], 'Confirmed'); assert.equal(rows[5][1], 'Yes');
   assert.equal(rows.some(([label]) => label.includes('Permit') || label.includes('Right-of-Way')), false);
 });

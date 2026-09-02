@@ -63,14 +63,14 @@ export function isApprovalCurrent(record: OperationReadinessRecord | null, assig
     && record?.rpic_personnel_id === assignedRpicId;
 }
 
-export function buildReadinessPacketRows(record: (OperationReadinessRecord & { rpic_name?: string | null; approved_by_user_id?: string | null }) | null, formatTimestamp = (value: string) => value): Array<[string, string]> {
+export function buildReadinessPacketRows(record: (OperationReadinessRecord & { rpic_name?: string | null; approved_by_name?: string | null; approved_by_user_id?: string | null }) | null, formatTimestamp = (value: string) => value): Array<[string, string]> {
   if (!record) return [['Ready to Operate', 'Not recorded (legacy or not yet approved)'], ['Fitness for Duty', 'Not confirmed']];
   const status = getOperationReadinessStatus(record);
   return [
     ['Ready to Operate', status],
     ['Fitness for Duty', record.fitness_for_duty_confirmed ? 'Confirmed' : 'Not confirmed'],
     ['Assigned RPIC', record.rpic_name || 'Personnel identity unavailable'],
-    ['Approved By User', record.approved_by_user_id || 'Not recorded'],
+    ['Approved By', record.approved_by_name || record.approved_by_user_id || 'Not recorded'],
     ['Approval Timestamp', record.approved_at ? formatTimestamp(record.approved_at) : 'Not recorded'],
     ['Current for Operation', status === 'Ready to Operate' ? 'Yes' : 'No'],
   ];
