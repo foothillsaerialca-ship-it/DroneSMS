@@ -20,6 +20,21 @@ export type OperationReadinessRecord = {
   rpic_personnel_id: string | null;
 };
 
+type ReadinessApproverPersonnel = { full_name?: string | null; email?: string | null; user_id?: string | null };
+
+export function resolveReadinessApproverIdentity(
+  assignedRpic: ReadinessApproverPersonnel | null,
+  approvedByUserId: string | null,
+  authenticatedUser?: { id: string; email?: string | null } | null,
+) {
+  if (assignedRpic?.user_id === approvedByUserId) {
+    const assignedRpicIdentity = assignedRpic.full_name?.trim() || assignedRpic.email?.trim();
+    if (assignedRpicIdentity) return assignedRpicIdentity;
+  }
+  if (authenticatedUser?.id === approvedByUserId) return authenticatedUser.email?.trim() || null;
+  return null;
+}
+
 export type PermitPlanningInput = {
   publicRightOfWayRestrictionRequired: string;
   permitAuthorizationRequired: string;

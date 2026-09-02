@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildReadinessPacketRows, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, isApprovalCurrent, type ReadinessPrerequisites } from './operation-readiness.ts';
+import { buildReadinessPacketRows, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, isApprovalCurrent, resolveReadinessApproverIdentity, type ReadinessPrerequisites } from './operation-readiness.ts';
 
 const ready: ReadinessPrerequisites = { jhaComplete: true, safetyManagerReviewCurrent: true, rpicAcceptanceCurrent: true, controlsInPlace: true, preflightComplete: true, assignedRpicId: 'rpic-1', fitnessForDutyConfirmed: true };
 
@@ -58,4 +58,19 @@ test('packet output includes a human-readable approver instead of the stored use
   assert.equal(rows.some(([, value]) => value === approverUuid), false);
   assert.equal(rows[1][1], 'Confirmed'); assert.equal(rows[5][1], 'Yes');
   assert.equal(rows.some(([label]) => label.includes('Permit') || label.includes('Right-of-Way')), false);
+});
+
+test('packet approver uses the exact assigned RPIC when an account has multiple personnel records', () => {
+  const bryceUserId = '7936f3c9-263b-4987-b4a6-bc246e488bfa';
+  const personnelForAccount = [
+    { full_name: 'Test Visual Observer', email: 'bryce@example.com', user_id: bryceUserId },
+    { full_name: 'Bryce Finger', email: 'bryce@example.com', user_id: bryceUserId },
+  ];
+  const assignedRpic = personnelForAccount[1];
+  const approvedByName = resolveReadinessApproverIdentity(assignedRpic, bryceUserId);
+  const rows = buildReadinessPacketRows({ approved_at: '2026-09-01T12:00:00Z', approval_stale: false, fitness_for_duty_confirmed: true, rpic_personnel_id: 'bryce-personnel-id', rpic_name: assignedRpic.full_name, approved_by_name: approvedByName, approved_by_user_id: bryceUserId });
+
+  assert.equal(personnelForAccount[0].full_name, 'Test Visual Observer');
+  assert.equal(assignedRpic.full_name, 'Bryce Finger');
+  assert.deepEqual(rows.find(([label]) => label === 'Approved By'), ['Approved By', 'Bryce Finger']);
 });
