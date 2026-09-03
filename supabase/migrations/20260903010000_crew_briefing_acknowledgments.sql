@@ -9,7 +9,7 @@ create table public.crew_briefing_acknowledgments (
   organization_id uuid not null references public.organizations(id) on delete cascade,
   job_id uuid not null references public.jobs(id) on delete cascade,
   personnel_id uuid not null references public.personnel(id) on delete restrict,
-  assignment_id uuid not null references public.job_personnel(id) on delete restrict,
+  assignment_id uuid references public.job_personnel(id) on delete set null,
   assigned_role text not null,
   email_used text,
   briefing_version integer not null check (briefing_version > 0),
@@ -28,7 +28,7 @@ create table public.crew_briefing_acknowledgments (
   created_by_user_id uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check ((acknowledgment_method = 'Electronic' and email_used is not null and (token_hash is not null or status in ('Email Failed','Superseded')))
+  check ((acknowledgment_method = 'Electronic' and email_used is not null and (token_hash is not null or status in ('Acknowledged','Email Failed','Superseded')))
     or (acknowledgment_method = 'Manual Field Briefing' and field_briefed_at is not null and manual_reason is not null and rpic_attested)),
   check (manual_reason is null or manual_reason in ('No internet/cellular service','Crew member unable to access email','Device/access issue','Other')),
   check (manual_reason <> 'Other' or nullif(btrim(manual_reason_detail), '') is not null)
@@ -47,6 +47,7 @@ returns public.personnel language sql stable security definer set search_path=pu
   select p.* from public.job_personnel jp join public.personnel p on p.id=jp.personnel_id and p.organization_id=jp.organization_id
   where jp.job_id=p_job_id and jp.assigned_role='RPIC' and p.status='Active' order by jp.created_at limit 1
 $$;
+revoke all on function public.crew_briefing_assigned_rpic(uuid) from public;
 
 create or replace function public.create_crew_briefing_invitation(p_assignment_id uuid)
 returns jsonb language plpgsql security definer set search_path=public as $$
@@ -55,7 +56,7 @@ begin
   select * into a from public.job_personnel where id=p_assignment_id;
   select * into j from public.jobs where id=a.job_id and organization_id=public.current_user_organization_id();
   select * into r from public.crew_briefing_assigned_rpic(a.job_id);
-  if j.id is null or r.user_id <> auth.uid() then raise exception 'Only the assigned RPIC can send crew acknowledgments.'; end if;
+  if j.id is null or r.id is null or r.user_id is distinct from auth.uid() then raise exception 'Only the assigned RPIC can send crew acknowledgments.'; end if;
   if a.assigned_role not in ('Pilot','Visual Observer','Payload Operator','Ground Crew') then raise exception 'This assignment does not require crew acknowledgment.'; end if;
   select * into p from public.personnel where id=a.personnel_id and organization_id=j.organization_id;
   if p.email is null or p.email !~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' then raise exception 'Add a usable email to this personnel record before sending.'; end if;
@@ -74,8 +75,11 @@ grant execute on function public.create_crew_briefing_invitation(uuid) to authen
 
 create or replace function public.mark_crew_briefing_email_result(p_invitation_id uuid, p_sent boolean)
 returns void language plpgsql security definer set search_path=public as $$
+declare c public.crew_briefing_acknowledgments; r public.personnel;
 begin
-  if not exists(select 1 from public.crew_briefing_acknowledgments c join public.crew_briefing_assigned_rpic(c.job_id) r on true where c.id=p_invitation_id and r.user_id=auth.uid()) then raise exception 'Not authorized.'; end if;
+  select * into c from public.crew_briefing_acknowledgments where id=p_invitation_id;
+  if c.id is not null then select * into r from public.crew_briefing_assigned_rpic(c.job_id); end if;
+  if c.id is null or r.id is null or r.user_id is distinct from auth.uid() then raise exception 'Only the assigned RPIC can update crew acknowledgment delivery.'; end if;
   update public.crew_briefing_acknowledgments set status=case when p_sent then 'Sent' else 'Email Failed' end,
     email_sent_at=case when p_sent then now() else null end, token_hash=case when p_sent then token_hash else null end, updated_at=now() where id=p_invitation_id and status='Invited';
 end $$;
@@ -90,7 +94,7 @@ begin
   select * into j from public.jobs where id=a.job_id and organization_id=public.current_user_organization_id();
   select * into r from public.crew_briefing_assigned_rpic(a.job_id);
   select * into h from public.jha_assessments where job_id=a.job_id;
-  if j.id is null or r.user_id<>auth.uid() then raise exception 'Only the assigned RPIC can record a Manual Field Briefing.'; end if;
+  if j.id is null or r.id is null or r.user_id is distinct from auth.uid() then raise exception 'Only the assigned RPIC can record a Manual Field Briefing.'; end if;
   if a.assigned_role not in ('Pilot','Visual Observer','Payload Operator','Ground Crew') then raise exception 'This assignment does not require crew acknowledgment.'; end if;
   if h.id is null then raise exception 'Save the Operational JHA first.'; end if;
   if not p_attested or p_reason not in ('No internet/cellular service','Crew member unable to access email','Device/access issue','Other') or (p_reason='Other' and nullif(btrim(p_reason_detail),'') is null) then raise exception 'A valid reason and RPIC attestation are required.'; end if;
@@ -107,13 +111,13 @@ create or replace function public.get_public_crew_briefing(p_token text)
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare c public.crew_briefing_acknowledgments; j public.jobs; h public.jha_assessments;
 begin
-  select * into c from public.crew_briefing_acknowledgments where token_hash=encode(digest(p_token,'sha256'),'hex') and status in ('Sent','Acknowledged');
-  if c.id is null or (c.status='Sent' and c.token_expires_at < now()) then raise exception 'This acknowledgment link is invalid or expired.'; end if;
+  select * into c from public.crew_briefing_acknowledgments where token_hash=encode(digest(p_token,'sha256'),'hex') and status='Sent';
+  if c.id is null or c.token_expires_at is null or c.token_expires_at <= now() then raise exception 'This acknowledgment link is invalid or expired.'; end if;
   select * into j from public.jobs where id=c.job_id and organization_id=c.organization_id;
   select * into h from public.jha_assessments where job_id=c.job_id;
   if not exists(select 1 from public.job_personnel where id=c.assignment_id and job_id=c.job_id and personnel_id=c.personnel_id and assigned_role=c.assigned_role) then raise exception 'This crew assignment is no longer current.'; end if;
   if h.briefing_version<>c.briefing_version then raise exception 'The briefing has changed. Ask the RPIC for a new acknowledgment request.'; end if;
-  return jsonb_build_object('already_acknowledged',c.status='Acknowledged','operation',jsonb_build_object('name',j.name,'site',j.location,'planned_date',j.planned_date),
+  return jsonb_build_object('already_acknowledged',false,'operation',jsonb_build_object('name',j.name,'site',j.location,'planned_date',j.planned_date),
     'recipient',(select jsonb_build_object('name',full_name,'role',c.assigned_role) from public.personnel where id=c.personnel_id),
     'crew',(select coalesce(jsonb_agg(jsonb_build_object('name',p.full_name,'role',a.assigned_role) order by a.created_at),'[]') from public.job_personnel a join public.personnel p on p.id=a.personnel_id where a.job_id=c.job_id and a.assigned_role in ('RPIC','Pilot','Visual Observer','Payload Operator','Ground Crew')),
     'rpic',(select p.full_name from public.job_personnel a join public.personnel p on p.id=a.personnel_id where a.job_id=c.job_id and a.assigned_role='RPIC' order by a.created_at limit 1),
@@ -128,34 +132,66 @@ declare c public.crew_briefing_acknowledgments; h public.jha_assessments;
 begin
   if nullif(btrim(p_typed_name),'') is null then raise exception 'Typed full name is required.'; end if;
   select * into c from public.crew_briefing_acknowledgments where token_hash=encode(digest(p_token,'sha256'),'hex') for update;
-  if c.id is null or c.status<>'Sent' or c.token_expires_at<now() then raise exception 'This acknowledgment link is invalid, expired, or already used.'; end if;
+  if c.id is null or c.status<>'Sent' or c.token_expires_at is null or c.token_expires_at<=now() then raise exception 'This acknowledgment link is invalid, expired, or already used.'; end if;
   select * into h from public.jha_assessments where job_id=c.job_id;
   if h.briefing_version<>c.briefing_version or not exists(select 1 from public.job_personnel where id=c.assignment_id and job_id=c.job_id and personnel_id=c.personnel_id and assigned_role=c.assigned_role) then raise exception 'The briefing or crew assignment has changed. Ask the RPIC for a new request.'; end if;
-  update public.crew_briefing_acknowledgments set status='Acknowledged',acknowledged_at=now(),typed_name=btrim(p_typed_name),updated_at=now() where id=c.id;
+  update public.crew_briefing_acknowledgments set status='Acknowledged',acknowledged_at=now(),typed_name=btrim(p_typed_name),token_hash=null,updated_at=now() where id=c.id;
   return jsonb_build_object('acknowledged',true,'acknowledged_at',now());
 end $$;
 revoke all on function public.acknowledge_public_crew_briefing(text,text) from public;
 grant execute on function public.acknowledge_public_crew_briefing(text,text) to anon, authenticated;
 
--- Advance only on the same material fields already used by JHA attestation invalidation.
+-- Version every substantive JHA field exposed by get_public_crew_briefing. This is
+-- independent of attestation state, so repeated Draft/stale edits each advance it.
 create or replace function public.advance_crew_briefing_version() returns trigger language plpgsql set search_path=public as $$
 begin
-  if new.safety_manager_review_stale and (not old.safety_manager_review_stale or new.status is distinct from old.status) then
-    update public.jha_assessments set briefing_version=old.briefing_version+1 where id=new.id;
+  if row(new.job_type_scope,new.hazard_entries,new.ppe_requirements,new.crew_members,new.nearest_hospital,
+    new.emergency_facility_address,new.emergency_contact,new.drone_incident_procedure,new.site_access,
+    new.exclusion_zone_description,new.known_airspace_restrictions)
+    is distinct from row(old.job_type_scope,old.hazard_entries,old.ppe_requirements,old.crew_members,old.nearest_hospital,
+    old.emergency_facility_address,old.emergency_contact,old.drone_incident_procedure,old.site_access,
+    old.exclusion_zone_description,old.known_airspace_restrictions) then
+    new.briefing_version := old.briefing_version+1;
     update public.jobs set crew_acknowledgment_required_at=coalesce(crew_acknowledgment_required_at,now()) where id=new.job_id;
   end if;
-  return null;
+  return new;
 end $$;
-create trigger advance_crew_briefing_version_after_material_change after update on public.jha_assessments
-for each row when (new.briefing_version=old.briefing_version) execute function public.advance_crew_briefing_version();
+create trigger advance_crew_briefing_version_before_material_change before update on public.jha_assessments
+for each row execute function public.advance_crew_briefing_version();
 
-create or replace function public.activate_crew_acknowledgments_on_assignment_change() returns trigger language plpgsql set search_path=public as $$
+-- Job identity/site/date/service changes are also displayed briefing substance.
+create or replace function public.advance_crew_briefing_version_from_job() returns trigger language plpgsql set search_path=public as $$
 begin
-  update public.jobs set crew_acknowledgment_required_at=coalesce(crew_acknowledgment_required_at,now()) where id=coalesce(new.job_id,old.job_id);
-  return coalesce(new,old);
+  if row(new.name,new.location,new.planned_date,new.service_type) is distinct from row(old.name,old.location,old.planned_date,old.service_type) then
+    update public.jha_assessments set briefing_version=briefing_version+1 where job_id=new.id;
+    new.crew_acknowledgment_required_at := coalesce(new.crew_acknowledgment_required_at,now());
+    perform public.mark_job_operation_readiness_stale(new.id,'Operation briefing content changed');
+  end if;
+  return new;
 end $$;
-create trigger activate_crew_acknowledgments_on_assignment_change after insert or update on public.job_personnel
-for each row execute function public.activate_crew_acknowledgments_on_assignment_change();
+create trigger advance_crew_briefing_version_from_job before update on public.jobs
+for each row execute function public.advance_crew_briefing_version_from_job();
+
+-- Operational crew and role snapshots are displayed briefing substance. Preserve
+-- evidence on delete, advance the version, and stale any prior readiness approval.
+create or replace function public.advance_crew_briefing_version_from_assignment() returns trigger language plpgsql set search_path=public as $$
+declare target_job_id uuid; material boolean;
+begin
+  target_job_id := case when tg_op='DELETE' then old.job_id else new.job_id end;
+  material := case
+    when tg_op='INSERT' then new.assigned_role in ('RPIC','Pilot','Visual Observer','Payload Operator','Ground Crew')
+    when tg_op='DELETE' then old.assigned_role in ('RPIC','Pilot','Visual Observer','Payload Operator','Ground Crew')
+    else old.personnel_id is distinct from new.personnel_id or old.assigned_role is distinct from new.assigned_role
+  end;
+  if material then
+    update public.jha_assessments set briefing_version=briefing_version+1 where job_id=target_job_id;
+    update public.jobs set crew_acknowledgment_required_at=coalesce(crew_acknowledgment_required_at,now()) where id=target_job_id;
+    perform public.mark_job_operation_readiness_stale(target_job_id,'Operational crew assignment changed');
+  end if;
+  return case when tg_op='DELETE' then old else new end;
+end $$;
+create trigger advance_crew_briefing_version_from_assignment after insert or update or delete on public.job_personnel
+for each row execute function public.advance_crew_briefing_version_from_assignment();
 
 -- Replace the narrow readiness RPC to add one server-side prerequisite without changing existing checks.
 create or replace function public.confirm_job_ready_to_operate(target_job_id uuid, fitness_confirmed boolean)

@@ -28,3 +28,17 @@ test('manual field briefing requires reason, Other explanation, and RPIC attesta
   assert.ok(validateManualFieldBriefing('Device/access issue', '', false));
   assert.equal(validateManualFieldBriefing('Other', 'No usable device', true), null);
 });
+
+test('a repeated material change keeps old evidence stale until the new version is acknowledged', () => {
+  const acknowledgedVersion = 4;
+  const afterAnotherDraftEdit = acknowledgedVersion + 1;
+  const oldEvidence = [{ assignment_id: 'vo', assigned_role: 'Visual Observer', briefing_version: acknowledgedVersion, status: 'Acknowledged' as const }];
+  assert.equal(crewBriefingStatus(assignments[1], oldEvidence, afterAnotherDraftEdit), 'Stale');
+  assert.equal(crewAcknowledgmentsCurrent(assignments, oldEvidence, afterAnotherDraftEdit), false);
+  assert.equal(crewAcknowledgmentsCurrent(assignments, [...oldEvidence, { ...oldEvidence[0], briefing_version: afterAnotherDraftEdit }], afterAnotherDraftEdit), true);
+});
+
+test('removing a crew assignment stops its preserved evidence from blocking the current crew', () => {
+  const historicalEvidence = [{ assignment_id: 'vo', assigned_role: 'Visual Observer', briefing_version: 2, status: 'Acknowledged' as const }];
+  assert.equal(crewAcknowledgmentsCurrent(assignments.slice(0, 1), historicalEvidence, 3), true);
+});
