@@ -8,6 +8,7 @@ export type ReadinessPrerequisites = {
   preflightComplete: boolean;
   assignedRpicId: string | null;
   fitnessForDutyConfirmed: boolean;
+  crewAcknowledgmentsCurrent?: boolean;
   publicRightOfWayRestrictionRequired?: boolean | null;
   permitAuthorizationRequired?: boolean | null;
   permitAuthorizationStatus?: 'Pending' | 'Approved' | null;
@@ -60,6 +61,7 @@ export function getReadinessBlockingReasons(input: ReadinessPrerequisites) {
     !input.preflightComplete ? 'Complete the pre-flight checklist.' : null,
     !input.assignedRpicId ? 'Assign an active RPIC.' : null,
     !input.fitnessForDutyConfirmed ? 'The assigned RPIC must confirm fitness for duty.' : null,
+    input.crewAcknowledgmentsCurrent === false ? 'Every assigned non-RPIC operational crew member needs a current Crew Briefing acknowledgment or Manual Field Briefing.' : null,
     input.permitAuthorizationRequired === true && input.permitAuthorizationStatus !== 'Approved'
       ? 'Required public right-of-way permit or authorization must be Approved.'
       : null,

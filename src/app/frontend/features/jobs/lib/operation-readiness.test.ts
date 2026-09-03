@@ -13,6 +13,12 @@ test('Ready to Operate is blocked by each missing safety prerequisite', () => {
 
 test('Ready to Operate is allowed when all prerequisites are current', () => assert.deepEqual(getReadinessBlockingReasons(ready), []));
 
+test('crew acknowledgment blocks only when explicitly required and incomplete', () => {
+  assert.deepEqual(getReadinessBlockingReasons({ ...ready, crewAcknowledgmentsCurrent: true }), []);
+  assert.ok(getReadinessBlockingReasons({ ...ready, crewAcknowledgmentsCurrent: false }).some((reason) => reason.includes('crew member')));
+  assert.deepEqual(getReadinessBlockingReasons(ready), []); // legacy jobs remain compatible
+});
+
 test('public right-of-way planning blocks only a required permit that is not approved', () => {
   assert.deepEqual(getReadinessBlockingReasons({ ...ready, publicRightOfWayRestrictionRequired: false }), []);
   assert.deepEqual(getReadinessBlockingReasons({ ...ready, publicRightOfWayRestrictionRequired: true, permitAuthorizationRequired: false }), []);

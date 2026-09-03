@@ -24,6 +24,7 @@ import { ProtectedRoute } from './frontend/features/auth/components/protected-ro
 import { ForgotPasswordPage } from './frontend/features/auth/pages/forgot-password-page';
 import { ResetPasswordPage } from './frontend/features/auth/pages/reset-password-page';
 import { AuthCallbackPage } from './frontend/features/auth/pages/auth-callback-page';
+import { CrewBriefingAcknowledgmentPage } from './frontend/features/jobs/pages/crew-briefing-acknowledgment-page';
 
 export function AppRouter() {
   return (
@@ -34,6 +35,7 @@ export function AppRouter() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route path="/crew-briefing/acknowledge" element={<CrewBriefingAcknowledgmentPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>

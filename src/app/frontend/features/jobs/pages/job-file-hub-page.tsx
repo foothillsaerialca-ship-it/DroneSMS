@@ -5,6 +5,7 @@ import { OrganizationIdentityCard } from '@frontend/features/settings/components
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 import { getOperationReadinessStatus, getReadinessBlockingReasons, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
+import { crewAcknowledgmentsCurrent, crewBriefingStatus, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
 import { followUpAreas, validateSafetyAssurance, type SafetyAssuranceInput } from '@frontend/features/sms/lib/safety-assurance';
 
 const operationResultOptions = ['Completed as Planned', 'Completed with Changes', 'Delayed', 'Aborted', 'Incident Occurred'];
@@ -32,6 +33,7 @@ type Job = {
   status: string;
   source_proposal_id: string | null;
   source_proposal_number: string | null;
+  crew_acknowledgment_required_at: string | null;
 };
 
 type PersonnelOption = {
@@ -42,6 +44,7 @@ type PersonnelOption = {
   training_expiration_date: string | null;
   status: string;
   user_id: string | null;
+  email: string | null;
 };
 
 type JobPersonnelAssignment = {
@@ -88,6 +91,7 @@ type JhaSummary = {
   public_right_of_way_restriction_required: boolean | null;
   permit_authorization_required: boolean | null;
   permit_authorization_status: 'Pending' | 'Approved' | null;
+  briefing_version: number;
 };
 
 type PreflightSummary = {
@@ -229,6 +233,10 @@ export function JobFileHubPage() {
   const [preflightSummary, setPreflightSummary] = useState<PreflightSummary | null>(null);
   const [operationCloseout, setOperationCloseout] = useState<OperationCloseout | null>(null);
   const [operationReadiness, setOperationReadiness] = useState<OperationReadinessRecord | null>(null);
+  const [crewEvidence, setCrewEvidence] = useState<CrewBriefingEvidence[]>([]);
+  const [briefingActionId, setBriefingActionId] = useState<string | null>(null);
+  const [briefingError, setBriefingError] = useState<string | null>(null);
+  const [briefingMessage, setBriefingMessage] = useState<string | null>(null);
   const [fitnessConfirmed, setFitnessConfirmed] = useState(false);
   const [readinessError, setReadinessError] = useState<string | null>(null);
   const [readinessMessage, setReadinessMessage] = useState<string | null>(null);
@@ -266,7 +274,7 @@ export function JobFileHubPage() {
   async function loadAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
       .from('job_personnel')
-      .select('id, assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status, user_id)')
+      .select('id, assigned_role, personnel:personnel_id(id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id)')
       .eq('job_id', currentJobId)
       .order('created_at', { ascending: true });
 
@@ -332,16 +340,16 @@ export function JobFileHubPage() {
       try {
         const jobQuery = supabase
           .from('jobs')
-          .select('id, organization_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number')
+          .select('id, organization_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number, crew_acknowledgment_required_at')
           .eq('id', jobId)
           .maybeSingle();
         const personnelQuery = supabase
           .from('personnel')
-          .select('id, full_name, role, part_107_expiration_date, training_expiration_date, status, user_id')
+          .select('id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id')
           .order('full_name', { ascending: true });
         const assignmentsQuery = supabase
           .from('job_personnel')
-          .select('id, assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status, user_id)')
+          .select('id, assigned_role, personnel:personnel_id(id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id)')
           .eq('job_id', jobId)
           .order('created_at', { ascending: true });
         const equipmentQuery = supabase
@@ -361,7 +369,7 @@ export function JobFileHubPage() {
           .order('created_at', { ascending: false });
         const jhaSummaryQuery = supabase
           .from('jha_assessments')
-          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, safety_manager_reviewed_at, safety_manager_review_stale, rpic_accepted_at, rpic_acceptance_stale, rpic_personnel_id, hazard_entries, public_right_of_way_restriction_required, permit_authorization_required, permit_authorization_status')
+          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, safety_manager_reviewed_at, safety_manager_review_stale, rpic_accepted_at, rpic_acceptance_stale, rpic_personnel_id, hazard_entries, public_right_of_way_restriction_required, permit_authorization_required, permit_authorization_status, briefing_version')
           .eq('job_id', jobId)
           .maybeSingle();
         const preflightSummaryQuery = supabase
@@ -376,8 +384,9 @@ export function JobFileHubPage() {
           .maybeSingle();
         const readinessQuery = supabase.from('job_operation_readiness').select('approved_at, approval_stale, fitness_for_duty_confirmed, rpic_personnel_id').eq('job_id', jobId).maybeSingle();
         const userQuery = supabase.auth.getUser();
+        const crewEvidenceQuery = supabase.from('crew_briefing_acknowledgments').select('assignment_id, assigned_role, briefing_version, status, acknowledged_at, field_briefed_at').eq('job_id', jobId).order('created_at', { ascending: false });
 
-        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult, jhaSummaryResult, preflightSummaryResult, closeoutResult, readinessResult, userResult] = await Promise.all([
+        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult, jhaSummaryResult, preflightSummaryResult, closeoutResult, readinessResult, userResult, crewEvidenceResult] = await Promise.all([
           jobQuery,
           personnelQuery,
           assignmentsQuery,
@@ -388,7 +397,7 @@ export function JobFileHubPage() {
           preflightSummaryQuery,
           closeoutQuery,
           readinessQuery,
-          userQuery
+          userQuery, crewEvidenceQuery
         ]);
 
         if (jobResult.error) throw jobResult.error;
@@ -401,6 +410,7 @@ export function JobFileHubPage() {
         if (preflightSummaryResult.error) throw preflightSummaryResult.error;
         if (closeoutResult.error) throw closeoutResult.error;
         if (readinessResult.error) throw readinessResult.error;
+        if (crewEvidenceResult.error) throw crewEvidenceResult.error;
         if (!isMounted) return;
 
         if (!jobResult.data) {
@@ -432,6 +442,7 @@ export function JobFileHubPage() {
         setJhaSummary(jhaSummaryResult.data as JhaSummary | null);
         setPreflightSummary(preflightSummaryResult.data as PreflightSummary | null);
         setOperationReadiness(readinessResult.data as OperationReadinessRecord | null);
+        setCrewEvidence((crewEvidenceResult.data ?? []) as CrewBriefingEvidence[]);
         setFitnessConfirmed(Boolean(readinessResult.data?.fitness_for_duty_confirmed && !readinessResult.data?.approval_stale));
         setCurrentUserId(userResult.data.user?.id ?? null);
         const loadedCloseout = closeoutResult.data as OperationCloseout | null;
@@ -471,6 +482,8 @@ export function JobFileHubPage() {
   const personnelReadinessSummary = getPersonnelReadinessSummary(assignments);
   const closeoutNarrativeRequired = resultsRequiringNarrative.has(closeoutFormData.operationResult);
   const assignedRpic = assignments.find((assignment) => assignment.assigned_role === 'RPIC' && assignment.personnel?.status === 'Active')?.personnel ?? null;
+  const briefingVersion = jhaSummary?.briefing_version ?? 1;
+  const crewEvidenceCurrent = crewAcknowledgmentsCurrent(assignments, crewEvidence, briefingVersion);
   const readinessPrerequisites = {
     jhaComplete,
     safetyManagerReviewCurrent: Boolean(jhaSummary?.safety_manager_reviewed_at && !jhaSummary.safety_manager_review_stale),
@@ -480,9 +493,40 @@ export function JobFileHubPage() {
     publicRightOfWayRestrictionRequired: jhaSummary?.public_right_of_way_restriction_required,
     permitAuthorizationRequired: jhaSummary?.permit_authorization_required,
     permitAuthorizationStatus: jhaSummary?.permit_authorization_status,
+    crewAcknowledgmentsCurrent: job?.crew_acknowledgment_required_at ? crewEvidenceCurrent : undefined,
   };
   const readinessBlockingReasons = getReadinessBlockingReasons(readinessPrerequisites);
   const readinessStatus = getOperationReadinessStatus(operationReadiness);
+
+  async function reloadCrewEvidence() {
+    if (!job) return;
+    const { data, error: evidenceError } = await supabase.from('crew_briefing_acknowledgments').select('assignment_id, assigned_role, briefing_version, status, acknowledged_at, field_briefed_at').eq('job_id', job.id).order('created_at', { ascending: false });
+    if (evidenceError) throw evidenceError;
+    setCrewEvidence((data ?? []) as CrewBriefingEvidence[]);
+    setJob((current) => current ? { ...current, crew_acknowledgment_required_at: current.crew_acknowledgment_required_at ?? new Date().toISOString() } : current);
+  }
+
+  async function sendCrewAcknowledgment(assignmentId: string) {
+    setBriefingActionId(assignmentId); setBriefingError(null); setBriefingMessage(null);
+    try {
+      const { error: sendError } = await supabase.functions.invoke('send-crew-acknowledgment', { body: { assignmentId } });
+      if (sendError) throw sendError;
+      await reloadCrewEvidence(); setBriefingMessage('Crew acknowledgment request sent.');
+    } catch (sendError) { setBriefingError(getErrorMessage(sendError)); await reloadCrewEvidence().catch(() => undefined); }
+    finally { setBriefingActionId(null); }
+  }
+
+  async function recordManualBriefing(assignmentId: string) {
+    const reason = window.prompt('Reason: No internet/cellular service; Crew member unable to access email; Device/access issue; or Other')?.trim() ?? '';
+    const detail = reason === 'Other' ? window.prompt('Short explanation')?.trim() ?? '' : '';
+    const validation = validateManualFieldBriefing(reason, detail, true);
+    if (validation) { setBriefingError(validation); return; }
+    if (!window.confirm('I confirm that this crew member participated in the full operation briefing in person and was provided the opportunity to ask questions before operations began.')) return;
+    setBriefingActionId(assignmentId); setBriefingError(null); setBriefingMessage(null);
+    const { error: manualError } = await supabase.rpc('record_manual_field_briefing', { p_assignment_id: assignmentId, p_reason: reason, p_reason_detail: detail, p_attested: true });
+    if (manualError) setBriefingError(manualError.message); else { await reloadCrewEvidence(); setBriefingMessage('Manual Field Briefing recorded.'); }
+    setBriefingActionId(null);
+  }
 
   async function recordOperationReadiness(fitness: boolean) {
     if (!job) return;
@@ -1167,6 +1211,12 @@ export function JobFileHubPage() {
           </p>
         ) : null}
       </div>
+
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="crew-briefing-heading">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="crew-briefing-heading" className="text-lg font-semibold text-brand-900">Crew Briefing / Crew Acknowledgment</h2><p className="mt-1 text-sm text-slate-600">After the RPIC conducts the full in-person operation briefing, send each assigned non-RPIC crew member a request to review and acknowledge it.</p></div><button type="button" className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={!jhaSummary || briefingActionId !== null || requiredCrewAssignments(assignments).length === 0 || currentUserId !== assignedRpic?.user_id} onClick={() => void (async () => { for (const assignment of requiredCrewAssignments(assignments)) await sendCrewAcknowledgment(assignment.id); })()}>Send Crew Acknowledgments</button></div>
+        <div className="mt-4 space-y-3">{assignments.filter((assignment) => assignment.assigned_role === 'RPIC' || requiredCrewAssignments([assignment]).length).map((assignment) => { const status = crewBriefingStatus(assignment, crewEvidence, briefingVersion); const busy = briefingActionId === assignment.id; return <article key={assignment.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-brand-900">{assignment.personnel?.full_name ?? 'Personnel unavailable'} — {assignment.assigned_role}</p><p className="mt-1 text-sm text-slate-600">Status: <strong>{status}</strong></p>{assignment.assigned_role !== 'RPIC' && !assignment.personnel?.email ? <p className="mt-1 text-xs text-amber-700">Add an email on the Personnel record to use electronic acknowledgment.</p> : null}</div>{assignment.assigned_role !== 'RPIC' ? <div className="flex flex-wrap gap-2"><button type="button" className="rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm font-medium text-brand-700 disabled:text-slate-400" disabled={busy || !jhaSummary || !assignment.personnel?.email || currentUserId !== assignedRpic?.user_id} onClick={() => void sendCrewAcknowledgment(assignment.id)}>{busy ? 'Working…' : status === 'Not Sent' ? 'Send' : 'Resend'}</button><button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:text-slate-400" disabled={busy || !jhaSummary || currentUserId !== assignedRpic?.user_id} onClick={() => void recordManualBriefing(assignment.id)}>Record Manual Field Briefing</button></div> : null}</div></article>; })}{requiredCrewAssignments(assignments).length === 0 ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Solo operation — no separate crew acknowledgment is required. The RPIC continues through the existing acceptance and readiness workflow.</p> : null}</div>
+        {briefingError ? <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{briefingError}</p> : null}{briefingMessage ? <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700" role="status">{briefingMessage}</p> : null}
+      </section>
 
       <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
