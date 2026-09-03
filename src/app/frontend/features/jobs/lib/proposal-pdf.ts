@@ -13,7 +13,7 @@ import {
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
 import { getProposalScopeDefaults } from '@frontend/features/jobs/lib/proposal-scope';
 import { buildPreflightPacketRows } from '@frontend/features/preflight/lib/preflight-checklist';
-import { buildProposalPersonnelLanguage, type ProposalOperationalPersonnel } from '@frontend/features/jobs/lib/proposal-language';
+import { buildProposalPersonnelLanguage, resolveProposalRpic, type ProposalOperationalPersonnel } from '@frontend/features/jobs/lib/proposal-language';
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -344,10 +344,15 @@ class ProposalPdfRenderer {
     const includeProposalEnhancements = options.includeProposalEnhancements ?? true;
     this.includeProposalEnhancements = includeProposalEnhancements;
     const personnelLanguage = buildProposalPersonnelLanguage(this.operationalPersonnel);
+    const proposalRpicName = clean(this.proposal.proposed_rpic_name) || clean(this.proposal.proposed_rpic);
+    const displayedRpic = resolveProposalRpic(this.operationalPersonnel, {
+      personnelId: this.proposal.proposed_rpic_id,
+      name: proposalRpicName,
+    });
     this.startContentPage();
     if (options.sectionTitle) this.majorSection(options.sectionTitle);
     this.section('EXECUTIVE SUMMARY', undefined, 80);
-    this.paragraph(buildExecutiveSummary(this.proposal, this.organization, personnelLanguage), 12);
+    this.paragraph(buildExecutiveSummary(this.proposal, this.organization, personnelLanguage, displayedRpic.name), 12);
     this.section('SCOPE OF WORK', undefined, 69);
     this.keyValueTable([
       ['Services', buildServiceDescription(this.proposal)],
@@ -364,7 +369,7 @@ class ProposalPdfRenderer {
     this.table(
       [
         ['Role', 'Assigned Individual', 'Credentials / Notes'],
-        ['Remote Pilot in Command', clean(this.proposal.proposed_rpic_name) || clean(this.proposal.proposed_rpic) || 'To be assigned', clean(this.proposal.proposed_rpic_credentials) || 'Credentials verified before operation'],
+        ['Remote Pilot in Command', displayedRpic.name || 'To be assigned', displayedRpic.usesProposalSnapshot ? clean(this.proposal.proposed_rpic_credentials) || 'Credentials verified before operation' : 'Credentials verified before operation'],
         ...this.operationalPersonnel
           .filter((assignment) => assignment.role !== 'RPIC' && assignment.name)
           .map((assignment) => [clean(assignment.role) || 'Operational Support', clean(assignment.name), 'Assigned for site support as required']),
@@ -1236,14 +1241,14 @@ function proposalOperationalPersonnel(proposal: ProposalPdfRecord): ProposalOper
   return proposal.proposed_rpic_id || name ? [{ personnelId: proposal.proposed_rpic_id, name, role: 'RPIC' }] : [];
 }
 
-function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: OrganizationSettings | null, personnelLanguage = buildProposalPersonnelLanguage(proposalOperationalPersonnel(proposal))) {
+function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: OrganizationSettings | null, personnelLanguage = buildProposalPersonnelLanguage(proposalOperationalPersonnel(proposal)), displayedRpicName?: string) {
   const operatorName = companyNameFor(organization);
   const contactName = clean(proposal.contact_name) || 'your team';
   const clientName = clean(proposal.client_name) || 'your organization';
   const siteAddress = clean(proposal.site_address) || 'the identified property or operating area';
   const serviceDescription = withLeadingArticle(lowerFirst(buildServiceDescription(proposal).replace(/\.$/, '')));
   const validThrough = formatLongDate(proposal.valid_until) || 'the validity date stated in this proposal';
-  const rpicName = clean(proposal.proposed_rpic_name) || clean(proposal.proposed_rpic);
+  const rpicName = displayedRpicName ?? (clean(proposal.proposed_rpic_name) || clean(proposal.proposed_rpic));
 
   const qualifications = `${personnelLanguage.executiveSummaryQualification(rpicName, operatorName)} Our aerial approach provides safe, efficient access to the work area while reducing the need for personnel to operate from elevated, difficult-to-access, or otherwise hazardous positions.`;
 

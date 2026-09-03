@@ -12,6 +12,30 @@ export type ProposalOperationalPersonnel = {
   role?: string | null;
 };
 
+export function resolveProposalRpic(
+  assignments: ProposalOperationalPersonnel[],
+  proposalRpic: { personnelId?: string | null; name?: string | null },
+) {
+  const assignedRpic = assignments.find((assignment) => assignment.role === 'RPIC');
+  if (assignedRpic) {
+    return {
+      name: assignedRpic.name?.trim() ?? '',
+      usesProposalSnapshot: Boolean(
+        proposalRpic.personnelId
+        && assignedRpic.personnelId === proposalRpic.personnelId,
+      ),
+    };
+  }
+
+  // An empty assignment set means there is no live job data to supersede the
+  // proposal snapshot. A non-empty set without an RPIC must not be combined
+  // with the historical RPIC identity.
+  return {
+    name: assignments.length ? '' : proposalRpic.name?.trim() ?? '',
+    usesProposalSnapshot: assignments.length === 0,
+  };
+}
+
 export function buildProposalPersonnelLanguage(assignments: ProposalOperationalPersonnel[]) {
   const operationalPeople = new Set(
     assignments

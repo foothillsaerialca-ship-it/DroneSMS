@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { buildProposalPersonnelLanguage } from './proposal-language.ts';
+import { buildProposalPersonnelLanguage, resolveProposalRpic } from './proposal-language.ts';
 
 test('solo proposal language is operator-specific and preserves safety commitments', () => {
   const language = buildProposalPersonnelLanguage([{ personnelId: 'rpic-1', name: 'Alex Pilot', role: 'RPIC' }]);
@@ -36,6 +36,40 @@ test('administrative roles and duplicate assignments do not create a crew', () =
     { personnelId: 'manager-1', role: 'Safety Manager' },
   ]);
   assert.equal(language.isCrewed, false);
+});
+
+test('converted job uses its reassigned RPIC without changing the proposal snapshot', () => {
+  const proposalSnapshot = { personnelId: 'rpic-a', name: 'RPIC A' };
+  const liveAssignments = [
+    { personnelId: 'rpic-b', name: 'RPIC B', role: 'RPIC' },
+    { personnelId: 'vo-1', name: 'Observer', role: 'Visual Observer' },
+  ];
+
+  const displayedRpic = resolveProposalRpic(liveAssignments, proposalSnapshot);
+  const language = buildProposalPersonnelLanguage(liveAssignments);
+
+  assert.deepEqual(displayedRpic, { name: 'RPIC B', usesProposalSnapshot: false });
+  assert.equal(language.isCrewed, true);
+  assert.match(language.executiveSummaryQualification(displayedRpic.name, 'Example Aviation'), /^RPIC B,/);
+  assert.match(language.siteSetup, /crew briefing/);
+  assert.deepEqual(proposalSnapshot, { personnelId: 'rpic-a', name: 'RPIC A' });
+});
+
+test('unconverted proposal uses its original RPIC assignment', () => {
+  const proposalSnapshot = { personnelId: 'rpic-a', name: 'RPIC A' };
+  const proposalAssignments = [{ ...proposalSnapshot, role: 'RPIC' }];
+  const displayedRpic = resolveProposalRpic(proposalAssignments, proposalSnapshot);
+
+  assert.deepEqual(displayedRpic, { name: 'RPIC A', usesProposalSnapshot: true });
+  assert.equal(buildProposalPersonnelLanguage(proposalAssignments).isCrewed, false);
+});
+
+test('live personnel without an RPIC does not mix in the historical RPIC', () => {
+  const displayedRpic = resolveProposalRpic(
+    [{ personnelId: 'vo-1', name: 'Observer', role: 'Visual Observer' }],
+    { personnelId: 'rpic-a', name: 'RPIC A' },
+  );
+  assert.deepEqual(displayedRpic, { name: '', usesProposalSnapshot: false });
 });
 
 test('proposal sections remain intact and completed-record terminology is unchanged', () => {
