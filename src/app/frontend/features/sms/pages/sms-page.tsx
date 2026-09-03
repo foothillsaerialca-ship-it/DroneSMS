@@ -7,7 +7,7 @@ import { SafetyAssuranceArea } from '../components/safety-assurance-area';
 type Member = { id: string; full_name: string };
 const pillars = [
   { title: 'Safety Policy & Objectives', items: ['Safety Policy Statement', 'Safety Objectives'] },
-  { title: 'Safety Risk Management', items: ['Risk Acceptance Criteria', 'Risk Matrix Configuration'] },
+  { title: 'Safety Risk Management', items: ['Hazard Identification & Control Planning', 'Controls-in-Place Verification'] },
   { title: 'Safety Assurance', items: ['Internal Audit Program', 'Corrective Action Process'] },
   { title: 'Safety Promotion', items: ['Training Program Summary', 'Safety Meeting Frequency'] }
 ] as const;
