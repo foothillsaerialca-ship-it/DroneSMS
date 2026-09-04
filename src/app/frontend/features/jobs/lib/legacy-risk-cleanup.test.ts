@@ -25,6 +25,24 @@ const retainedCompatibilityFields = {
   proposals: ['risk'],
 } as const;
 
+const droppedOrRenamedColumnPattern = (column: string) =>
+  new RegExp(`(?:drop(?:\\s+column)?(?:\\s+if\\s+exists)?|rename(?:\\s+column)?)\\s+${column}\\b`, 'i');
+
+test('retained compatibility field detection accepts optional COLUMN keywords', () => {
+  for (const [table, columns] of Object.entries(retainedCompatibilityFields)) {
+    for (const column of columns) {
+      for (const alteration of [
+        `ALTER TABLE public.${table} DROP ${column}`,
+        `ALTER TABLE public.${table} DROP COLUMN ${column}`,
+        `ALTER TABLE public.${table} RENAME ${column} TO legacy_column`,
+        `ALTER TABLE public.${table} RENAME COLUMN ${column} TO legacy_column`,
+      ]) {
+        assert.match(alteration, droppedOrRenamedColumnPattern(column));
+      }
+    }
+  }
+});
+
 test('retained compatibility fields survive the complete ordered migration history', () => {
   const migrationHistory = orderedMigrations.map(({ sql }) => sql).join('\n');
 
@@ -47,7 +65,7 @@ test('retained compatibility fields survive the complete ordered migration histo
         for (const column of columns) {
           assert.doesNotMatch(
             statement,
-            new RegExp(`(?:drop\\s+column(?:\\s+if\\s+exists)?|rename\\s+column)\\s+${column}\\b`, 'i'),
+            droppedOrRenamedColumnPattern(column),
             `${fileName} must retain public.${table}.${column}`,
           );
         }
