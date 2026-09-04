@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { BetaBadge } from '@frontend/components/beta-badge';
 import { supabase } from '@frontend/lib/supabase';
 import { resetBetaAuthAttempt } from '../../auth/lib/beta-welcome';
 
@@ -99,7 +100,10 @@ function BrandMark() {
     <Link to="/dashboard" className="flex min-w-0 items-center gap-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-700 text-sm font-bold text-white shadow-sm">DS</span>
       <span className="min-w-0">
-        <span className="block truncate text-lg font-bold tracking-tight text-brand-900">DroneSMS</span>
+        <span className="flex items-center gap-2">
+          <span className="truncate text-lg font-bold tracking-tight text-brand-900">DroneSMS</span>
+          <BetaBadge />
+        </span>
         <span className="block text-xs font-medium text-slate-500">MVP Phase 0</span>
       </span>
     </Link>
@@ -141,8 +145,9 @@ export function MobileTopBar() {
           >
             ☰
           </button>
-          <Link to="/dashboard" className="justify-self-center rounded-lg text-lg font-bold tracking-tight text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2">
-            DroneSMS
+          <Link to="/dashboard" className="inline-flex min-w-0 items-center gap-2 justify-self-center rounded-lg text-lg font-bold tracking-tight text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2">
+            <span className="truncate">DroneSMS</span>
+            <BetaBadge />
           </Link>
           <Link
             to="/settings/account"
