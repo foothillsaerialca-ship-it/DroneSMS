@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { BetaBadge } from '@frontend/components/beta-badge';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/use-auth';
 import {
@@ -38,10 +37,7 @@ export function BetaWelcomePage() {
 
   return (
     <section className="mx-auto w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-      <div className="flex items-center gap-2">
-        <h1 className="text-xl font-semibold text-brand-900">Welcome to DroneSMS</h1>
-        <BetaBadge />
-      </div>
+      <h1 className="text-xl font-semibold text-brand-900">Welcome to DroneSMS</h1>
       <div className="mt-4 space-y-4 text-sm leading-6 text-slate-600">
         <p>
           DroneSMS is currently in beta testing. I’ve personally tested the platform extensively, but you may still
