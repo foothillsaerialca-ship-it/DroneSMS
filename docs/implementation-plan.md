@@ -1,5 +1,12 @@
 DroneSMS MVP Technical Implementation Plan
 
+> **Implementation status:** This is an early planning document, not a description of the
+> current database or user workflow. Where this plan differs from the application, the
+> application and Supabase migrations are authoritative. In particular, the implemented JHA
+> uses guided hazard identification, documented controls, controls-in-place confirmation,
+> Safety Manager review, RPIC acceptance, and Ready to Operate; operators do not assign
+> numerical scores or Low/Medium/High operational risk ratings.
+
 1) Recommended Architecture (MVP, scalable but simple)
 
 Recommended stack:
@@ -13,7 +20,7 @@ Architecture pattern:
 - Thin client + service layer + database policies
 - Keep complex business logic out of the UI
 - Frontend handles forms and operational UX
-- Edge functions handle external API calls, risk scoring, and site intelligence refreshes
+- Edge functions handle external API calls, operational-condition warnings, and site intelligence refreshes
 - Database enforces tenant security and data integrity
 
 Why this architecture fits DroneSMS:
@@ -143,7 +150,7 @@ Workflow:
    - fetches weather and wind
    - determines sunset/civil twilight
    - checks TFR/NOTAM warnings
-4. Risk engine generates warnings
+4. Site-intelligence checks generate factual operational-condition warnings for operator review
 5. Snapshot is saved
 6. Operator reviews and edits information
 7. Snapshot is linked to exported PDF packet
@@ -230,7 +237,7 @@ Phase 3 — PDF Packet Pipeline
 Phase 4 — Smart Site Intelligence
 - External API orchestration
 - Site intelligence dashboard
-- Risk warnings
+- Operational-condition warnings
 - Operator review workflow
 
 Phase 5 — Training Logs
