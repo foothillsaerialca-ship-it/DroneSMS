@@ -21,6 +21,7 @@ import { MocDetailPage } from './frontend/features/sms/pages/moc-detail-page';
 import { ReportsPage } from './frontend/features/reports/pages/reports-page';
 import { AboutPage } from './frontend/features/information/team';
 import { ProtectedRoute } from './frontend/features/auth/components/protected-route';
+import { PublicAuthLayout } from './frontend/features/auth/components/public-auth-layout';
 import { ForgotPasswordPage } from './frontend/features/auth/pages/forgot-password-page';
 import { ResetPasswordPage } from './frontend/features/auth/pages/reset-password-page';
 import { AuthCallbackPage } from './frontend/features/auth/pages/auth-callback-page';
@@ -29,12 +30,14 @@ import { CrewBriefingAcknowledgmentPage } from './frontend/features/jobs/pages/c
 export function AppRouter() {
   return (
     <Routes>
-      <Route index element={<BetaWelcomePage />} />
-      <Route path="/login" element={<BetaWelcomePage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route element={<PublicAuthLayout />}>
+        <Route index element={<BetaWelcomePage />} />
+        <Route path="/login" element={<BetaWelcomePage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      </Route>
       <Route path="/crew-briefing/acknowledge" element={<CrewBriefingAcknowledgmentPage />} />
 
       <Route element={<ProtectedRoute />}>
