@@ -67,6 +67,21 @@ test('manual briefing repair preserves historical evidence and records the attes
   assert.match(repairMigration, /grant execute on function public\.record_manual_field_briefing\(uuid,text,text,boolean\) to authenticated/);
 });
 
+test('historical attribution uses only the unambiguous RPIC assignment for that job', () => {
+  const backfill = repairMigration.slice(
+    repairMigration.indexOf('with unambiguous_job_rpics'),
+    repairMigration.indexOf('create or replace function public.record_manual_field_briefing'),
+  );
+  assert.match(backfill, /jp\.job_id = c\.job_id/);
+  assert.match(backfill, /jp\.organization_id = c\.organization_id/);
+  assert.match(backfill, /jp\.assigned_role = 'RPIC'/);
+  assert.match(backfill, /r\.id = jp\.personnel_id/);
+  assert.match(backfill, /r\.user_id = c\.created_by_user_id/);
+  assert.match(backfill, /having count\(distinct jp\.personnel_id\) = 1/);
+  assert.match(backfill, /c\.attested_by_rpic_personnel_id is null/g);
+  assert.doesNotMatch(backfill, /set attested_by_rpic_personnel_id = r\.id/);
+});
+
 test('email function accepts supabase-js preflight and only marks Sent after provider success', () => {
   assert.match(sendFunction, /Access-Control-Allow-Headers[^\n]+x-client-info/);
   assert.match(sendFunction, /Deno\.env\.get\('RESEND_FROM'\)/);

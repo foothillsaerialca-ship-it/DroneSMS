@@ -7,13 +7,29 @@ drop function if exists public.record_manual_field_briefing(uuid,text,text,boole
 alter table public.crew_briefing_acknowledgments
   add column if not exists attested_by_rpic_personnel_id uuid references public.personnel(id) on delete set null;
 
+with unambiguous_job_rpics as (
+  select
+    c.id as acknowledgment_id,
+    (array_agg(distinct jp.personnel_id))[1] as personnel_id
+  from public.crew_briefing_acknowledgments c
+  join public.job_personnel jp
+    on jp.job_id = c.job_id
+    and jp.organization_id = c.organization_id
+    and jp.assigned_role = 'RPIC'
+  join public.personnel r
+    on r.id = jp.personnel_id
+    and r.organization_id = c.organization_id
+    and r.user_id = c.created_by_user_id
+  where c.acknowledgment_method = 'Manual Field Briefing'
+    and c.attested_by_rpic_personnel_id is null
+  group by c.id
+  having count(distinct jp.personnel_id) = 1
+)
 update public.crew_briefing_acknowledgments c
-set attested_by_rpic_personnel_id = r.id
-from public.personnel r
-where c.acknowledgment_method = 'Manual Field Briefing'
-  and c.attested_by_rpic_personnel_id is null
-  and r.organization_id = c.organization_id
-  and r.user_id = c.created_by_user_id;
+set attested_by_rpic_personnel_id = rpic.personnel_id
+from unambiguous_job_rpics rpic
+where c.id = rpic.acknowledgment_id
+  and c.attested_by_rpic_personnel_id is null;
 
 create or replace function public.record_manual_field_briefing(
   p_assignment_id uuid,
