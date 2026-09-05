@@ -26,3 +26,37 @@ end $$;
 
 revoke all on function public.create_crew_briefing_invitation(uuid) from public;
 grant execute on function public.create_crew_briefing_invitation(uuid) to authenticated;
+
+create or replace function public.get_public_crew_briefing(p_token text)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare c public.crew_briefing_acknowledgments; j public.jobs; h public.jha_assessments;
+begin
+  select * into c from public.crew_briefing_acknowledgments where token_hash=encode(extensions.digest(p_token,'sha256'),'hex') and status='Sent';
+  if c.id is null or c.token_expires_at is null or c.token_expires_at <= now() then raise exception 'This acknowledgment link is invalid or expired.'; end if;
+  select * into j from public.jobs where id=c.job_id and organization_id=c.organization_id;
+  select * into h from public.jha_assessments where job_id=c.job_id;
+  if not exists(select 1 from public.job_personnel where id=c.assignment_id and job_id=c.job_id and personnel_id=c.personnel_id and assigned_role=c.assigned_role) then raise exception 'This crew assignment is no longer current.'; end if;
+  if h.briefing_version<>c.briefing_version then raise exception 'The briefing has changed. Ask the RPIC for a new acknowledgment request.'; end if;
+  return jsonb_build_object('already_acknowledged',false,'operation',jsonb_build_object('name',j.name,'site',j.location,'planned_date',j.planned_date),
+    'recipient',(select jsonb_build_object('name',full_name,'role',c.assigned_role) from public.personnel where id=c.personnel_id),
+    'crew',(select coalesce(jsonb_agg(jsonb_build_object('name',p.full_name,'role',a.assigned_role) order by a.created_at),'[]') from public.job_personnel a join public.personnel p on p.id=a.personnel_id where a.job_id=c.job_id and a.assigned_role in ('RPIC','Pilot','Visual Observer','Payload Operator','Ground Crew')),
+    'rpic',(select p.full_name from public.job_personnel a join public.personnel p on p.id=a.personnel_id where a.job_id=c.job_id and a.assigned_role='RPIC' order by a.created_at limit 1),
+    'briefing',jsonb_build_object('scope',h.job_type_scope,'hazards',h.hazard_entries,'ppe',h.ppe_requirements,'communications',h.crew_members,'emergency_facility',h.nearest_hospital,'emergency_facility_address',h.emergency_facility_address,'emergency_contact',h.emergency_contact,'emergency_actions',h.drone_incident_procedure,'site_constraints',h.site_access,'exclusion_zone',h.exclusion_zone_description,'airspace_restrictions',h.known_airspace_restrictions));
+end $$;
+revoke all on function public.get_public_crew_briefing(text) from public;
+grant execute on function public.get_public_crew_briefing(text) to anon, authenticated;
+
+create or replace function public.acknowledge_public_crew_briefing(p_token text,p_typed_name text)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare c public.crew_briefing_acknowledgments; h public.jha_assessments;
+begin
+  if nullif(btrim(p_typed_name),'') is null then raise exception 'Typed full name is required.'; end if;
+  select * into c from public.crew_briefing_acknowledgments where token_hash=encode(extensions.digest(p_token,'sha256'),'hex') for update;
+  if c.id is null or c.status<>'Sent' or c.token_expires_at is null or c.token_expires_at<=now() then raise exception 'This acknowledgment link is invalid, expired, or already used.'; end if;
+  select * into h from public.jha_assessments where job_id=c.job_id;
+  if h.briefing_version<>c.briefing_version or not exists(select 1 from public.job_personnel where id=c.assignment_id and job_id=c.job_id and personnel_id=c.personnel_id and assigned_role=c.assigned_role) then raise exception 'The briefing or crew assignment has changed. Ask the RPIC for a new request.'; end if;
+  update public.crew_briefing_acknowledgments set status='Acknowledged',acknowledged_at=now(),typed_name=btrim(p_typed_name),token_hash=null,updated_at=now() where id=c.id;
+  return jsonb_build_object('acknowledged',true,'acknowledged_at',now());
+end $$;
+revoke all on function public.acknowledge_public_crew_briefing(text,text) from public;
+grant execute on function public.acknowledge_public_crew_briefing(text,text) to anon, authenticated;

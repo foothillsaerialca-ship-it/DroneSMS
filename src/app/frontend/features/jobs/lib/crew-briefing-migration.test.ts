@@ -24,10 +24,42 @@ test('crew invitation crypto repair preserves token and authorization semantics'
   assert.doesNotMatch(cryptoRepairMigration, /delete from public\.crew_briefing_acknowledgments/i);
 });
 
+test('every crew token RPC uses the same resolvable SHA-256 hash representation', () => {
+  const functionNames = [
+    'create_crew_briefing_invitation',
+    'get_public_crew_briefing',
+    'acknowledge_public_crew_briefing',
+  ];
+
+  for (const functionName of functionNames) {
+    const start = cryptoRepairMigration.indexOf(`function public.${functionName}`);
+    const body = cryptoRepairMigration.slice(start, cryptoRepairMigration.indexOf('end $$;', start));
+    assert.ok(start >= 0, `${functionName} must be repaired`);
+    assert.match(body, /security definer set search_path=public/i);
+    assert.match(body, /encode\(extensions\.digest\((?:raw_token|p_token),'sha256'\),'hex'\)/);
+    assert.doesNotMatch(body, /(?<!\.)digest\s*\(/i);
+  }
+
+  assert.doesNotMatch(cryptoRepairMigration, /(?<!\.)(?:gen_random_bytes|digest)\s*\(/i);
+});
+
+test('public token RPC repair retains no-login scope, expiry, and evidence invalidation', () => {
+  assert.match(cryptoRepairMigration, /grant execute on function public\.get_public_crew_briefing\(text\) to anon, authenticated/i);
+  assert.match(cryptoRepairMigration, /grant execute on function public\.acknowledge_public_crew_briefing\(text,text\) to anon, authenticated/i);
+  assert.match(cryptoRepairMigration, /c\.token_expires_at is null or c\.token_expires_at <= now\(\)/);
+  assert.match(cryptoRepairMigration, /c\.status<>'Sent'.+c\.token_expires_at<=now\(\)/);
+  assert.match(cryptoRepairMigration, /status='Acknowledged',acknowledged_at=now\(\),typed_name=btrim\(p_typed_name\),token_hash=null/);
+  assert.doesNotMatch(cryptoRepairMigration, /delete from public\.crew_briefing_acknowledgments/i);
+});
+
 test('crew invitation crypto repair does not broaden RPC execution permissions', () => {
+  const invitationRepair = cryptoRepairMigration.slice(
+    cryptoRepairMigration.indexOf('function public.create_crew_briefing_invitation'),
+    cryptoRepairMigration.indexOf('function public.get_public_crew_briefing'),
+  );
   assert.match(cryptoRepairMigration, /revoke all on function public\.create_crew_briefing_invitation\(uuid\) from public/i);
   assert.match(cryptoRepairMigration, /grant execute on function public\.create_crew_briefing_invitation\(uuid\) to authenticated/i);
-  assert.doesNotMatch(cryptoRepairMigration, /grant execute[^;]+to\s+(?:public|anon)\b/i);
+  assert.doesNotMatch(invitationRepair, /grant execute[^;]+to\s+(?:public|anon)\b/i);
 });
 
 test('RPIC lookup is not executable by PUBLIC or anonymous callers', () => {
