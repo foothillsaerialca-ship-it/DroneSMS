@@ -4,7 +4,31 @@ import test from 'node:test';
 
 const migration = readFileSync('supabase/migrations/20260903010000_crew_briefing_acknowledgments.sql', 'utf8');
 const repairMigration = readFileSync('supabase/migrations/20260905010000_fix_crew_acknowledgment_p0.sql', 'utf8');
+const cryptoRepairMigration = readFileSync('supabase/migrations/20260905020000_fix_crew_invitation_crypto_schema.sql', 'utf8');
 const sendFunction = readFileSync('supabase/functions/send-crew-acknowledgment/index.ts', 'utf8');
+
+test('crew invitation resolves pgcrypto without widening its SECURITY DEFINER search path', () => {
+  assert.match(cryptoRepairMigration, /create extension if not exists pgcrypto with schema extensions/i);
+  assert.match(cryptoRepairMigration, /security definer set search_path=public/i);
+  assert.match(cryptoRepairMigration, /extensions\.gen_random_bytes\(32\)/);
+  assert.doesNotMatch(cryptoRepairMigration, /(?<!\.)gen_random_bytes\s*\(/i);
+  assert.doesNotMatch(cryptoRepairMigration, /search_path\s*=\s*[^;\n$]*(?:extensions|anon|authenticated)/i);
+});
+
+test('crew invitation crypto repair preserves token and authorization semantics', () => {
+  assert.match(cryptoRepairMigration, /encode\(extensions\.digest\(raw_token,'sha256'\),'hex'\)/);
+  assert.match(cryptoRepairMigration, /now\(\)\+interval '7 days'/);
+  assert.match(cryptoRepairMigration, /organization_id=public\.current_user_organization_id\(\)/);
+  assert.match(cryptoRepairMigration, /r\.id is null or r\.user_id is distinct from auth\.uid\(\)/);
+  assert.match(cryptoRepairMigration, /status='Superseded', token_hash=null/);
+  assert.doesNotMatch(cryptoRepairMigration, /delete from public\.crew_briefing_acknowledgments/i);
+});
+
+test('crew invitation crypto repair does not broaden RPC execution permissions', () => {
+  assert.match(cryptoRepairMigration, /revoke all on function public\.create_crew_briefing_invitation\(uuid\) from public/i);
+  assert.match(cryptoRepairMigration, /grant execute on function public\.create_crew_briefing_invitation\(uuid\) to authenticated/i);
+  assert.doesNotMatch(cryptoRepairMigration, /grant execute[^;]+to\s+(?:public|anon)\b/i);
+});
 
 test('RPIC lookup is not executable by PUBLIC or anonymous callers', () => {
   assert.match(migration, /revoke all on function public\.crew_briefing_assigned_rpic\(uuid\) from public/i);
