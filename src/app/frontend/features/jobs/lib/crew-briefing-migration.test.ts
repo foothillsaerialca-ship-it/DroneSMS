@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const migration = readFileSync('supabase/migrations/20260903010000_crew_briefing_acknowledgments.sql', 'utf8');
+const repairMigration = readFileSync('supabase/migrations/20260905010000_fix_crew_acknowledgment_p0.sql', 'utf8');
+const sendFunction = readFileSync('supabase/functions/send-crew-acknowledgment/index.ts', 'utf8');
 
 test('RPIC lookup is not executable by PUBLIC or anonymous callers', () => {
   assert.match(migration, /revoke all on function public\.crew_briefing_assigned_rpic\(uuid\) from public/i);
@@ -46,4 +48,46 @@ test('successful acknowledgment destroys token access but retains audit evidence
   assert.match(migration, /where token_hash=encode\(digest\(p_token,'sha256'\),'hex'\) and status='Sent'/);
   assert.match(migration, /c\.token_expires_at is null or c\.token_expires_at <= now\(\)/);
   assert.doesNotMatch(migration, /delete from public\.crew_briefing_acknowledgments/i);
+});
+
+test('manual briefing repair matches the client RPC and persists current assignment evidence', () => {
+  assert.match(repairMigration, /record_manual_field_briefing\(\s*p_assignment_id uuid,\s*p_reason text,\s*p_reason_detail text,\s*p_attested boolean\s*\)/);
+  for (const value of ['j.organization_id', 'j.id', 'a.personnel_id', 'a.id', 'a.assigned_role', 'h.briefing_version', "'Manual Field Briefing'", 'p_reason', 'auth.uid()', 'r.id']) {
+    assert.ok(repairMigration.includes(value), `${value} must be persisted`);
+  }
+  assert.match(repairMigration, /field_briefed_at[\s\S]+now\(\)/);
+  assert.match(repairMigration, /r\.id is null or r\.user_id is distinct from auth\.uid\(\)/);
+  assert.match(repairMigration, /crew_acknowledgment_required_at = coalesce/);
+});
+
+test('manual briefing repair preserves historical evidence and records the attesting RPIC', () => {
+  assert.doesNotMatch(repairMigration, /delete from public\.crew_briefing_acknowledgments/i);
+  assert.match(repairMigration, /attested_by_rpic_personnel_id uuid references public\.personnel/);
+  assert.match(repairMigration, /briefing_version = h\.briefing_version/);
+  assert.match(repairMigration, /grant execute on function public\.record_manual_field_briefing\(uuid,text,text,boolean\) to authenticated/);
+});
+
+test('historical attribution uses only the unambiguous RPIC assignment for that job', () => {
+  const backfill = repairMigration.slice(
+    repairMigration.indexOf('with unambiguous_job_rpics'),
+    repairMigration.indexOf('create or replace function public.record_manual_field_briefing'),
+  );
+  assert.match(backfill, /jp\.job_id = c\.job_id/);
+  assert.match(backfill, /jp\.organization_id = c\.organization_id/);
+  assert.match(backfill, /jp\.assigned_role = 'RPIC'/);
+  assert.match(backfill, /r\.id = jp\.personnel_id/);
+  assert.match(backfill, /r\.user_id = c\.created_by_user_id/);
+  assert.match(backfill, /having count\(distinct jp\.personnel_id\) = 1/);
+  assert.match(backfill, /c\.attested_by_rpic_personnel_id is null/g);
+  assert.doesNotMatch(backfill, /set attested_by_rpic_personnel_id = r\.id/);
+});
+
+test('email function accepts supabase-js preflight and only marks Sent after provider success', () => {
+  assert.match(sendFunction, /Access-Control-Allow-Headers[^\n]+x-client-info/);
+  assert.match(sendFunction, /Deno\.env\.get\('RESEND_FROM'\)/);
+  assert.doesNotMatch(sendFunction, /briefing@dronesms\.app/);
+  const providerCheck = sendFunction.indexOf('if (!emailResponse.ok)');
+  const sentUpdate = sendFunction.indexOf('p_sent: true');
+  assert.ok(providerCheck > -1 && sentUpdate > providerCheck);
+  assert.match(sendFunction, /if \(invitationId\)[^\n]+p_sent: false/);
 });
