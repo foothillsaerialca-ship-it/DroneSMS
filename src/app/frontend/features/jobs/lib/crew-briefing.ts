@@ -40,8 +40,13 @@ export function crewBriefingStatus(assignment: OperationalAssignment, evidence: 
 }
 
 export function validateManualFieldBriefing(reason: string, otherReason: string, attested: boolean) {
-  if (!reason) return 'Select why electronic acknowledgment was unavailable.';
+  const reasons = ['No internet/cellular service', 'Crew member unable to access email', 'Device/access issue', 'Other'];
+  if (!reasons.includes(reason)) return 'Select why electronic acknowledgment was unavailable.';
   if (reason === 'Other' && !otherReason.trim()) return 'Enter a short explanation.';
   if (!attested) return 'The RPIC attestation is required.';
   return null;
+}
+
+export function crewAcknowledgmentSendErrorMessage() {
+  return 'Crew acknowledgment could not be sent. Please check the crew member’s email address and try again.';
 }

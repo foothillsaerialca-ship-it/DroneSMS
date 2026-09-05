@@ -5,7 +5,7 @@ import { OrganizationIdentityCard } from '@frontend/features/settings/components
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 import { getOperationReadinessStatus, getReadinessBlockingReasons, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
-import { crewAcknowledgmentsCurrent, crewBriefingStatus, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
+import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
 import { followUpAreas, validateSafetyAssurance, type SafetyAssuranceInput } from '@frontend/features/sms/lib/safety-assurance';
 
 const operationResultOptions = ['Completed as Planned', 'Completed with Changes', 'Delayed', 'Aborted', 'Incident Occurred'];
@@ -512,7 +512,11 @@ export function JobFileHubPage() {
       const { error: sendError } = await supabase.functions.invoke('send-crew-acknowledgment', { body: { assignmentId } });
       if (sendError) throw sendError;
       await reloadCrewEvidence(); setBriefingMessage('Crew acknowledgment request sent.');
-    } catch (sendError) { setBriefingError(getErrorMessage(sendError)); await reloadCrewEvidence().catch(() => undefined); }
+    } catch (sendError) {
+      console.error('Crew acknowledgment delivery failed', sendError);
+      setBriefingError(crewAcknowledgmentSendErrorMessage());
+      await reloadCrewEvidence().catch(() => undefined);
+    }
     finally { setBriefingActionId(null); }
   }
 
@@ -523,9 +527,16 @@ export function JobFileHubPage() {
     if (validation) { setBriefingError(validation); return; }
     if (!window.confirm('I confirm that this crew member participated in the full operation briefing in person and was provided the opportunity to ask questions before operations began.')) return;
     setBriefingActionId(assignmentId); setBriefingError(null); setBriefingMessage(null);
-    const { error: manualError } = await supabase.rpc('record_manual_field_briefing', { p_assignment_id: assignmentId, p_reason: reason, p_reason_detail: detail, p_attested: true });
-    if (manualError) setBriefingError(manualError.message); else { await reloadCrewEvidence(); setBriefingMessage('Manual Field Briefing recorded.'); }
-    setBriefingActionId(null);
+    try {
+      const { error: manualError } = await supabase.rpc('record_manual_field_briefing', { p_assignment_id: assignmentId, p_reason: reason, p_reason_detail: detail, p_attested: true });
+      if (manualError) throw manualError;
+      await reloadCrewEvidence();
+      setBriefingMessage('Manual Field Briefing recorded.');
+    } catch (manualError) {
+      setBriefingError(getErrorMessage(manualError));
+    } finally {
+      setBriefingActionId(null);
+    }
   }
 
   async function recordOperationReadiness(fitness: boolean) {

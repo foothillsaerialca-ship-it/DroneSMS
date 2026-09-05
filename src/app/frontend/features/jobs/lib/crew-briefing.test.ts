@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { crewAcknowledgmentsCurrent, crewBriefingStatus, requiredCrewAssignments, validateManualFieldBriefing } from './crew-briefing.ts';
+import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, requiredCrewAssignments, validateManualFieldBriefing } from './crew-briefing.ts';
 
 const assignments = [
   { id: 'rpic', assigned_role: 'RPIC', personnel: { id: 'p1', full_name: 'Pilot', email: null, status: 'Active' } },
@@ -24,9 +24,16 @@ test('current electronic or manual evidence satisfies readiness, while sent and 
 
 test('manual field briefing requires reason, Other explanation, and RPIC attestation', () => {
   assert.ok(validateManualFieldBriefing('', '', true));
+  assert.ok(validateManualFieldBriefing('free-form but unsupported', '', true));
   assert.ok(validateManualFieldBriefing('Other', '', true));
   assert.ok(validateManualFieldBriefing('Device/access issue', '', false));
   assert.equal(validateManualFieldBriefing('Other', 'No usable device', true), null);
+});
+
+test('electronic delivery failures use operator language rather than implementation terminology', () => {
+  const message = crewAcknowledgmentSendErrorMessage();
+  assert.match(message, /could not be sent/i);
+  assert.doesNotMatch(message, /Edge Function|Supabase|RPC/i);
 });
 
 test('a repeated material change keeps old evidence stale until the new version is acknowledged', () => {
