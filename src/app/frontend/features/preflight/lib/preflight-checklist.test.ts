@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPreflightPacketRows, checklistItems, emptyChecklistStates, formatChecklistState, getCompletionError, readChecklistStates, type ChecklistStates } from './preflight-checklist.ts';
+import { buildPreflightPacketRows, checklistItems, emptyChecklistStates, formatChecklistState, getCompletionError, getPostChecklistDestination, readChecklistStates, type ChecklistStates } from './preflight-checklist.ts';
 
 const resolved = (state: 'confirmed' | 'not_applicable' = 'confirmed') =>
   Object.fromEntries(checklistItems.map(({ key }) => [key, state])) as ChecklistStates;
@@ -40,4 +40,12 @@ test('packet labels distinguish every state and unresolved legacy data', () => {
 
 test('draft state may remain incomplete', () => {
   assert.equal(Object.values(emptyChecklistStates).every((value) => value === null), true);
+});
+
+test('incomplete or failed checklist completion does not offer the readiness next step', () => {
+  assert.equal(getPostChecklistDestination('job-123', 'Draft'), null);
+});
+
+test('successful and previously completed checklists link to the existing readiness section', () => {
+  assert.equal(getPostChecklistDestination('job-123', 'Complete'), '/jobs/job-123/hub#ready-to-operate');
 });
