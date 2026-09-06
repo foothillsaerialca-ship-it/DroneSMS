@@ -35,6 +35,10 @@ export type ChecklistStates = Record<ChecklistKey, ChecklistItemState | null>;
 
 export const emptyChecklistStates = Object.fromEntries(checklistItems.map(({ key }) => [key, null])) as ChecklistStates;
 
+export function getPostChecklistDestination(jobId: string, status: 'Draft' | 'Complete') {
+  return status === 'Complete' ? `/jobs/${jobId}/hub#ready-to-operate` : null;
+}
+
 export function readChecklistStates(
   stored: unknown,
   legacy: Partial<Record<ChecklistKey, boolean | null | undefined>>,

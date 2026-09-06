@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
@@ -223,6 +223,7 @@ function normalizeEquipmentAssignment(row: unknown): JobEquipmentAssignment {
 
 export function JobFileHubPage() {
   const { jobId } = useParams();
+  const location = useLocation();
   const [job, setJob] = useState<Job | null>(null);
   const [personnel, setPersonnel] = useState<PersonnelOption[]>([]);
   const [equipmentKits, setEquipmentKits] = useState<EquipmentOption[]>([]);
@@ -470,6 +471,11 @@ export function JobFileHubPage() {
       isMounted = false;
     };
   }, [jobId]);
+
+  useEffect(() => {
+    if (isLoading || location.hash !== '#ready-to-operate') return;
+    document.getElementById('ready-to-operate')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [isLoading, location.hash]);
 
   const assignedPersonnelIds = useMemo(() => new Set(assignments.map((assignment) => assignment.personnel?.id).filter(Boolean)), [assignments]);
   const assignedEquipmentIds = useMemo(() => new Set(equipmentAssignments.map((assignment) => assignment.equipment?.id).filter(Boolean)), [equipmentAssignments]);
@@ -1271,7 +1277,7 @@ export function JobFileHubPage() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="ready-to-operate-heading">
+      <section id="ready-to-operate" className="scroll-mt-4 rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="ready-to-operate-heading">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">5</span>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
-import { checklistItems, checklistSections, emptyChecklistStates, getCompletionError, readChecklistStates, type ChecklistItemState, type ChecklistKey, type ChecklistStates } from '../lib/preflight-checklist';
+import { checklistItems, checklistSections, emptyChecklistStates, getCompletionError, getPostChecklistDestination, readChecklistStates, type ChecklistItemState, type ChecklistKey, type ChecklistStates } from '../lib/preflight-checklist';
 const statusLabels = { Draft: 'Draft', Complete: 'Complete' } as const;
 
 type ChecklistStatus = keyof typeof statusLabels;
@@ -63,6 +63,7 @@ export function PreflightChecklistPage() {
   const totalItems = useMemo(() => checklistItems.length, []);
   const completedItems = useMemo(() => checklistItems.filter(({ key }) => checklist.states[key] === 'confirmed' || checklist.states[key] === 'not_applicable').length, [checklist.states]);
   const completionPercent = Math.round((completedItems / totalItems) * 100);
+  const postChecklistDestination = jobId ? getPostChecklistDestination(jobId, checklist.status) : null;
 
   useEffect(() => {
     let isMounted = true;
@@ -275,6 +276,21 @@ export function PreflightChecklistPage() {
           placeholder="Add aircraft, weather, airspace, or crew notes for this job."
         />
       </label>
+
+      {postChecklistDestination ? (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4 shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-4 sm:p-6" role="status">
+          <div>
+            <h2 className="text-base font-semibold text-green-900">Pre-flight complete</h2>
+            <p className="mt-1 text-sm text-green-800">All required checklist items have been addressed.</p>
+          </div>
+          <Link
+            className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-900 sm:mt-0 sm:w-auto sm:shrink-0 sm:py-2"
+            to={postChecklistDestination}
+          >
+            Next: Ready to Operate →
+          </Link>
+        </div>
+      ) : null}
 
       <div className="sticky bottom-0 -mx-4 flex flex-col gap-3 border-t border-slate-200 bg-white/95 p-4 backdrop-blur sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:bg-transparent sm:p-0">
         <button className="min-h-11 rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60 sm:py-2" type="button" disabled={isSaving} onClick={() => void saveChecklist('Draft')}>
