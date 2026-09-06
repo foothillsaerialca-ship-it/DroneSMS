@@ -75,8 +75,21 @@ alter function public.record_manual_field_briefing(uuid,text,text,boolean) set s
 alter function public.get_public_crew_briefing(text) set search_path = pg_catalog, public;
 alter function public.acknowledge_public_crew_briefing(text,text) set search_path = pg_catalog, public;
 
--- Public object URLs are served by the public bucket endpoint and do not require
--- a storage.objects SELECT policy. Removing this policy prevents authenticated
--- clients from enumerating every organization's object metadata while preserving
--- existing getPublicUrl-based image display.
+-- Public object URLs are served by the public bucket endpoint. Replace the broad
+-- metadata SELECT policy with the same organization-folder boundary already used
+-- by INSERT, UPDATE, and DELETE. Scoped SELECT is retained because Storage upsert
+-- and logo replacement flows may inspect the caller's existing object.
 drop policy if exists "Users can view organization logos" on storage.objects;
+create policy "Users can view own organization logos"
+  on storage.objects
+  for select
+  to authenticated
+  using (
+    bucket_id = 'organization-logos'
+    and exists (
+      select 1
+      from public.profiles
+      where profiles.id = auth.uid()
+        and profiles.organization_id::text = (storage.foldername(name))[1]
+    )
+  );

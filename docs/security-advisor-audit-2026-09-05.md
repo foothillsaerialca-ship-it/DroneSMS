@@ -95,13 +95,20 @@ retain trigger wiring, and cover the controlled search path.
 ## Storage warning
 
 The bucket remains public because the UI renders stored paths through
-`getPublicUrl`. Public object delivery is distinct from the `storage.objects` SELECT
-policy. The broad authenticated SELECT policy allowed every signed-in account to
-list metadata for every object in `organization-logos`; the forward migration drops
-only that policy. Upload/update/delete remain restricted to the caller's own
-organization-id folder, and existing public image URLs continue to work. Anonymous
-bucket enumeration was not granted by the policy (it targeted `authenticated`), but
-the Advisor's broad-listing concern is removed without making logos private.
+`getPublicUrl`. Logo object names use the existing
+`<organization UUID>/logo-<timestamp>.<extension>` convention. The prior policy was
+`FOR SELECT TO authenticated USING (bucket_id = 'organization-logos')`, which let
+any signed-in account enumerate metadata across every organization's folder.
+
+The migration drops that policy and creates `Users can view own organization logos`.
+It permits authenticated SELECT only when the caller has a profile whose
+`organization_id::text` equals the first component of `storage.foldername(name)`.
+This is the same boundary already enforced by the existing INSERT, UPDATE, and
+DELETE policies. Scoped SELECT therefore remains available to Storage's
+`upsert: true`, replacement, and deletion flow, while another organization's path
+does not satisfy the policy. Anonymous roles receive no `storage.objects` SELECT
+policy. Public URL image delivery remains available because the bucket's public
+status is unchanged; no product/UI code was changed.
 
 ## Warnings expected to remain
 
