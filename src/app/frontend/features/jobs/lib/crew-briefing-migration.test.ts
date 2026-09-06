@@ -11,6 +11,7 @@ const migration = readFileSync('supabase/migrations/20260903010000_crew_briefing
 const repairMigration = readFileSync('supabase/migrations/20260905010000_fix_crew_acknowledgment_p0.sql', 'utf8');
 const cryptoRepairMigration = readFileSync('supabase/migrations/20260905020000_fix_crew_invitation_crypto_schema.sql', 'utf8');
 const anonymousRevocationMigration = readFileSync('supabase/migrations/20260906090000_revoke_anonymous_crew_briefing_acknowledgment.sql', 'utf8');
+const anonymousLookupRevocationMigration = readFileSync('supabase/migrations/20260906100000_revoke_anonymous_crew_briefing_lookup.sql', 'utf8');
 const sendFunction = readFileSync('supabase/functions/send-crew-acknowledgment/index.ts', 'utf8');
 
 test('crew invitation resolves pgcrypto without widening its SECURITY DEFINER search path', () => {
@@ -61,6 +62,11 @@ test('public token RPC repair retains no-login scope, expiry, and evidence inval
 test('crew briefing acknowledgment is no longer executable by anonymous callers', () => {
   assert.match(anonymousRevocationMigration, /revoke execute on function public\.acknowledge_public_crew_briefing\(text, text\) from anon;/i);
   assert.match(anonymousRevocationMigration, /grant execute on function public\.acknowledge_public_crew_briefing\(text, text\) to authenticated;/i);
+});
+
+test('crew briefing lookup is no longer executable by anonymous callers', () => {
+  assert.match(anonymousLookupRevocationMigration, /revoke execute on function public\.get_public_crew_briefing\(text\) from anon;/i);
+  assert.match(anonymousLookupRevocationMigration, /grant execute on function public\.get_public_crew_briefing\(text\) to authenticated;/i);
 });
 
 test('crew invitation crypto repair does not broaden RPC execution permissions', () => {
