@@ -1,126 +1,20 @@
 /**
- * File purpose: Implements the preflight checklist page application page, including its presentation, state, validation, and service interactions.
- * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
- * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
+ * File purpose: Renders and persists the job preflight checklist and completion workflow.
+ * Fallback/error behavior: Loading, missing jobs, persistence failures, and incomplete checklists are surfaced in the page UI.
+ * Known limitation: Completion depends on valid job access and the configured Supabase readiness workflow.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
-
-/**
- * Purpose: Defines the checklist key data contract used by the preflight checklist page module.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
-type ChecklistKey =
-  | 'aircraft_selected'
-  | 'battery_condition_checked'
-  | 'propellers_inspected'
-  | 'firmware_app_status_checked'
-  | 'gps_signal_confirmed'
-  | 'home_point_verified'
-  | 'storage_media_checked'
-  | 'weather_verified'
-  | 'wind_conditions_acceptable'
-  | 'airspace_reviewed'
-  | 'laanc_confirmed_if_required'
-  | 'notam_tfr_checked'
-  | 'visual_observer_assigned_if_needed'
-  | 'emergency_procedures_reviewed'
-  | 'crew_communications_confirmed'
-  | 'final_rpic_approval';
-
-/**
- * Purpose: Defines the checklist item data contract used by the preflight checklist page module.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
-type ChecklistItem = { key: ChecklistKey; label: string };
-
-/**
- * Purpose: Defines the ordered sections used for UI choices and workflow decisions in preflight checklist page.
- * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
- * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
- */
-const sections: { title: string; items: ChecklistItem[] }[] = [
-  {
-    title: 'Aircraft & Equipment',
-    items: [
-      { key: 'aircraft_selected', label: 'Aircraft selected' },
-      { key: 'battery_condition_checked', label: 'Battery condition checked' },
-      { key: 'propellers_inspected', label: 'Propellers inspected' },
-      { key: 'firmware_app_status_checked', label: 'Firmware/app status checked' },
-      { key: 'gps_signal_confirmed', label: 'GPS/signal confirmed' },
-      { key: 'home_point_verified', label: 'Home point verified' },
-      { key: 'storage_media_checked', label: 'Storage/media checked' }
-    ]
-  },
-  {
-    title: 'Environment & Airspace',
-    items: [
-      { key: 'weather_verified', label: 'Weather verified' },
-      { key: 'wind_conditions_acceptable', label: 'Wind conditions acceptable' },
-      { key: 'airspace_reviewed', label: 'Airspace reviewed' },
-      { key: 'laanc_confirmed_if_required', label: 'LAANC confirmed if required' },
-      { key: 'notam_tfr_checked', label: 'NOTAM/TFR checked' }
-    ]
-  },
-  {
-    title: 'Crew & Safety',
-    items: [
-      { key: 'visual_observer_assigned_if_needed', label: 'Visual observer assigned if needed' },
-      { key: 'emergency_procedures_reviewed', label: 'Emergency procedures reviewed' },
-      { key: 'crew_communications_confirmed', label: 'Crew communications confirmed' },
-      { key: 'final_rpic_approval', label: 'Final RPIC approval' }
-    ]
-  }
-];
-
-const allItems = sections.flatMap((section) => section.items);
-
-/**
- * Purpose: Stores the shared required for completion structure used by the preflight checklist page module.
- * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
- * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
- */
-const requiredForCompletion: ChecklistKey[] = ['weather_verified', 'airspace_reviewed', 'final_rpic_approval'];
-/**
- * Purpose: Maps status labels values to the canonical metadata consumed by preflight checklist page.
- * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
- * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
- */
+import { checklistItems, checklistSections, emptyChecklistStates, getCompletionError, getPostChecklistDestination, readChecklistStates, type ChecklistItemState, type ChecklistKey, type ChecklistStates } from '../lib/preflight-checklist';
 const statusLabels = { Draft: 'Draft', Complete: 'Complete' } as const;
 
-/**
- * Purpose: Defines the checklist status data contract used by the preflight checklist page module.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
 type ChecklistStatus = keyof typeof statusLabels;
-/**
- * Purpose: Represents job data read, written, or rendered by the preflight checklist page workflow.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
 type Job = { id: string; organization_id: string; name: string; service_type: string; location: string; planned_date: string | null; status: string };
-/**
- * Purpose: Defines the checklist data contract used by the preflight checklist page module.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
-type Checklist = Record<ChecklistKey, boolean> & { notes: string; status: ChecklistStatus };
-/**
- * Purpose: Represents preflight checklist row data read, written, or rendered by the preflight checklist page workflow.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
-type PreflightChecklistRow = Partial<Record<ChecklistKey, boolean>> & { id: string; notes: string | null; status: string | null };
-/**
- * Purpose: Defines the checklist payload data contract used by the preflight checklist page module.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
+type Checklist = { states: ChecklistStates; notes: string; status: ChecklistStatus };
+type PreflightChecklistRow = Partial<Record<ChecklistKey, boolean>> & { id: string; checklist_states?: unknown; notes: string | null; status: string | null };
 type ChecklistPayload = Record<ChecklistKey, boolean> & {
+  checklist_states: ChecklistStates;
   job_id: string;
   organization_id: string;
   user_id: string;
@@ -129,36 +23,12 @@ type ChecklistPayload = Record<ChecklistKey, boolean> & {
   updated_at: string;
 };
 
-/**
- * Purpose: Provides the stable default shape for empty checklist in the preflight checklist page workflow.
- * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
- * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
- */
 const emptyChecklist: Checklist = {
-  aircraft_selected: false,
-  battery_condition_checked: false,
-  propellers_inspected: false,
-  firmware_app_status_checked: false,
-  gps_signal_confirmed: false,
-  home_point_verified: false,
-  storage_media_checked: false,
-  weather_verified: false,
-  wind_conditions_acceptable: false,
-  airspace_reviewed: false,
-  laanc_confirmed_if_required: false,
-  notam_tfr_checked: false,
-  visual_observer_assigned_if_needed: false,
-  emergency_procedures_reviewed: false,
-  crew_communications_confirmed: false,
-  final_rpic_approval: false,
+  states: emptyChecklistStates,
   notes: '',
   status: 'Draft'
 };
 
-/**
- * Computes get error message for the surrounding workflow.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
 function getErrorMessage(error: unknown, fallback = 'Unable to load the pre-flight checklist. Please try again.') {
   if (error instanceof Error) return error.message;
   if (error && typeof error === 'object' && 'message' in error) {
@@ -169,35 +39,22 @@ function getErrorMessage(error: unknown, fallback = 'Unable to load the pre-flig
   return fallback;
 }
 
-/**
- * Computes to checklist for the surrounding workflow.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
 function toChecklist(row: PreflightChecklistRow | null): Checklist {
   if (!row) return emptyChecklist;
 
   return {
-    ...emptyChecklist,
-    ...Object.fromEntries(allItems.map(({ key }) => [key, Boolean(row[key])])),
+    states: readChecklistStates(row.checklist_states, row),
     notes: row.notes ?? '',
     status: row.status === 'Complete' ? 'Complete' : 'Draft'
   };
 }
 
-/**
- * Computes format planned date for the surrounding workflow.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
 function formatPlannedDate(plannedDate: string | null) {
   if (!plannedDate) return 'Not scheduled';
   const [year, month, day] = plannedDate.split('-');
   return year && month && day ? `${month}/${day}/${year}` : plannedDate;
 }
 
-/**
- * Renders the preflight checklist interface and coordinates its user interactions.
- * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
- */
 export function PreflightChecklistPage() {
   const { jobId } = useParams();
   const [job, setJob] = useState<Job | null>(null);
@@ -208,17 +65,14 @@ export function PreflightChecklistPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  const totalItems = useMemo(() => allItems.length, []);
-  const completedItems = useMemo(() => allItems.filter(({ key }) => checklist[key]).length, [checklist]);
+  const totalItems = useMemo(() => checklistItems.length, []);
+  const completedItems = useMemo(() => checklistItems.filter(({ key }) => checklist.states[key] === 'confirmed' || checklist.states[key] === 'not_applicable').length, [checklist.states]);
   const completionPercent = Math.round((completedItems / totalItems) * 100);
+  const postChecklistDestination = jobId ? getPostChecklistDestination(jobId, checklist.status) : null;
 
   useEffect(() => {
     let isMounted = true;
 
-    /**
-     * Performs load checklist for the surrounding workflow.
-     * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
-     */
     async function loadChecklist() {
       if (!jobId) {
         setLoadError('Missing job id.');
@@ -264,35 +118,17 @@ export function PreflightChecklistPage() {
     };
   }, [jobId]);
 
-  /**
-   * Handles update checklist while keeping the feature state consistent.
-   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
-   */
-  function updateChecklist(key: ChecklistKey, checked: boolean) {
-    setChecklist((current) => ({ ...current, [key]: checked }));
+  function updateChecklist(key: ChecklistKey, state: ChecklistItemState) {
+    setChecklist((current) => ({ ...current, states: { ...current.states, [key]: state }, status: 'Draft' }));
     setSaveMessage(null);
     setSaveError(null);
   }
 
-  /**
-   * Computes get completion error for the surrounding workflow.
-   * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
-   */
-  function getCompletionError() {
-    const missingLabels = allItems.filter(({ key }) => requiredForCompletion.includes(key) && !checklist[key]).map(({ label }) => label);
-
-    return missingLabels.length ? `Complete these required items before completing the checklist: ${missingLabels.join(', ')}.` : null;
-  }
-
-  /**
-   * Performs save checklist for the surrounding workflow.
-   * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
-   */
   async function saveChecklist(status: ChecklistStatus) {
     if (!job) return;
 
     if (status === 'Complete') {
-      const validationError = getCompletionError();
+      const validationError = getCompletionError(checklist.states);
       if (validationError) {
         setSaveError(validationError);
         setSaveMessage(null);
@@ -310,7 +146,8 @@ export function PreflightChecklistPage() {
       if (!userData.user) throw new Error('You must be signed in to save a pre-flight checklist.');
 
       const payload: ChecklistPayload = {
-        ...(Object.fromEntries(allItems.map(({ key }) => [key, checklist[key]])) as Record<ChecklistKey, boolean>),
+        ...(Object.fromEntries(checklistItems.map(({ key }) => [key, checklist.states[key] === 'confirmed'])) as Record<ChecklistKey, boolean>),
+        checklist_states: checklist.states,
         job_id: job.id,
         organization_id: job.organization_id,
         user_id: userData.user.id,
@@ -338,7 +175,7 @@ export function PreflightChecklistPage() {
 
       setChecklist((current) => ({
         ...current,
-        ...(Object.fromEntries(allItems.map(({ key }) => [key, payload[key]])) as Record<ChecklistKey, boolean>),
+        states: payload.checklist_states,
         notes: payload.notes ?? '',
         status: payload.status
       }));
@@ -390,7 +227,7 @@ export function PreflightChecklistPage() {
 
         <div className="mt-5">
           <div className="flex items-center justify-between text-sm">
-            <span className="font-medium text-slate-700">{completedItems} of {totalItems} complete</span>
+            <span className="font-medium text-slate-700">{completedItems} of {totalItems} resolved</span>
             <span className="font-semibold text-brand-700">{completionPercent}%</span>
           </div>
           <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-100" aria-label="Checklist completion">
@@ -402,16 +239,30 @@ export function PreflightChecklistPage() {
       {saveError ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">{saveError}</div> : null}
       {saveMessage ? <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700" role="status">{saveMessage}</div> : null}
 
-      {sections.map((section) => (
+      {checklistSections.map((section) => (
         <fieldset key={section.title} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" disabled={isSaving}>
           <legend className="px-1 text-base font-semibold text-brand-900">{section.title}</legend>
           <div className="mt-3 space-y-3">
-            {section.items.map(({ key, label }) => (
-              <label key={key} className="flex min-h-12 items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm font-medium text-slate-700">
-                <input className="mt-1 h-5 w-5 rounded border-slate-300 text-brand-700 focus:ring-brand-700" type="checkbox" checked={checklist[key]} onChange={(event) => updateChecklist(key, event.target.checked)} />
-                <span>{label}</span>
-              </label>
-            ))}
+            {section.items.map(({ key, label }) => {
+              const state = checklist.states[key];
+              const tone = state === 'confirmed' ? 'border-green-200 bg-green-50' : state === 'not_applicable' ? 'border-slate-300 bg-slate-50' : state === 'not_confirmed' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50';
+              return (
+                <div key={key} className={`rounded-lg border p-3 ${tone}`}>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm font-medium text-slate-800">{label}</span>
+                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={label}>
+                      {([['confirmed', 'Confirmed'], ['not_confirmed', 'Not Confirmed'], ['not_applicable', 'Not Applicable']] as const).map(([value, text]) => (
+                        <label key={value} className="flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700">
+                          <input type="radio" name={key} value={value} checked={state === value} onChange={() => updateChecklist(key, value)} />
+                          {text}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs font-medium text-slate-600">{state === 'confirmed' ? 'Confirmed' : state === 'not_confirmed' ? 'Not Confirmed — resolve before completion' : state === 'not_applicable' ? 'Not Applicable' : 'Unresolved — select a state'}</p>
+                </div>
+              );
+            })}
           </div>
         </fieldset>
       ))}
@@ -430,6 +281,21 @@ export function PreflightChecklistPage() {
           placeholder="Add aircraft, weather, airspace, or crew notes for this job."
         />
       </label>
+
+      {postChecklistDestination ? (
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4 shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-4 sm:p-6" role="status">
+          <div>
+            <h2 className="text-base font-semibold text-green-900">Pre-flight complete</h2>
+            <p className="mt-1 text-sm text-green-800">All required checklist items have been addressed.</p>
+          </div>
+          <Link
+            className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-900 sm:mt-0 sm:w-auto sm:shrink-0 sm:py-2"
+            to={postChecklistDestination}
+          >
+            Next: Ready to Operate →
+          </Link>
+        </div>
+      ) : null}
 
       <div className="sticky bottom-0 -mx-4 flex flex-col gap-3 border-t border-slate-200 bg-white/95 p-4 backdrop-blur sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:bg-transparent sm:p-0">
         <button className="min-h-11 rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60 sm:py-2" type="button" disabled={isSaving} onClick={() => void saveChecklist('Draft')}>

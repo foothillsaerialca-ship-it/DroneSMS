@@ -1,6 +1,20 @@
 # DroneSMS
 
 DroneSMS is a React and Supabase safety-management application for commercial drone operations. The current `0.1.0` application supports organization onboarding, proposals, jobs, personnel and equipment readiness, job hazard analyses (JHAs), pre-flight checklists, safety events, closeout records, and browser-generated PDF records.
+## Document status
+
+The runnable application and ordered migrations under `supabase/migrations/` are the source
+of truth for implemented behavior. `DroneSMS Scope v3.docx`, `DroneSMS Lovable Prompt v2.pdf`,
+`DroneSMS_Developer_Brief_Smart_Site_Intelligence.docx`, and `DroneSMS JHA Template.docx` are
+retained planning/reference artifacts and are not current operator instructions or active
+templates. Some contain superseded scored-risk and matrix concepts. The implemented product
+does not ask operators to assign severity/likelihood values, numerical or residual-risk scores,
+or Low/Medium/High operational risk ratings. Current behavior uses guided hazard identification,
+documented controls, controls-in-place confirmation, role-based review and acceptance, and
+Ready to Operate checks. Legitimate Safety Risk Management and hazard-analysis terminology
+remains applicable.
+
+## Infrastructure
 
 Production deployment: `https://7067bf63.dronesms-app.pages.dev/`
 
@@ -68,3 +82,7 @@ At the 2026-08-25 audit, all 17 unit tests passed and the production build compl
 - [Technical implementation plan](implementation-plan.md)
 
 `docs/requirements.txt` intentionally contains no Python packages; this application uses Node.js and npm.
+- The app uses Supabase as the backend service for data persistence and auth.
+- Frontend source files live under `src/` with app routing, features, and integration code.
+- Environment and runtime configuration is managed through `package.json`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.js`, and `vite.config.ts`.
+ - A `lodash` override is applied in `package.json` to ensure the dependency tree uses a patched `4.17.30` release.

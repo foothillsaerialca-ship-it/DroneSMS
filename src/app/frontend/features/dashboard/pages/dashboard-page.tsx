@@ -36,7 +36,6 @@ type DashboardJha = {
   status: string | null;
   crew_briefed: boolean | null;
   controls_in_place: boolean | null;
-  stop_work_authority_acknowledged: boolean | null;
   updated_at: string;
 };
 
@@ -366,7 +365,7 @@ async function loadDashboardData(userId: string): Promise<DashboardData> {
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(10);
-  const jhaQuery = supabase.from('jha_assessments').select('job_id, status, crew_briefed, controls_in_place, stop_work_authority_acknowledged, updated_at');
+  const jhaQuery = supabase.from('jha_assessments').select('job_id, status, crew_briefed, controls_in_place, updated_at');
   const personnelQuery = supabase.from('job_personnel').select('job_id');
   const equipmentQuery = supabase.from('job_equipment').select('job_id');
   const photosQuery = supabase

@@ -4,12 +4,15 @@
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { daysUntilDate, formatIsoDate, formatIsoDate as formatPlannedDate } from '@frontend/lib/date-utils';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
+import { getOperationReadinessStatus, getReadinessBlockingReasons, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
+import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
+import { followUpAreas, validateSafetyAssurance, type SafetyAssuranceInput } from '@frontend/features/sms/lib/safety-assurance';
 
 /**
  * Purpose: Defines the ordered operation result options used for UI choices and workflow decisions in job file hub page.
@@ -71,6 +74,7 @@ type Job = {
   status: string;
   source_proposal_id: string | null;
   source_proposal_number: string | null;
+  crew_acknowledgment_required_at: string | null;
 };
 
 /**
@@ -85,6 +89,8 @@ type PersonnelOption = {
   part_107_expiration_date: string | null;
   training_expiration_date: string | null;
   status: string;
+  user_id: string | null;
+  email: string | null;
 };
 
 /**
@@ -146,8 +152,17 @@ type JhaSummary = {
   laanc_required: string | null;
   crew_briefed: boolean;
   controls_in_place: boolean;
-  stop_work_authority_acknowledged: boolean;
   certified_at: string | null;
+  safety_manager_reviewed_at: string | null;
+  safety_manager_review_stale: boolean;
+  rpic_accepted_at: string | null;
+  rpic_acceptance_stale: boolean;
+  rpic_personnel_id: string | null;
+  hazard_entries: Array<{ id?: string; description?: string; mitigation?: string }>;
+  public_right_of_way_restriction_required: boolean | null;
+  permit_authorization_required: boolean | null;
+  permit_authorization_status: 'Pending' | 'Approved' | null;
+  briefing_version: number;
 };
 
 /**
@@ -180,13 +195,22 @@ type OperationCloseout = {
 type CloseoutFormState = {
   operationResult: string;
   deviationNarrative: string;
+  assurance: SafetyAssuranceInput;
+  relatedHazardId: string;
+  relatedControlId: string;
+  relatedSafetyEventId: string;
 };
 
+<<<<<<< HEAD
 /**
  * Purpose: Represents the complete safety event form state used by the job file hub page workflow.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
+=======
+const blankAssurance: SafetyAssuranceInput = { controlEffectiveness: '', effectivenessNarrative: '', operationalAction: '', followUpRequired: null, followUpAreas: [], unexpectedIssue: '', unexpectedIssueNarrative: '' };
+
+>>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
 type SafetyEventFormState = typeof initialSafetyEventFormState;
 
 /**
@@ -312,6 +336,7 @@ function normalizeEquipmentAssignment(row: unknown): JobEquipmentAssignment {
  */
 export function JobFileHubPage() {
   const { jobId } = useParams();
+  const location = useLocation();
   const [job, setJob] = useState<Job | null>(null);
   const [personnel, setPersonnel] = useState<PersonnelOption[]>([]);
   const [equipmentKits, setEquipmentKits] = useState<EquipmentOption[]>([]);
@@ -321,13 +346,22 @@ export function JobFileHubPage() {
   const [jhaSummary, setJhaSummary] = useState<JhaSummary | null>(null);
   const [preflightSummary, setPreflightSummary] = useState<PreflightSummary | null>(null);
   const [operationCloseout, setOperationCloseout] = useState<OperationCloseout | null>(null);
+  const [operationReadiness, setOperationReadiness] = useState<OperationReadinessRecord | null>(null);
+  const [crewEvidence, setCrewEvidence] = useState<CrewBriefingEvidence[]>([]);
+  const [briefingActionId, setBriefingActionId] = useState<string | null>(null);
+  const [briefingError, setBriefingError] = useState<string | null>(null);
+  const [briefingMessage, setBriefingMessage] = useState<string | null>(null);
+  const [fitnessConfirmed, setFitnessConfirmed] = useState(false);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [readinessMessage, setReadinessMessage] = useState<string | null>(null);
+  const [isSavingReadiness, setIsSavingReadiness] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [organizationSettings, setOrganizationSettings] = useState<OrganizationSettings | null>(null);
   const [selectedPersonnelId, setSelectedPersonnelId] = useState('');
   const [selectedRole, setSelectedRole] = useState(crewRoleOptions[0]);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
   const [safetyEventFormData, setSafetyEventFormData] = useState<SafetyEventFormState>(initialSafetyEventFormState);
-  const [closeoutFormData, setCloseoutFormData] = useState<CloseoutFormState>({ operationResult: operationResultOptions[0], deviationNarrative: '' });
-  const [editingSafetyEventId, setEditingSafetyEventId] = useState<string | null>(null);
+  const [closeoutFormData, setCloseoutFormData] = useState<CloseoutFormState>({ operationResult: operationResultOptions[0], deviationNarrative: '', assurance: blankAssurance, relatedHazardId: '', relatedControlId: '', relatedSafetyEventId: '' });
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
   const [editedAssignmentRole, setEditedAssignmentRole] = useState(crewRoleOptions[0]);
   const [isCrewFormOpen, setIsCrewFormOpen] = useState(false);
@@ -341,7 +375,6 @@ export function JobFileHubPage() {
   const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null);
   const [savingRoleAssignmentId, setSavingRoleAssignmentId] = useState<string | null>(null);
   const [removingEquipmentAssignmentId, setRemovingEquipmentAssignmentId] = useState<string | null>(null);
-  const [removingSafetyEventId, setRemovingSafetyEventId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [crewError, setCrewError] = useState<string | null>(null);
   const [crewMessage, setCrewMessage] = useState<string | null>(null);
@@ -359,7 +392,7 @@ export function JobFileHubPage() {
   async function loadAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
       .from('job_personnel')
-      .select('id, assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status)')
+      .select('id, assigned_role, personnel:personnel_id(id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id)')
       .eq('job_id', currentJobId)
       .order('created_at', { ascending: true });
 
@@ -406,7 +439,6 @@ export function JobFileHubPage() {
    */
   function resetSafetyEventForm() {
     setSafetyEventFormData(initialSafetyEventFormState);
-    setEditingSafetyEventId(null);
   }
 
   /**
@@ -450,16 +482,16 @@ export function JobFileHubPage() {
       try {
         const jobQuery = supabase
           .from('jobs')
-          .select('id, organization_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number')
+          .select('id, organization_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number, crew_acknowledgment_required_at')
           .eq('id', jobId)
           .maybeSingle();
         const personnelQuery = supabase
           .from('personnel')
-          .select('id, full_name, role, part_107_expiration_date, training_expiration_date, status')
+          .select('id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id')
           .order('full_name', { ascending: true });
         const assignmentsQuery = supabase
           .from('job_personnel')
-          .select('id, assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status)')
+          .select('id, assigned_role, personnel:personnel_id(id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id)')
           .eq('job_id', jobId)
           .order('created_at', { ascending: true });
         const equipmentQuery = supabase
@@ -479,7 +511,7 @@ export function JobFileHubPage() {
           .order('created_at', { ascending: false });
         const jhaSummaryQuery = supabase
           .from('jha_assessments')
-          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, stop_work_authority_acknowledged, certified_at')
+          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, safety_manager_reviewed_at, safety_manager_review_stale, rpic_accepted_at, rpic_acceptance_stale, rpic_personnel_id, hazard_entries, public_right_of_way_restriction_required, permit_authorization_required, permit_authorization_status, briefing_version')
           .eq('job_id', jobId)
           .maybeSingle();
         const preflightSummaryQuery = supabase
@@ -492,8 +524,11 @@ export function JobFileHubPage() {
           .select('id, operation_result, deviation_narrative, updated_at')
           .eq('job_id', jobId)
           .maybeSingle();
+        const readinessQuery = supabase.from('job_operation_readiness').select('approved_at, approval_stale, fitness_for_duty_confirmed, rpic_personnel_id').eq('job_id', jobId).maybeSingle();
+        const userQuery = supabase.auth.getUser();
+        const crewEvidenceQuery = supabase.from('crew_briefing_acknowledgments').select('assignment_id, assigned_role, briefing_version, status, acknowledged_at, field_briefed_at').eq('job_id', jobId).order('created_at', { ascending: false });
 
-        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult, jhaSummaryResult, preflightSummaryResult, closeoutResult] = await Promise.all([
+        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult, jhaSummaryResult, preflightSummaryResult, closeoutResult, readinessResult, userResult, crewEvidenceResult] = await Promise.all([
           jobQuery,
           personnelQuery,
           assignmentsQuery,
@@ -502,7 +537,9 @@ export function JobFileHubPage() {
           safetyEventsQuery,
           jhaSummaryQuery,
           preflightSummaryQuery,
-          closeoutQuery
+          closeoutQuery,
+          readinessQuery,
+          userQuery, crewEvidenceQuery
         ]);
 
         if (jobResult.error) throw jobResult.error;
@@ -514,6 +551,8 @@ export function JobFileHubPage() {
         if (jhaSummaryResult.error) throw jhaSummaryResult.error;
         if (preflightSummaryResult.error) throw preflightSummaryResult.error;
         if (closeoutResult.error) throw closeoutResult.error;
+        if (readinessResult.error) throw readinessResult.error;
+        if (crewEvidenceResult.error) throw crewEvidenceResult.error;
         if (!isMounted) return;
 
         if (!jobResult.data) {
@@ -544,11 +583,16 @@ export function JobFileHubPage() {
         setSafetyEvents((safetyEventsResult.data ?? []) as JobSafetyEvent[]);
         setJhaSummary(jhaSummaryResult.data as JhaSummary | null);
         setPreflightSummary(preflightSummaryResult.data as PreflightSummary | null);
+        setOperationReadiness(readinessResult.data as OperationReadinessRecord | null);
+        setCrewEvidence((crewEvidenceResult.data ?? []) as CrewBriefingEvidence[]);
+        setFitnessConfirmed(Boolean(readinessResult.data?.fitness_for_duty_confirmed && !readinessResult.data?.approval_stale));
+        setCurrentUserId(userResult.data.user?.id ?? null);
         const loadedCloseout = closeoutResult.data as OperationCloseout | null;
         setOperationCloseout(loadedCloseout);
         setCloseoutFormData({
           operationResult: loadedCloseout?.operation_result ?? operationResultOptions[0],
-          deviationNarrative: loadedCloseout?.deviation_narrative ?? ''
+          deviationNarrative: loadedCloseout?.deviation_narrative ?? '', assurance: blankAssurance,
+          relatedHazardId: '', relatedControlId: '', relatedSafetyEventId: ''
         });
         const settings = await loadOrganizationSettingsById((jobResult.data as Job).organization_id);
         if (isMounted) setOrganizationSettings(settings);
@@ -569,16 +613,90 @@ export function JobFileHubPage() {
     };
   }, [jobId]);
 
+  useEffect(() => {
+    if (isLoading || location.hash !== '#ready-to-operate') return;
+    document.getElementById('ready-to-operate')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [isLoading, location.hash]);
+
   const assignedPersonnelIds = useMemo(() => new Set(assignments.map((assignment) => assignment.personnel?.id).filter(Boolean)), [assignments]);
   const assignedEquipmentIds = useMemo(() => new Set(equipmentAssignments.map((assignment) => assignment.equipment?.id).filter(Boolean)), [equipmentAssignments]);
   const activePersonnelCount = personnel.filter((person) => person.status === 'Active').length;
   const jhaComplete = jhaSummary?.status === 'Complete';
   const crewBriefingComplete = Boolean(jhaSummary?.crew_briefed && jhaComplete);
   const airspaceReviewComplete = Boolean(jhaSummary && (jhaSummary.faa_airspace_class || jhaSummary.laanc_required));
-  const preflightComplete = preflightSummary?.status === 'Complete' || Boolean(preflightSummary?.final_rpic_approval);
+  const preflightComplete = preflightSummary?.status === 'Complete';
   const closeoutComplete = Boolean(operationCloseout);
   const personnelReadinessSummary = getPersonnelReadinessSummary(assignments);
   const closeoutNarrativeRequired = resultsRequiringNarrative.has(closeoutFormData.operationResult);
+  const assignedRpic = assignments.find((assignment) => assignment.assigned_role === 'RPIC' && assignment.personnel?.status === 'Active')?.personnel ?? null;
+  const briefingVersion = jhaSummary?.briefing_version ?? 1;
+  const crewEvidenceCurrent = crewAcknowledgmentsCurrent(assignments, crewEvidence, briefingVersion);
+  const readinessPrerequisites = {
+    jhaComplete,
+    safetyManagerReviewCurrent: Boolean(jhaSummary?.safety_manager_reviewed_at && !jhaSummary.safety_manager_review_stale),
+    rpicAcceptanceCurrent: Boolean(jhaSummary?.rpic_accepted_at && !jhaSummary.rpic_acceptance_stale && jhaSummary.rpic_personnel_id === assignedRpic?.id),
+    controlsInPlace: Boolean(jhaSummary?.controls_in_place), preflightComplete,
+    assignedRpicId: assignedRpic?.id ?? null, fitnessForDutyConfirmed: fitnessConfirmed,
+    publicRightOfWayRestrictionRequired: jhaSummary?.public_right_of_way_restriction_required,
+    permitAuthorizationRequired: jhaSummary?.permit_authorization_required,
+    permitAuthorizationStatus: jhaSummary?.permit_authorization_status,
+    crewAcknowledgmentsCurrent: job?.crew_acknowledgment_required_at ? crewEvidenceCurrent : undefined,
+  };
+  const readinessBlockingReasons = getReadinessBlockingReasons(readinessPrerequisites);
+  const readinessStatus = getOperationReadinessStatus(operationReadiness);
+
+  async function reloadCrewEvidence() {
+    if (!job) return;
+    const { data, error: evidenceError } = await supabase.from('crew_briefing_acknowledgments').select('assignment_id, assigned_role, briefing_version, status, acknowledged_at, field_briefed_at').eq('job_id', job.id).order('created_at', { ascending: false });
+    if (evidenceError) throw evidenceError;
+    setCrewEvidence((data ?? []) as CrewBriefingEvidence[]);
+    setJob((current) => current ? { ...current, crew_acknowledgment_required_at: current.crew_acknowledgment_required_at ?? new Date().toISOString() } : current);
+  }
+
+  async function sendCrewAcknowledgment(assignmentId: string) {
+    setBriefingActionId(assignmentId); setBriefingError(null); setBriefingMessage(null);
+    try {
+      const { error: sendError } = await supabase.functions.invoke('send-crew-acknowledgment', { body: { assignmentId } });
+      if (sendError) throw sendError;
+      await reloadCrewEvidence(); setBriefingMessage('Crew acknowledgment request sent.');
+    } catch (sendError) {
+      console.error('Crew acknowledgment delivery failed', sendError);
+      setBriefingError(crewAcknowledgmentSendErrorMessage());
+      await reloadCrewEvidence().catch(() => undefined);
+    }
+    finally { setBriefingActionId(null); }
+  }
+
+  async function recordManualBriefing(assignmentId: string) {
+    const reason = window.prompt('Reason: No internet/cellular service; Crew member unable to access email; Device/access issue; or Other')?.trim() ?? '';
+    const detail = reason === 'Other' ? window.prompt('Short explanation')?.trim() ?? '' : '';
+    const validation = validateManualFieldBriefing(reason, detail, true);
+    if (validation) { setBriefingError(validation); return; }
+    if (!window.confirm('I confirm that this crew member participated in the full operation briefing in person and was provided the opportunity to ask questions before operations began.')) return;
+    setBriefingActionId(assignmentId); setBriefingError(null); setBriefingMessage(null);
+    try {
+      const { error: manualError } = await supabase.rpc('record_manual_field_briefing', { p_assignment_id: assignmentId, p_reason: reason, p_reason_detail: detail, p_attested: true });
+      if (manualError) throw manualError;
+      await reloadCrewEvidence();
+      setBriefingMessage('Manual Field Briefing recorded.');
+    } catch (manualError) {
+      setBriefingError(getErrorMessage(manualError));
+    } finally {
+      setBriefingActionId(null);
+    }
+  }
+
+  async function recordOperationReadiness(fitness: boolean) {
+    if (!job) return;
+    setIsSavingReadiness(true); setReadinessError(null); setReadinessMessage(null);
+    try {
+      const { data, error: readinessSaveError } = await supabase.rpc('confirm_job_ready_to_operate', { target_job_id: job.id, fitness_confirmed: fitness });
+      if (readinessSaveError) throw readinessSaveError;
+      setOperationReadiness(data as OperationReadinessRecord); setFitnessConfirmed(fitness);
+      setReadinessMessage(fitness ? 'Ready to Operate approval recorded.' : 'Not Ready saved; no operation approval was recorded.');
+    } catch (saveError) { setReadinessError(getErrorMessage(saveError)); }
+    finally { setIsSavingReadiness(false); }
+  }
 
   /**
    * Handles add assignment while keeping the feature state consistent.
@@ -785,31 +903,26 @@ export function JobFileHubPage() {
         description: safetyEventFormData.description.trim(),
         immediate_actions_taken: safetyEventFormData.immediateActionsTaken.trim() || null,
         outcome: safetyEventFormData.outcome,
-        promote_to_hazard_library: safetyEventFormData.promoteToHazardLibrary
+        promote_to_hazard_library: false
       };
 
-      if (editingSafetyEventId) {
-        const { error: updateError } = await supabase.from('job_safety_events').update(payload).eq('id', editingSafetyEventId);
-        if (updateError) throw updateError;
-      } else {
-        const { data: userResult, error: userError } = await supabase.auth.getUser();
-        if (userError) throw userError;
+      const { data: userResult, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
 
-        const userId = userResult.user?.id;
-        if (!userId) throw new Error('Sign in again before documenting a safety event.');
+      const userId = userResult.user?.id;
+      if (!userId) throw new Error('Sign in again before documenting a safety event.');
 
-        const { error: insertError } = await supabase.from('job_safety_events').insert({
-          ...payload,
-          job_id: job.id,
-          organization_id: job.organization_id,
-          created_by: userId
-        });
+      const { error: insertError } = await supabase.from('job_safety_events').insert({
+        ...payload,
+        job_id: job.id,
+        organization_id: job.organization_id,
+        created_by: userId
+      });
 
-        if (insertError) throw insertError;
-      }
+      if (insertError) throw insertError;
 
       await loadSafetyEvents(job.id);
-      setSafetyEventMessage(editingSafetyEventId ? 'Safety event updated.' : 'Safety event added to this Job File.');
+      setSafetyEventMessage('Safety event added to this Job File and queued for Safety Manager Review.');
       resetSafetyEventForm();
       setIsSafetyEventFormOpen(false);
     } catch (saveError) {
@@ -819,6 +932,7 @@ export function JobFileHubPage() {
     }
   }
 
+<<<<<<< HEAD
   /**
    * Handles edit safety event while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
@@ -873,6 +987,8 @@ export function JobFileHubPage() {
    * Handles save closeout while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
+=======
+>>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
   async function handleSaveCloseout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -882,6 +998,8 @@ export function JobFileHubPage() {
       setCloseoutError('Describe changes, delays, deviations, operational issues, or reasons for aborting the mission.');
       return;
     }
+    const assuranceError = validateSafetyAssurance(closeoutFormData.assurance);
+    if (assuranceError) { setCloseoutError(assuranceError); return; }
 
     setCloseoutError(null);
     setCloseoutMessage(null);
@@ -894,20 +1012,18 @@ export function JobFileHubPage() {
       const userId = userResult.user?.id;
       if (!userId) throw new Error('Sign in again before saving operation closeout.');
 
-      const { data, error: upsertError } = await supabase
-        .from('job_operation_closeouts')
-        .upsert({
-          job_id: job.id,
-          organization_id: job.organization_id,
-          user_id: userId,
-          operation_result: closeoutFormData.operationResult,
-          deviation_narrative: closeoutFormData.deviationNarrative.trim() || null,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'job_id' })
-        .select('id, operation_result, deviation_narrative, updated_at')
-        .single();
-
-      if (upsertError) throw upsertError;
+      const assurance = closeoutFormData.assurance;
+      const { data, error: saveError } = await supabase.rpc('save_operation_closeout_with_assurance', {
+        target_job_id: job.id, operation_result_value: closeoutFormData.operationResult,
+        deviation_narrative_value: closeoutFormData.deviationNarrative.trim(), control_effectiveness_value: assurance.controlEffectiveness,
+        effectiveness_narrative_value: assurance.effectivenessNarrative.trim(), operational_action_value: assurance.operationalAction.trim(),
+        unexpected_issue_value: assurance.unexpectedIssue === 'Yes', unexpected_issue_narrative_value: assurance.unexpectedIssueNarrative.trim(),
+        follow_up_required_value: Boolean(assurance.followUpRequired), follow_up_areas_value: assurance.followUpAreas,
+        related_jha_hazard_ids_value: closeoutFormData.relatedHazardId ? [closeoutFormData.relatedHazardId] : [],
+        related_control_ids_value: closeoutFormData.relatedControlId ? [closeoutFormData.relatedControlId] : [],
+        related_safety_event_ids_value: closeoutFormData.relatedSafetyEventId ? [closeoutFormData.relatedSafetyEventId] : []
+      });
+      if (saveError) throw saveError;
 
       setOperationCloseout(data as OperationCloseout);
       setCloseoutMessage('Operation closeout saved.');
@@ -1347,6 +1463,12 @@ export function JobFileHubPage() {
         ) : null}
       </div>
 
+      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="crew-briefing-heading">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="crew-briefing-heading" className="text-lg font-semibold text-brand-900">Crew Briefing / Crew Acknowledgment</h2><p className="mt-1 text-sm text-slate-600">After the RPIC conducts the full in-person operation briefing, send each assigned non-RPIC crew member a request to review and acknowledge it.</p></div><button type="button" className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={!jhaSummary || briefingActionId !== null || requiredCrewAssignments(assignments).length === 0 || currentUserId !== assignedRpic?.user_id} onClick={() => void (async () => { for (const assignment of requiredCrewAssignments(assignments)) await sendCrewAcknowledgment(assignment.id); })()}>Send Crew Acknowledgments</button></div>
+        <div className="mt-4 space-y-3">{assignments.filter((assignment) => assignment.assigned_role === 'RPIC' || requiredCrewAssignments([assignment]).length).map((assignment) => { const status = crewBriefingStatus(assignment, crewEvidence, briefingVersion); const busy = briefingActionId === assignment.id; return <article key={assignment.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-brand-900">{assignment.personnel?.full_name ?? 'Personnel unavailable'} — {assignment.assigned_role}</p><p className="mt-1 text-sm text-slate-600">Status: <strong>{status}</strong></p>{assignment.assigned_role !== 'RPIC' && !assignment.personnel?.email ? <p className="mt-1 text-xs text-amber-700">Add an email on the Personnel record to use electronic acknowledgment.</p> : null}</div>{assignment.assigned_role !== 'RPIC' ? <div className="flex flex-wrap gap-2"><button type="button" className="rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm font-medium text-brand-700 disabled:text-slate-400" disabled={busy || !jhaSummary || !assignment.personnel?.email || currentUserId !== assignedRpic?.user_id} onClick={() => void sendCrewAcknowledgment(assignment.id)}>{busy ? 'Working…' : status === 'Not Sent' ? 'Send' : 'Resend'}</button><button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:text-slate-400" disabled={busy || !jhaSummary || currentUserId !== assignedRpic?.user_id} onClick={() => void recordManualBriefing(assignment.id)}>Record Manual Field Briefing</button></div> : null}</div></article>; })}{requiredCrewAssignments(assignments).length === 0 ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Solo operation — no separate crew acknowledgment is required. The RPIC continues through the existing acceptance and readiness workflow.</p> : null}</div>
+        {briefingError ? <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{briefingError}</p> : null}{briefingMessage ? <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700" role="status">{briefingMessage}</p> : null}
+      </section>
+
       <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-3">
@@ -1374,7 +1496,7 @@ export function JobFileHubPage() {
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">4</span>
             <div>
               <h2 className="text-lg font-semibold text-brand-900">Pre-Flight Checklist</h2>
-              <p className="mt-1 text-sm text-slate-600">Final aircraft, equipment, weather, airspace, crew communications, and RPIC approval check before launch.</p>
+              <p className="mt-1 text-sm text-slate-600">Aircraft, equipment, weather, airspace, crew communications, and RPIC preflight review before the final Ready to Operate decision.</p>
               <span className={`mt-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getWorkflowStatusClassName(preflightComplete)}`}>
                 {preflightComplete ? 'Complete' : preflightSummary ? 'In progress' : 'Not started'}
               </span>
@@ -1389,10 +1511,34 @@ export function JobFileHubPage() {
         </div>
       </section>
 
+      <section id="ready-to-operate" className="scroll-mt-4 rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="ready-to-operate-heading">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">5</span>
+            <div>
+              <h2 id="ready-to-operate-heading" className="text-lg font-semibold text-brand-900">Ready to Operate</h2>
+              <p className="mt-1 text-sm text-slate-600">Final operation approval by the assigned RPIC after the safety workflow is current.</p>
+              <span className={`mt-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${readinessStatus === 'Ready to Operate' ? currentClassName : readinessStatus === 'Approval Stale' ? expiringClassName : missingClassName}`}>{readinessStatus}</span>
+              {operationReadiness?.approved_at ? <p className="mt-2 text-xs text-slate-500">{readinessStatus === 'Approval Stale' ? 'Previously approved' : 'Approved'} by {assignedRpic?.full_name ?? 'assigned RPIC'} on {new Date(operationReadiness.approved_at).toLocaleString()}.</p> : null}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          <p>I have reviewed the hazards and controls for this operation. Required controls are in place, preflight requirements are complete, and current conditions are acceptable to proceed.</p>
+          <label className="mt-4 flex items-start gap-3 font-medium text-slate-800"><input type="checkbox" className="mt-1 h-4 w-4" checked={fitnessConfirmed} onChange={(event) => { setFitnessConfirmed(event.target.checked); setReadinessMessage(null); }} disabled={isSavingReadiness || currentUserId !== assignedRpic?.user_id} /><span>I am fit to safely perform my assigned duties and am not impaired by fatigue, illness, medication, alcohol, drugs, or another condition that could affect safe operation.</span></label>
+          <p className="mt-2 text-xs text-slate-500">Only the confirmation is recorded. Do not enter medical details.</p>
+        </div>
+        {readinessBlockingReasons.length ? <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-semibold">Before approval:</p><ul className="mt-1 list-disc pl-5">{readinessBlockingReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null}
+        {assignedRpic && currentUserId !== assignedRpic.user_id ? <p className="mt-3 text-sm text-slate-600">Only assigned RPIC {assignedRpic.full_name} can complete this confirmation while signed in.</p> : null}
+        {readinessError ? <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{readinessError}</p> : null}
+        {readinessMessage ? <p className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700" role="status">{readinessMessage}</p> : null}
+        <div className="mt-4 flex flex-wrap gap-2"><button type="button" className="min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={isSavingReadiness || readinessBlockingReasons.length > 0 || currentUserId !== assignedRpic?.user_id} onClick={() => void recordOperationReadiness(true)}>{isSavingReadiness ? 'Saving...' : 'Approve Ready to Operate'}</button><button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:text-slate-400" disabled={isSavingReadiness || !assignedRpic || currentUserId !== assignedRpic.user_id} onClick={() => void recordOperationReadiness(false)}>Save as Not Ready</button></div>
+      </section>
+
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">5</span>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">6</span>
             <div>
               <h2 className="text-base font-semibold text-brand-900">Operation Execution</h2>
               <p className="mt-1 text-sm text-slate-600">Conduct the operation under the approved JHA and pre-flight controls. This section is informational only and does not duplicate data entry.</p>
@@ -1473,13 +1619,7 @@ export function JobFileHubPage() {
                     <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
                       {safetyEvent.outcome}
                     </span>
-                    <span
-                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                        safetyEvent.promote_to_hazard_library ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-600'
-                      }`}
-                    >
-                      {safetyEvent.promote_to_hazard_library ? 'Promote to Hazard Library' : 'Do not promote'}
-                    </span>
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Safety Manager Review</span>
                   </div>
                   <p className="text-sm text-slate-800">{safetyEvent.description}</p>
                   {safetyEvent.immediate_actions_taken ? (
@@ -1488,24 +1628,7 @@ export function JobFileHubPage() {
                     </p>
                   ) : null}
                 </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <button
-                    type="button"
-                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-brand-200 px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
-                    onClick={() => handleEditSafetyEvent(safetyEvent)}
-                    disabled={isSavingSafetyEvent || removingSafetyEventId === safetyEvent.id}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0"
-                    onClick={() => void handleDeleteSafetyEvent(safetyEvent)}
-                    disabled={removingSafetyEventId === safetyEvent.id}
-                  >
-                    {removingSafetyEventId === safetyEvent.id ? 'Deleting...' : 'Delete'}
-                  </button>
-                </div>
+                <p className="text-xs font-medium text-slate-500">Submitted records are preserved as historical evidence.</p>
               </div>
             </article>
           ))}
@@ -1523,7 +1646,7 @@ export function JobFileHubPage() {
           <form id="safety-event-form" className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3" onSubmit={handleSaveSafetyEvent}>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-brand-900">{editingSafetyEventId ? 'Edit Safety Event' : 'Add Safety Event'}</h3>
+                <h3 className="text-sm font-semibold text-brand-900">Add Safety Event</h3>
                 <p className="mt-1 text-sm text-slate-600">Capture the condition, response, outcome, and whether it should be promoted later.</p>
               </div>
               <button
@@ -1592,26 +1715,14 @@ export function JobFileHubPage() {
               </label>
             </div>
 
-            <label className="mt-4 flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
-              <input
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700"
-                type="checkbox"
-                checked={safetyEventFormData.promoteToHazardLibrary}
-                onChange={(event) => updateSafetyEventField('promoteToHazardLibrary', event.target.checked)}
-                disabled={isSavingSafetyEvent}
-              />
-              <span>
-                <span className="font-medium text-slate-800">Promote to Hazard Library</span>
-                <span className="mt-1 block text-slate-600">Flag this event for a future hazard library review. This does not create a Hazard Library item yet.</span>
-              </span>
-            </label>
+            <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Submitting creates a Safety Event Review in SMS. No hazard is created or proposed automatically.</p>
 
             <button
               type="submit"
               className="mt-4 min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
               disabled={isSavingSafetyEvent}
             >
-              {isSavingSafetyEvent ? 'Saving...' : editingSafetyEventId ? 'Save Safety Event' : 'Add Safety Event'}
+              {isSavingSafetyEvent ? 'Saving...' : 'Add Safety Event'}
             </button>
           </form>
         ) : null}
@@ -1649,6 +1760,18 @@ export function JobFileHubPage() {
               ))}
             </select>
           </label>
+
+          <fieldset className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+            <legend className="px-1 text-sm font-semibold text-brand-900">Post-operation Safety Assurance</legend>
+            <label className="block text-sm font-medium text-slate-700">Were the safety controls used for this operation effective?<select className="mt-1 w-full rounded-lg border border-slate-300 p-2" value={closeoutFormData.assurance.controlEffectiveness} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,controlEffectiveness:e.target.value,followUpRequired:false,followUpAreas:[]})}><option value="">Select…</option>{['Yes','Partially','No','Not Applicable'].map(value=><option key={value}>{value}</option>)}</select><span className="mt-1 block text-xs font-normal text-slate-500">Think about the controls identified during planning and the JHA. Did they work as intended during the operation?</span></label>
+            {closeoutFormData.assurance.controlEffectiveness==='Partially'||closeoutFormData.assurance.controlEffectiveness==='No'?<label className="block text-sm font-medium text-slate-700">{closeoutFormData.assurance.controlEffectiveness==='No'?"What didn’t work?":"What didn’t work as expected?"}<textarea className="mt-1 min-h-20 w-full rounded-lg border p-2" value={closeoutFormData.assurance.effectivenessNarrative} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,effectivenessNarrative:e.target.value})} required/></label>:null}
+            {closeoutFormData.assurance.controlEffectiveness==='No'?<label className="block text-sm font-medium text-slate-700">What action was taken during the operation?<textarea className="mt-1 min-h-20 w-full rounded-lg border p-2" value={closeoutFormData.assurance.operationalAction} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,operationalAction:e.target.value})} required/></label>:null}
+            {closeoutFormData.assurance.controlEffectiveness==='Partially'?<fieldset><legend className="text-sm font-medium text-slate-700">Does anything need to change before a future operation?</legend><div className="mt-2 flex gap-4">{['Yes','No'].map(value=><label key={value} className="flex items-center gap-2 text-sm"><input type="radio" checked={closeoutFormData.assurance.followUpRequired===(value==='Yes')} onChange={()=>updateCloseoutField('assurance',{...closeoutFormData.assurance,followUpRequired:value==='Yes'})}/>{value}</label>)}</div>{closeoutFormData.assurance.followUpRequired?<div className="mt-3 grid gap-2 sm:grid-cols-2">{followUpAreas.map(area=><label key={area} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={closeoutFormData.assurance.followUpAreas.includes(area)} onChange={()=>updateCloseoutField('assurance',{...closeoutFormData.assurance,followUpAreas:closeoutFormData.assurance.followUpAreas.includes(area)?closeoutFormData.assurance.followUpAreas.filter(item=>item!==area):[...closeoutFormData.assurance.followUpAreas,area]})}/>{area}</label>)}</div>:null}</fieldset>:null}
+            <label className="block text-sm font-medium text-slate-700">Did anything occur that wasn’t adequately covered by the existing hazards or controls?<select className="mt-1 w-full rounded-lg border p-2" value={closeoutFormData.assurance.unexpectedIssue} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,unexpectedIssue:e.target.value})}><option value="">Select…</option><option>Yes</option><option>No</option></select></label>
+            {closeoutFormData.assurance.unexpectedIssue==='Yes'?<label className="block text-sm font-medium text-slate-700">Briefly describe it.<textarea className="mt-1 min-h-20 w-full rounded-lg border p-2" value={closeoutFormData.assurance.unexpectedIssueNarrative} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,unexpectedIssueNarrative:e.target.value})} required/></label>:null}
+            {['Partially','No'].includes(closeoutFormData.assurance.controlEffectiveness)||closeoutFormData.assurance.unexpectedIssue==='Yes'?<div className="grid gap-3 sm:grid-cols-3"><label className="text-sm font-medium">Related JHA hazard (optional)<select className="mt-1 w-full rounded-lg border p-2" value={closeoutFormData.relatedHazardId} onChange={e=>updateCloseoutField('relatedHazardId',e.target.value)}><option value="">Unlinked</option>{(jhaSummary?.hazard_entries||[]).filter(hazard=>hazard.id).map((hazard,index)=><option key={hazard.id} value={hazard.id}>{hazard.description||`Hazard ${index+1}`}</option>)}</select></label><label className="text-sm font-medium">Related control (optional)<select className="mt-1 w-full rounded-lg border p-2" value={closeoutFormData.relatedControlId} onChange={e=>updateCloseoutField('relatedControlId',e.target.value)}><option value="">Unlinked</option>{(jhaSummary?.hazard_entries||[]).filter(hazard=>hazard.id&&hazard.mitigation).map((hazard,index)=><option key={hazard.id} value={`${hazard.id}:control`}>{hazard.mitigation||`Control ${index+1}`}</option>)}</select></label><label className="text-sm font-medium">Related safety event (optional)<select className="mt-1 w-full rounded-lg border p-2" value={closeoutFormData.relatedSafetyEventId} onChange={e=>updateCloseoutField('relatedSafetyEventId',e.target.value)}><option value="">Unlinked</option>{safetyEvents.map(item=><option key={item.id} value={item.id}>{item.category}: {item.description}</option>)}</select></label></div>:null}
+            {closeoutFormData.assurance.controlEffectiveness==='Not Applicable'?<label className="block text-sm font-medium text-slate-700">Optional note<textarea className="mt-1 min-h-16 w-full rounded-lg border p-2" value={closeoutFormData.assurance.effectivenessNarrative} onChange={e=>updateCloseoutField('assurance',{...closeoutFormData.assurance,effectivenessNarrative:e.target.value})}/></label>:null}
+          </fieldset>
 
           <label className="block text-sm font-medium text-slate-700">
             Describe changes, delays, deviations, operational issues, or reasons for aborting the mission.

@@ -8,6 +8,8 @@ import { supabase } from '@frontend/lib/supabase';
 import { getCurrentOrganizationId } from '@frontend/lib/organization';
 import { daysUntilDate, formatIsoDate as formatDate } from '@frontend/lib/date-utils';
 import { type ReadinessState } from '@frontend/lib/readiness';
+import { Link } from 'react-router-dom';
+import { conciseEquipmentTitle } from '../../sms/lib/management-of-change';
 
 /**
  * Purpose: Defines the ordered type options used for UI choices and workflow decisions in equipment page.
@@ -63,7 +65,9 @@ const initialFormState = {
   purpose: '',
   epaRegistrationNumber: '',
   signalWord: '',
-  restrictedUseProduct: 'No'
+  restrictedUseProduct: 'No',
+  introducesNewCapability: 'No',
+  capabilityName: ''
 };
 
 /**
@@ -234,7 +238,9 @@ function toFormState(equipment: Equipment): EquipmentFormState {
     purpose: equipment.purpose ?? '',
     epaRegistrationNumber: equipment.epa_registration_number ?? '',
     signalWord: equipment.signal_word ?? '',
-    restrictedUseProduct: equipment.restricted_use_product ? 'Yes' : 'No'
+    restrictedUseProduct: equipment.restricted_use_product ? 'Yes' : 'No',
+    introducesNewCapability: 'No',
+    capabilityName: ''
   };
 }
 
@@ -301,6 +307,7 @@ export function EquipmentPage() {
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [pendingDocuments, setPendingDocuments] = useState<PendingReferenceDocument[]>([]);
+  const [createdMocId, setCreatedMocId] = useState<string | null>(null);
 
   /**
    * Performs load equipment for the surrounding workflow.
@@ -405,6 +412,7 @@ export function EquipmentPage() {
   function updateField(field: keyof EquipmentFormState, value: string) {
     setFormData((current) => ({ ...current, [field]: value }));
     setSaveMessage(null);
+    setCreatedMocId(null);
   }
 
   /**
@@ -418,6 +426,7 @@ export function EquipmentPage() {
     setPendingDocuments([]);
     setError(null);
     setSaveMessage(null);
+    setCreatedMocId(null);
   }
 
   /**
@@ -431,6 +440,7 @@ export function EquipmentPage() {
     setPendingDocuments([]);
     setError(null);
     setSaveMessage(null);
+    setCreatedMocId(null);
   }
 
   /**
@@ -521,10 +531,28 @@ export function EquipmentPage() {
 
         if (insertError) throw insertError;
         if (pendingDocuments.length) await uploadPendingDocuments(inserted.id, inserted.organization_id);
+        if (formData.introducesNewCapability === 'Yes') {
+          if (!formData.capabilityName.trim()) throw new Error('Name the new operational capability before starting its review.');
+          const { data: moc, error: mocError } = await supabase.rpc('start_management_of_change', {
+            change_title: conciseEquipmentTitle(formData.name, formData.make, formData.model),
+            change_description: `New ${formData.equipmentType} may introduce ${formData.capabilityName.trim()}.`,
+            change_source: 'Equipment',
+            requested_change_type: 'New operational capability',
+            linked_equipment_id: inserted.id,
+            linked_safety_event_id: null,
+            capability_name: formData.capabilityName.trim(),
+            linked_capability_id: null
+          });
+          if (mocError) throw mocError;
+          setCreatedMocId(String((moc as { id: string }).id));
+        }
       }
 
-      resetForm();
-      setSaveMessage(successMessage);
+      setFormData(initialFormState);
+      setEditingEquipmentId(null);
+      setIsFormOpen(false);
+      setPendingDocuments([]);
+      setSaveMessage(formData.introducesNewCapability === 'Yes' && !editingEquipmentId ? 'This equipment change introduces a new operational capability. A Management of Change review has been started.' : successMessage);
       await loadEquipment();
     } catch (saveError) {
       setError(getErrorMessage(saveError));
@@ -631,6 +659,8 @@ export function EquipmentPage() {
               disabled={isSaving}
             />
           </label>
+
+          {!editingEquipmentId?<><label className="block text-sm font-medium text-slate-700">Does this equipment introduce a new operational capability?<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base sm:py-2 sm:text-sm" value={formData.introducesNewCapability} onChange={event=>updateField('introducesNewCapability',event.target.value)}><option>No</option><option>Yes</option></select></label>{formData.introducesNewCapability==='Yes'?<label className="block text-sm font-medium text-slate-700">New capability name<input required className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base sm:py-2 sm:text-sm" value={formData.capabilityName} onChange={event=>updateField('capabilityName',event.target.value)} placeholder="Thermal Inspection"/></label>:null}</>:null}
 
           <label className="block text-sm font-medium text-slate-700">
             Type
@@ -792,7 +822,7 @@ export function EquipmentPage() {
             </button>
           </div>
           {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
-          {saveMessage ? <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{saveMessage}</p> : null}
+          {saveMessage ? <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700"><p>{saveMessage}</p>{createdMocId?<div className="mt-2 flex gap-3"><Link className="font-semibold underline" to={`/sms/moc/${createdMocId}`}>Review now</Link><button type="button" className="font-semibold underline" onClick={()=>setCreatedMocId(null)}>Review later</button></div>:null}</div> : null}
         </div>
       )}
 
@@ -884,6 +914,9 @@ export function EquipmentPage() {
                     {isChemicalMaterial(item) ? <p className="mt-1 text-sm text-slate-600">{[item.product_category, item.typical_mix_ratio ? `Mix: ${item.typical_mix_ratio}` : null].filter(Boolean).join(' • ')}</p> : null}
                   </div>
                   <div className="flex gap-2">
+                    <Link to="/sms/moc" className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-brand-700 shadow-sm hover:text-brand-900">
+                      Start Change Review
+                    </Link>
                     <button type="button" className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-brand-700 shadow-sm hover:text-brand-900" onClick={() => handleEdit(item)}>
                       Edit
                     </button>

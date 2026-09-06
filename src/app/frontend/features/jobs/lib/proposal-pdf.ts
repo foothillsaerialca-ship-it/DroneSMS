@@ -8,6 +8,7 @@ import {
   normalizeProposalEquipment
 } from '@frontend/features/jobs/lib/workflow-types';
 import { saveGeneratedDocument } from '@frontend/features/jobs/lib/generated-documents';
+import { buildReadinessPacketRows, resolveReadinessApproverIdentity, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
 import {
   getOrganizationLogoUrl,
   DEFAULT_SERVICE_COMMITMENT,
@@ -19,6 +20,8 @@ import {
   normalizeSelectedHazards,
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
 import { getProposalScopeDefaults } from '@frontend/features/jobs/lib/proposal-scope';
+import { buildPreflightPacketRows } from '@frontend/features/preflight/lib/preflight-checklist';
+import { buildProposalPersonnelLanguage, resolveProposalRpic, type ProposalOperationalPersonnel } from '@frontend/features/jobs/lib/proposal-language';
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -86,6 +89,8 @@ type ProposalPdfRecord = {
   deliverables: string | null;
   exclusions: string | null;
   proposed_rpic: string | null;
+  proposed_rpic_id: string | null;
+  converted_job_id: string | null;
   proposed_crew: string | null;
   proposed_aircraft: string | null;
   proposed_rpic_name: string | null;
@@ -457,6 +462,7 @@ class ProposalPdfRenderer {
     private readonly pdf: PdfBuilder,
     private readonly proposal: ProposalPdfRecord,
     private readonly organization: OrganizationSettings | null,
+    private readonly operationalPersonnel: ProposalOperationalPersonnel[] = [],
   ) {
     this.currentPage = this.pdf.addPage();
   }
@@ -477,14 +483,20 @@ class ProposalPdfRenderer {
   renderProposalContent(options: { sectionTitle?: string; includeProposalEnhancements?: boolean } = {}) {
     const includeProposalEnhancements = options.includeProposalEnhancements ?? true;
     this.includeProposalEnhancements = includeProposalEnhancements;
+    const personnelLanguage = buildProposalPersonnelLanguage(this.operationalPersonnel);
+    const proposalRpicName = clean(this.proposal.proposed_rpic_name) || clean(this.proposal.proposed_rpic);
+    const displayedRpic = resolveProposalRpic(this.operationalPersonnel, {
+      personnelId: this.proposal.proposed_rpic_id,
+      name: proposalRpicName,
+    });
     this.startContentPage();
     if (options.sectionTitle) this.majorSection(options.sectionTitle);
     this.section('EXECUTIVE SUMMARY', undefined, 80);
-    this.paragraph(buildExecutiveSummary(this.proposal, this.organization), 12);
+    this.paragraph(buildExecutiveSummary(this.proposal, this.organization, personnelLanguage, displayedRpic.name), 12);
     this.section('SCOPE OF WORK', undefined, 69);
     this.keyValueTable([
       ['Services', buildServiceDescription(this.proposal)],
-      ['Site Setup', 'Establish staging area, verify equipment readiness, conduct crew briefing, and implement site controls appropriate to the operating environment.'],
+      ['Site Setup', personnelLanguage.siteSetup],
       ['Operations', 'Operations will be conducted in accordance with applicable FAA regulations, the accepted scope of work, and the operator’s documented Safety Management System. Identified hazards and operational controls will be reviewed before work begins.'],
       ...buildEstimatedDurationRows(includeProposalEnhancements ? this.proposal : null),
       ['Site Restoration', 'Upon completion, equipment, staging materials, and temporary site controls will be removed and the work area will be returned to its pre-operation condition.'],
@@ -493,12 +505,14 @@ class ProposalPdfRenderer {
     ]);
 
     this.startContentPage();
-    this.section('PERSONNEL', 'Crew assignments are confirmed before scheduling and matched to the site requirements.', 69);
+    this.section('PERSONNEL', personnelLanguage.personnelHelper, 69);
     this.table(
       [
         ['Role', 'Assigned Individual', 'Credentials / Notes'],
-        ['Remote Pilot in Command', clean(this.proposal.proposed_rpic_name) || clean(this.proposal.proposed_rpic) || 'To be assigned', clean(this.proposal.proposed_rpic_credentials) || 'Credentials verified before operation'],
-        ...(clean(this.proposal.proposed_crew) ? [['Crew / Support', clean(this.proposal.proposed_crew), 'Assigned for site support as required']] : []),
+        ['Remote Pilot in Command', displayedRpic.name || 'To be assigned', displayedRpic.usesProposalSnapshot ? clean(this.proposal.proposed_rpic_credentials) || 'Credentials verified before operation' : 'Credentials verified before operation'],
+        ...this.operationalPersonnel
+          .filter((assignment) => assignment.role !== 'RPIC' && assignment.name)
+          .map((assignment) => [clean(assignment.role) || 'Operational Support', clean(assignment.name), 'Assigned for site support as required']),
       ],
       [130, 170, 187],
     );
@@ -559,7 +573,7 @@ class ProposalPdfRenderer {
     this.section('PROJECT ASSUMPTIONS & SAFETY CONDITIONS', undefined, 21);
     this.bullets([
       'Work is planned around site access, weather, airspace, people, property, and mission constraints.',
-      'The crew verifies current conditions before flight and coordinates with the client when conditions change.',
+      personnelLanguage.conditionsVerification,
       'Operations may be delayed, modified, or stopped when safety or quality conditions require it.',
       'Weather, safe site access, and client coordination are required.',
       'Airspace authorization availability is assumed when applicable.',
@@ -988,7 +1002,7 @@ export async function generateProposalPdf(proposalId: string) {
   const organization = proposal.organization_id ? await loadOrganizationSettingsById(proposal.organization_id) : null;
   const logo = await loadLogoImage(organization);
   const pdf = new PdfBuilder(logo);
-  new ProposalPdfRenderer(pdf, proposal, organization).render();
+  new ProposalPdfRenderer(pdf, proposal, organization, await loadProposalOperationalPersonnel(proposal)).render();
   const blob = pdf.save();
   const fileName = buildProposalPdfFileName(proposal, proposal.user_id);
   const displayFileName = buildProposalPdfDisplayFileName(proposal);
@@ -1014,6 +1028,7 @@ type JobPacketRecord = {
   id: string; organization_id: string; user_id: string | null; name: string; service_type: string | null; location: string | null; planned_date: string | null; status: string | null; source_proposal_id: string | null; source_proposal_number: string | null; client_name?: string | null; site_address?: string | null;
 };
 
+<<<<<<< HEAD
 /**
  * Purpose: Defines the job packet personnel assignment data contract used by the proposal pdf module.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
@@ -1025,6 +1040,9 @@ type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: {
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
+=======
+type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: { id: string; full_name: string | null; role: string | null; part_107_expiration_date: string | null; training_expiration_date: string | null; status: string | null } | null };
+>>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
 type JobPacketEquipmentReferenceDocument = { document_type: string; file_name: string | null; display_file_name: string | null; storage_path: string | null; mime_type: string | null; created_at: string | null };
 /**
  * Purpose: Defines the job packet equipment assignment data contract used by the proposal pdf module.
@@ -1038,6 +1056,7 @@ type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipmen
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
+<<<<<<< HEAD
 /**
  * Purpose: Defines the job packet jha data contract used by the proposal pdf module.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
@@ -1055,6 +1074,11 @@ type JobPacketPreflight = Record<string, boolean | string | null> & { status: st
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
+=======
+type JobPacketJha = { status: string | null; safety_manager_name: string | null; safety_manager_role_label: string | null; safety_manager_reviewed_at: string | null; safety_manager_review_stale: boolean | null; rpic_name: string | null; rpic_role_label: string | null; rpic_accepted_at: string | null; rpic_acceptance_stale: boolean | null; faa_airspace_class: string | null; laanc_required: string | null; relevant_airport_heliport: string | null; nearby_airport_heliport?: string | null; known_airspace_restrictions: string | null; additional_authorization_required: string | null; nearest_hospital: string | null; emergency_facility_address: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; ppe_requirements: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
+type JobPacketPreflight = Record<string, unknown> & { status: string | null; notes?: string | null; checklist_states?: unknown; final_rpic_approval?: boolean | null };
+type JobPacketReadiness = OperationReadinessRecord & { rpic_name: string | null; approved_by_name: string | null; approved_by_user_id: string | null };
+>>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
 /**
  * Purpose: Represents job packet photo data read, written, or rendered by the proposal pdf workflow.
@@ -1073,7 +1097,7 @@ export async function generateJobPacketPdf(jobId: string) {
   const logo = await loadLogoImage(organization);
   const pdf = new PdfBuilder(logo);
   const proposal = packet.proposal ?? buildPacketPlaceholderProposal(packet.job);
-  const renderer = new ProposalPdfRenderer(pdf, proposal, organization);
+  const renderer = new ProposalPdfRenderer(pdf, proposal, organization, packet.assignments.map((assignment) => ({ personnelId: assignment.personnel?.id, name: assignment.personnel?.full_name, role: assignment.assigned_role })));
   const packetPhotos = await loadPacketPhotoImages(packet.photos);
   const toc = buildCloseoutTableOfContents(packet, packetPhotos);
 
@@ -1106,6 +1130,12 @@ export async function generateJobPacketPdf(jobId: string) {
     ['Nearest Hospital / Emergency Facility', clean(packet.jha?.nearest_hospital) || 'Not recorded'],
     ...(clean(packet.jha?.emergency_facility_address) ? [['Emergency Facility Address', clean(packet.jha?.emergency_facility_address)] as [string, string]] : []),
   ]);
+  renderer.section('OPERATIONAL CONFIRMATIONS');
+  renderer.keyValueTable([['Crew briefing completed', packet.jha?.crew_briefed ? 'Confirmed' : 'Not confirmed'], ['Required controls in place', packet.jha?.controls_in_place ? 'Confirmed' : 'Not confirmed']]);
+  renderer.section('SAFETY MANAGER REVIEW');
+  renderer.keyValueTable([['Safety Manager', packet.jha?.safety_manager_name ? `${clean(packet.jha.safety_manager_name)} — ${clean(packet.jha.safety_manager_role_label) || 'Safety Manager'}` : 'No Safety Manager Review recorded'], ['Review Status', packet.jha?.safety_manager_review_stale ? 'Re-review required' : packet.jha?.safety_manager_reviewed_at ? 'Reviewed' : 'Pending'], ['Reviewed', packet.jha?.safety_manager_reviewed_at ? formatAttestationDateTime(packet.jha.safety_manager_reviewed_at) : 'Not recorded']]);
+  renderer.section('RPIC ACCEPTANCE');
+  renderer.keyValueTable([['RPIC', packet.jha?.rpic_name ? `${clean(packet.jha.rpic_name)} — ${clean(packet.jha.rpic_role_label) || 'RPIC'}` : 'No RPIC Acceptance recorded'], ['Acceptance Status', packet.jha?.rpic_acceptance_stale ? 'Re-acceptance required' : packet.jha?.rpic_accepted_at ? 'Accepted' : 'Pending'], ['Accepted', packet.jha?.rpic_accepted_at ? formatAttestationDateTime(packet.jha.rpic_accepted_at) : 'Not recorded']]);
   renderer.startContentPage();
   renderer.majorSection('CLOSEOUT & SUPPORTING DOCUMENTATION');
   const environmentalRows = buildEnvironmentalRows(packet.jha);
@@ -1114,6 +1144,8 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.keyValueTable([['Airspace Class', clean(packet.jha?.faa_airspace_class) || PLACEHOLDER], ['Relevant Airport / Heliport', clean(packet.jha?.relevant_airport_heliport) || clean(packet.jha?.nearby_airport_heliport) || 'Not recorded'], ['LAANC Required', clean(packet.jha?.laanc_required) || PLACEHOLDER], ['Additional Authorization Required', clean(packet.jha?.additional_authorization_required) || PLACEHOLDER], ['Known Airspace Restrictions / TFR Considerations', clean(packet.jha?.known_airspace_restrictions) || 'None recorded'], ['Operational Finding', packet.jha ? `JHA status: ${clean(packet.jha.status) || 'Draft'}. Controls in place: ${packet.jha.controls_in_place ? 'Yes' : 'No'}.` : 'Airspace review not started.']]);
   renderer.section('PREFLIGHT CHECKLIST');
   renderer.table([['Checklist Item', 'State'], ...buildPreflightRows(packet.preflight)], [300, 187]);
+  renderer.section('READY TO OPERATE');
+  renderer.keyValueTable(buildReadinessPacketRows(packet.readiness, formatAttestationDateTime));
   renderer.section('SAFETY EVENTS');
   renderer.table([['Category', 'Outcome', 'Details'], ...(packet.safetyEvents.length ? packet.safetyEvents.map((e) => [clean(e.category) || 'Safety Event', clean(e.outcome) || 'Recorded', `${clean(e.description) || 'No description.'}${e.immediate_actions_taken ? ` Immediate actions: ${e.immediate_actions_taken}` : ''}`]) : [['None', 'None', 'No safety events recorded.']])], [95, 105, 287]);
   const documentationPhotos = packetPhotos.filter((photo) => !photo.hazardId);
@@ -1138,21 +1170,30 @@ export async function generateJobPacketPdf(jobId: string) {
  * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
  */
 async function loadJobPacketForPdf(jobId: string) {
-  const [jobResult, assignmentsResult, equipmentResult, safetyResult, jhaResult, preflightResult, closeoutResult, documentsResult, photosResult] = await Promise.all([
+  const [jobResult, assignmentsResult, equipmentResult, safetyResult, jhaResult, preflightResult, readinessResult, closeoutResult, documentsResult, photosResult] = await Promise.all([
     supabase.from('jobs').select('id, organization_id, user_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number, client_name, site_address').eq('id', jobId).single(),
-    supabase.from('job_personnel').select('assigned_role, personnel:personnel_id(full_name, role, part_107_expiration_date, training_expiration_date, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
+    supabase.from('job_personnel').select('assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status, make, product_category, typical_mix_ratio, application_notes, equipment_reference_documents(document_type, file_name, display_file_name, storage_path, mime_type, created_at))').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_safety_events').select('category, description, immediate_actions_taken, outcome, created_at').eq('job_id', jobId).order('created_at', { ascending: false }),
-    supabase.from('jha_assessments').select('status, faa_airspace_class, laanc_required, relevant_airport_heliport, nearby_airport_heliport, known_airspace_restrictions, additional_authorization_required, nearest_hospital, emergency_facility_address, crew_briefed, controls_in_place, certified_at, hazard_entries, ppe_requirements, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
+    supabase.from('jha_assessments').select('status, safety_manager_name, safety_manager_role_label, safety_manager_reviewed_at, safety_manager_review_stale, rpic_name, rpic_role_label, rpic_accepted_at, rpic_acceptance_stale, faa_airspace_class, laanc_required, relevant_airport_heliport, nearby_airport_heliport, known_airspace_restrictions, additional_authorization_required, nearest_hospital, emergency_facility_address, crew_briefed, controls_in_place, certified_at, hazard_entries, ppe_requirements, runoff_risk, containment_plan, water_body_proximity, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, water_body_distance, water_body_type').eq('job_id', jobId).maybeSingle(),
     supabase.from('preflight_checklists').select('*').eq('job_id', jobId).maybeSingle(),
+    supabase.from('job_operation_readiness').select('approved_at, approval_stale, fitness_for_duty_confirmed, rpic_personnel_id, approved_by_user_id, rpic:personnel!rpic_personnel_id(full_name, email, user_id)').eq('job_id', jobId).maybeSingle(),
     supabase.from('job_operation_closeouts').select('operation_result, deviation_narrative, updated_at').eq('job_id', jobId).maybeSingle(),
     supabase.from('generated_documents').select('document_type, file_name, display_file_name').eq('record_type', 'job').eq('record_id', jobId).is('archived_at', null).neq('document_type', 'job_packet_pdf').order('generated_at', { ascending: false }),
     supabase.from('job_hazard_photos').select('id, hazard_id, hazard_name, photo_url, caption, include_in_packet, created_at').eq('job_id', jobId).eq('include_in_packet', true).is('deleted_at', null).order('created_at', { ascending: true }),
   ]);
-  if (jobResult.error) throw jobResult.error; if (assignmentsResult.error) throw assignmentsResult.error; if (equipmentResult.error) throw equipmentResult.error; if (safetyResult.error) throw safetyResult.error; if (jhaResult.error) throw jhaResult.error; if (preflightResult.error) throw preflightResult.error; if (closeoutResult.error) throw closeoutResult.error; if (documentsResult.error) throw documentsResult.error; if (photosResult.error) throw photosResult.error;
+  if (jobResult.error) throw jobResult.error; if (assignmentsResult.error) throw assignmentsResult.error; if (equipmentResult.error) throw equipmentResult.error; if (safetyResult.error) throw safetyResult.error; if (jhaResult.error) throw jhaResult.error; if (preflightResult.error) throw preflightResult.error; if (readinessResult.error) throw readinessResult.error; if (closeoutResult.error) throw closeoutResult.error; if (documentsResult.error) throw documentsResult.error; if (photosResult.error) throw photosResult.error;
   const job = jobResult.data as JobPacketRecord;
   const proposal = job.source_proposal_id ? await loadProposalForPdf(job.source_proposal_id).catch(() => null) : null;
-  return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}>, photos: (photosResult.data ?? []) as JobPacketPhoto[] };
+  const rawReadiness = readinessResult.data as (OperationReadinessRecord & { approved_by_user_id: string | null; rpic: { full_name: string | null; email: string | null; user_id: string | null } | Array<{ full_name: string | null; email: string | null; user_id: string | null }> | null }) | null;
+  const rpic = Array.isArray(rawReadiness?.rpic) ? rawReadiness.rpic[0] : rawReadiness?.rpic;
+  let approvedByName = resolveReadinessApproverIdentity(rpic ?? null, rawReadiness?.approved_by_user_id ?? null);
+  if (rawReadiness?.approved_by_user_id && !approvedByName) {
+    const userResult = await supabase.auth.getUser();
+    approvedByName = resolveReadinessApproverIdentity(rpic ?? null, rawReadiness.approved_by_user_id, userResult.data.user);
+  }
+  const readiness = rawReadiness ? { ...rawReadiness, rpic_name: rpic?.full_name ?? null, approved_by_name: approvedByName } as JobPacketReadiness : null;
+  return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, readiness, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}>, photos: (photosResult.data ?? []) as JobPacketPhoto[] };
 }
 
 
@@ -1424,14 +1465,17 @@ function formatPhotoTimestamp(value: string | null) {
 }
 
 
+<<<<<<< HEAD
 /**
  * Computes build preflight rows for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
 function buildPreflightRows(preflight: JobPacketPreflight | null) {
+=======
+export function buildPreflightRows(preflight: JobPacketPreflight | null) {
+>>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
   if (!preflight) return [['Status', 'Preflight checklist not started.']];
-  const labels: Record<string, string> = { aircraft_selected: 'Aircraft selected', battery_condition_checked: 'Battery condition checked', propellers_inspected: 'Propellers inspected', firmware_app_status_checked: 'Firmware/app status checked', gps_signal_confirmed: 'GPS signal confirmed', home_point_verified: 'Home point verified', storage_media_checked: 'Storage media checked', weather_verified: 'Weather verified', wind_conditions_acceptable: 'Wind conditions acceptable', airspace_reviewed: 'Airspace reviewed', laanc_confirmed_if_required: 'LAANC confirmed if required', notam_tfr_checked: 'NOTAM/TFR checked', visual_observer_assigned_if_needed: 'Visual observer assigned if needed', emergency_procedures_reviewed: 'Emergency procedures reviewed', crew_communications_confirmed: 'Crew communications confirmed', final_rpic_approval: 'Final RPIC approval' };
-  return [['Status', clean(preflight.status) || 'Draft'], ...Object.entries(labels).map(([key, label]) => [label, preflight[key] ? 'Complete' : 'Open'])];
+  return [['Status', clean(preflight.status) || 'Draft'], ...buildPreflightPacketRows(preflight)];
 }
 
 /**
@@ -1447,6 +1491,7 @@ function buildEnvironmentalRows(jha: JobPacketJha | null): Array<[string, string
   return [...(concern ? [['Environmental Considerations', categories.join(', ') || 'Mission-specific concern documented'] as [string, string]] : []), ...(clean(String(metadata.__environmentalConcernOther ?? '')) ? [['Other Environmental Condition', clean(String(metadata.__environmentalConcernOther))] as [string, string]] : []), ['Runoff Planning', jha.runoff_risk ? 'Documented as applicable' : 'Not marked applicable'], ['Containment Plan', clean(jha.containment_plan) || 'Not recorded'], ['Water Body Proximity', jha.water_body_proximity ? `Yes${jha.water_body_distance ? ` - ${jha.water_body_distance} feet` : ''}${jha.water_body_type ? ` (${jha.water_body_type})` : ''}` : 'Not marked applicable'], ['Secondary Containment', jha.secondary_containment_in_place ? 'In place' : 'Not recorded'], ['Reclamation Method', clean(jha.reclamation_method) || 'Not recorded'], ['Estimated Volume', jha.reclamation_volume_estimate ? `${jha.reclamation_volume_estimate} gallons` : 'Not recorded'], ['Vendor / Contact', clean(jha.disposal_vendor_name_contact) || 'Not recorded']];
 }
 
+<<<<<<< HEAD
 /**
  * Computes build packet placeholder proposal for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
@@ -1456,6 +1501,9 @@ function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord
  * Computes build job packet storage file name for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
+=======
+function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_rpic_id: null, converted_job_id: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, relevant_airport_heliport: null, known_airspace_restrictions: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_amount: null, estimated_duration: null, payment_terms: null, valid_until: null, created_at: null }; }
+>>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
 function buildJobPacketStorageFileName(job: JobPacketRecord, userId: string) { const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); return `job_packet_pdf-user_${sanitizeFileName(userId)}-${timestamp}-${crypto.randomUUID()}-${sanitizeFileName(job.name)}.pdf`; }
 /**
  * Computes build job packet display file name for the surrounding workflow.
@@ -1538,7 +1586,7 @@ async function retainProposalPdf(
 async function loadProposalForPdf(proposalId: string) {
   const { data, error } = await supabase
     .from('proposals')
-    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, deliverables, exclusions, proposed_rpic, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_amount, estimated_duration, payment_terms, valid_until, created_at')
+    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, deliverables, exclusions, proposed_rpic, proposed_rpic_id, converted_job_id, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_amount, estimated_duration, payment_terms, valid_until, created_at')
     .eq('id', proposalId)
     .is('deleted_at', null)
     .single();
@@ -1582,22 +1630,45 @@ async function loadLogoImage(organization: OrganizationSettings | null): Promise
   }
 }
 
+<<<<<<< HEAD
 /**
  * Renders the build executive summary interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
 function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: OrganizationSettings | null) {
+=======
+async function loadProposalOperationalPersonnel(proposal: ProposalPdfRecord): Promise<ProposalOperationalPersonnel[]> {
+  if (!proposal.converted_job_id) return proposalOperationalPersonnel(proposal);
+
+  const { data, error } = await supabase
+    .from('job_personnel')
+    .select('assigned_role, personnel:personnel_id(id, full_name)')
+    .eq('job_id', proposal.converted_job_id);
+  if (error) return proposalOperationalPersonnel(proposal);
+
+  const assignments = (data ?? []).map((assignment) => {
+    const personnel = Array.isArray(assignment.personnel) ? assignment.personnel[0] : assignment.personnel;
+    return { personnelId: personnel?.id, name: personnel?.full_name, role: assignment.assigned_role };
+  });
+  return assignments.length ? assignments : proposalOperationalPersonnel(proposal);
+}
+
+function proposalOperationalPersonnel(proposal: ProposalPdfRecord): ProposalOperationalPersonnel[] {
+  const name = clean(proposal.proposed_rpic_name) || clean(proposal.proposed_rpic);
+  return proposal.proposed_rpic_id || name ? [{ personnelId: proposal.proposed_rpic_id, name, role: 'RPIC' }] : [];
+}
+
+function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: OrganizationSettings | null, personnelLanguage = buildProposalPersonnelLanguage(proposalOperationalPersonnel(proposal)), displayedRpicName?: string) {
+>>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
   const operatorName = companyNameFor(organization);
   const contactName = clean(proposal.contact_name) || 'your team';
   const clientName = clean(proposal.client_name) || 'your organization';
   const siteAddress = clean(proposal.site_address) || 'the identified property or operating area';
   const serviceDescription = withLeadingArticle(lowerFirst(buildServiceDescription(proposal).replace(/\.$/, '')));
   const validThrough = formatLongDate(proposal.valid_until) || 'the validity date stated in this proposal';
-  const rpicName = clean(proposal.proposed_rpic_name) || clean(proposal.proposed_rpic);
+  const rpicName = displayedRpicName ?? (clean(proposal.proposed_rpic_name) || clean(proposal.proposed_rpic));
 
-  const qualifications = rpicName
-    ? `${rpicName}, FAA Part 107 certificated Remote Pilot in Command, will lead all field operations supported by a trained crew operating under ${operatorName}'s documented Safety Management System. Our aerial approach provides safe, efficient access to the work area while reducing the need for personnel to operate from elevated, difficult-to-access, or otherwise hazardous positions.`
-    : `All field operations will be led by a FAA Part 107 certificated Remote Pilot in Command, supported by a trained crew operating under ${operatorName}'s documented Safety Management System. Our aerial approach provides safe, efficient access to the work area while reducing the need for personnel to operate from elevated, difficult-to-access, or otherwise hazardous positions.`;
+  const qualifications = `${personnelLanguage.executiveSummaryQualification(rpicName, operatorName)} Our aerial approach provides safe, efficient access to the work area while reducing the need for personnel to operate from elevated, difficult-to-access, or otherwise hazardous positions.`;
 
   return [
     `${operatorName} is pleased to submit this proposal to ${contactName} at ${clientName} for ${serviceDescription} at ${siteAddress}. Our goal is to deliver professional, well-documented results while keeping the engagement safe, efficient, and minimally disruptive to people and property.`,
@@ -1828,10 +1899,17 @@ function clean(value: string | null | undefined) {
   return value?.trim() ?? '';
 }
 
+<<<<<<< HEAD
 /**
  * Computes format date for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
+=======
+function formatAttestationDateTime(value: string) {
+  return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+}
+
+>>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
 function formatDate(value: string | null | undefined) {
   return formatProposalDate(value, { month: '2-digit', day: '2-digit', year: 'numeric' });
 }

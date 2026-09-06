@@ -6,37 +6,17 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../auth/components/use-auth';
+import { SafetyReviewArea } from '../components/safety-review-area';
+import { SafetyAssuranceArea } from '../components/safety-assurance-area';
 
-/**
- * Purpose: Defines the member data contract used by the sms page module.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
-type Member = { id: string; full_name: string; role: string };
-/**
- * Purpose: Stores the shared pillars structure used by the sms page module.
- * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
- * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
- */
+type Member = { id: string; full_name: string };
 const pillars = [
   { title: 'Safety Policy & Objectives', items: ['Safety Policy Statement', 'Safety Objectives'] },
-  { title: 'Safety Risk Management', items: ['Risk Acceptance Criteria', 'Risk Matrix Configuration'] },
+  { title: 'Safety Risk Management', items: ['Hazard Identification & Control Planning', 'Controls-in-Place Verification'] },
   { title: 'Safety Assurance', items: ['Internal Audit Program', 'Corrective Action Process'] },
   { title: 'Safety Promotion', items: ['Training Program Summary', 'Safety Meeting Frequency'] }
 ] as const;
 
-/**
- * Determines is rpic for the surrounding workflow.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
-function isRpic(member: Member) {
-  return /\brpic\b|remote pilot in command/i.test(member.role);
-}
-
-/**
- * Renders the sms interface and coordinates its user interactions.
- * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
- */
 export function SmsPage() {
   const { session } = useAuth();
   const [organizationId, setOrganizationId] = useState('');
@@ -63,7 +43,7 @@ export function SmsPage() {
       const organizationId = String(profile.organization_id);
       const [organizationResult, membersResult, designationResult] = await Promise.all([
         supabase.from('organizations').select('owner_user_id, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary').eq('id', organizationId).single(),
-        supabase.from('personnel').select('id, full_name, role').eq('organization_id', organizationId).eq('status', 'Active').order('full_name'),
+        supabase.from('personnel').select('id, full_name').eq('organization_id', organizationId).eq('status', 'Active').order('full_name'),
         supabase.from('organization_safety_designations').select('personnel_id').eq('organization_id', organizationId).maybeSingle()
       ]);
       const loadError = organizationResult.error || membersResult.error || designationResult.error;
@@ -118,15 +98,16 @@ export function SmsPage() {
     setMessage('SMS program language saved.');
   }
 
-  const selected = members.find((member) => member.id === selectedId);
   return (
     <section className="mx-auto flex w-full max-w-4xl flex-col gap-4">
       <header><p className="text-sm font-medium uppercase tracking-wide text-brand-700">Safety Management System</p><h1 className="mt-1 text-2xl font-semibold text-brand-900">SMS Program</h1><p className="mt-2 text-sm text-slate-600">Manage the organization’s safety responsibilities and program across the four SMS pillars.</p></header>
       {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p> : null}
       {message ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{message}</p> : null}
+      <SafetyReviewArea organizationId={organizationId} />
+      <SafetyAssuranceArea organizationId={organizationId} />
       <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <h2 className="text-lg font-semibold text-brand-900">Safety Manager Configuration</h2><p className="mt-1 text-sm text-slate-600">Designate an active organization member as the Safety Manager. A person may also serve as RPIC.</p>
-        {loading ? <p className="mt-4 text-sm text-slate-500">Loading Safety Manager...</p> : <form className="mt-4 space-y-3" onSubmit={saveDesignation}><label className="block text-sm font-medium text-slate-700">Safety Manager<select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base sm:py-2 sm:text-sm" value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={!canManage || saving}><option value="">Select an active member</option>{members.map((member) => <option key={member.id} value={member.id}>{member.full_name} — {isRpic(member) ? 'Safety Manager / RPIC' : 'Safety Manager'}</option>)}</select></label>{selected ? <p className="rounded-lg bg-brand-50 px-3 py-2 text-sm font-medium text-brand-900">{selected.full_name} — {isRpic(selected) ? 'Safety Manager / RPIC' : 'Safety Manager'}</p> : null}{canManage ? <button className="min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving || !selectedId}>{saving ? 'Saving...' : 'Save Designation'}</button> : <p className="text-sm text-slate-500">Only the organization owner can change this designation.</p>}</form>}
+        <h2 className="text-lg font-semibold text-brand-900">Safety Manager Configuration</h2><p className="mt-1 text-sm text-slate-600">Designate an active organization member responsible for SMS review and safety oversight.</p>
+        {loading ? <p className="mt-4 text-sm text-slate-500">Loading Safety Manager...</p> : <form className="mt-4 space-y-3" onSubmit={saveDesignation}><label className="block text-sm font-medium text-slate-700">Safety Manager<select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base sm:py-2 sm:text-sm" value={selectedId} onChange={(event) => setSelectedId(event.target.value)} disabled={!canManage || saving}><option value="">Select an active member</option>{members.map((member) => <option key={member.id} value={member.id}>{member.full_name} — Safety Manager</option>)}</select></label>{canManage ? <button className="min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={saving || !selectedId}>{saving ? 'Saving...' : 'Save Designation'}</button> : <p className="text-sm text-slate-500">Only the organization owner can change this designation.</p>}</form>}
       </article>
       <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <h2 className="text-lg font-semibold text-brand-900">Safety Policy &amp; Objectives</h2><p className="mt-1 text-sm text-slate-600">Existing organization SMS language remains connected to the organization record.</p>

@@ -15,18 +15,22 @@ import { JobHazardAnalysisPage } from './frontend/features/jobs/pages/job-hazard
 import { PreflightChecklistPage } from './frontend/features/preflight/pages/preflight-checklist-page';
 import { PersonnelPage } from './frontend/features/personnel/pages/personnel-page';
 import { EquipmentPage } from './frontend/features/equipment/pages/equipment-page';
-import { LoginPage } from './frontend/features/auth/pages/login-page';
+import { BetaWelcomePage } from './frontend/features/auth/pages/beta-welcome-page';
 import { RegisterPage } from './frontend/features/auth/pages/register-page';
 import { CompanyOnboardingPage } from './frontend/features/auth/pages/company-onboarding-page';
 import { SettingsPage } from './frontend/features/settings/pages/settings-page';
 import { AccountSettingsPage } from './frontend/features/settings/pages/account-settings-page';
 import { SmsPage } from './frontend/features/sms/pages/sms-page';
+import { MocRegisterPage } from './frontend/features/sms/pages/moc-register-page';
+import { MocDetailPage } from './frontend/features/sms/pages/moc-detail-page';
 import { ReportsPage } from './frontend/features/reports/pages/reports-page';
 import { AboutPage } from './frontend/features/information/team';
 import { ProtectedRoute } from './frontend/features/auth/components/protected-route';
+import { PublicAuthLayout } from './frontend/features/auth/components/public-auth-layout';
 import { ForgotPasswordPage } from './frontend/features/auth/pages/forgot-password-page';
 import { ResetPasswordPage } from './frontend/features/auth/pages/reset-password-page';
 import { AuthCallbackPage } from './frontend/features/auth/pages/auth-callback-page';
+import { CrewBriefingAcknowledgmentPage } from './frontend/features/jobs/pages/crew-briefing-acknowledgment-page';
 
 /**
  * Renders the landing interface and coordinates its user interactions.
@@ -68,12 +72,15 @@ function LandingPage() {
 export function AppRouter() {
   return (
     <Routes>
-      <Route index element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route element={<PublicAuthLayout />}>
+        <Route index element={<BetaWelcomePage />} />
+        <Route path="/login" element={<BetaWelcomePage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      </Route>
+      <Route path="/crew-briefing/acknowledge" element={<CrewBriefingAcknowledgmentPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
@@ -96,6 +103,8 @@ export function AppRouter() {
           <Route path="/settings/account" element={<AccountSettingsPage />} />
           <Route path="/settings/organization" element={<SettingsPage />} />
           <Route path="/sms" element={<SmsPage />} />
+          <Route path="/sms/moc" element={<MocRegisterPage />} />
+          <Route path="/sms/moc/:mocId" element={<MocDetailPage />} />
         </Route>
       </Route>
 
