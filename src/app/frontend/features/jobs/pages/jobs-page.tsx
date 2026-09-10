@@ -30,7 +30,9 @@ import {
 } from "@frontend/features/safety/lib/preliminary-hazard-library";
 import {
   proposalStatuses,
+  normalizeProposalPersonnel,
   type ProposalEquipmentAssignment,
+  type ProposalPersonnelAssignment,
   type ProposalStatus,
 } from "@frontend/features/jobs/lib/workflow-types";
 
@@ -68,6 +70,7 @@ type Proposal = {
   created_at: string;
   hazard_assessment: SelectedPreliminaryHazard[] | null;
   proposal_equipment: Array<Pick<ProposalEquipmentAssignment, "equipment_id">> | null;
+  proposal_personnel: ProposalPersonnelAssignment[] | null;
   proposed_rpic_id: string | null;
   proposed_rpic_name: string | null;
   proposed_rpic_credentials: string | null;
@@ -224,7 +227,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       const { data, error: proposalsLoadError } = await supabase
         .from("proposals")
         .select(
-          "id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposal_equipment, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, converted_to_job, converted_job_id, converted_at",
+          "id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposal_equipment, proposal_personnel, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, converted_to_job, converted_job_id, converted_at",
         )
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
@@ -237,6 +240,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
           hazard_assessment: normalizeSelectedHazards(
             proposal.hazard_assessment,
           ),
+          proposal_personnel: normalizeProposalPersonnel(proposal.proposal_personnel),
         })),
       );
     } catch (loadError) {
@@ -417,14 +421,11 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       // Proposal selections are copied into the operational assignment tables.
       // These are independent rows, so subsequent job edits never rewrite the
       // historical proposal snapshot.
-      const personnelAssignments = proposal.proposed_rpic_id
-        ? [{
-            job_id: createdJob.id,
-            organization_id: proposal.organization_id,
-            personnel_id: proposal.proposed_rpic_id,
-            assigned_role: "RPIC",
-          }]
-        : [];
+      const operationalRoles = new Set(['RPIC', 'Pilot', 'Visual Observer', 'Payload Operator', 'Ground Crew']);
+      const snapshotAssignments = normalizeProposalPersonnel(proposal.proposal_personnel);
+      const personnelAssignments = (snapshotAssignments.length ? snapshotAssignments : proposal.proposed_rpic_id ? [{ personnel_id: proposal.proposed_rpic_id, proposed_role: 'RPIC' }] : [])
+        .filter((assignment) => operationalRoles.has(assignment.proposed_role))
+        .map((assignment) => ({ job_id: createdJob.id, organization_id: proposal.organization_id, personnel_id: assignment.personnel_id, assigned_role: assignment.proposed_role }));
       const equipmentAssignments = (proposal.proposal_equipment ?? [])
         .filter((assignment) => Boolean(assignment?.equipment_id))
         .map((assignment) => ({

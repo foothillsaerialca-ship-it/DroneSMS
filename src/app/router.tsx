@@ -34,10 +34,6 @@ import { CrewBriefingAcknowledgmentPage } from './frontend/features/jobs/pages/c
 import { PageFooterLayout } from './frontend/components/page-footer-layout';
 
 /**
- * Renders the landing interface and coordinates its user interactions.
- * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
- */
-/**
  * Implements app router for this module.
  * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
  */
