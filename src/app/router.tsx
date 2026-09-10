@@ -31,6 +31,7 @@ import { ForgotPasswordPage } from './frontend/features/auth/pages/forgot-passwo
 import { ResetPasswordPage } from './frontend/features/auth/pages/reset-password-page';
 import { AuthCallbackPage } from './frontend/features/auth/pages/auth-callback-page';
 import { CrewBriefingAcknowledgmentPage } from './frontend/features/jobs/pages/crew-briefing-acknowledgment-page';
+import { PageFooterLayout } from './frontend/components/page-footer-layout';
 
 /**
  * Renders the landing interface and coordinates its user interactions.
@@ -80,7 +81,9 @@ export function AppRouter() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
       </Route>
-      <Route path="/crew-briefing/acknowledge" element={<CrewBriefingAcknowledgmentPage />} />
+      <Route element={<PageFooterLayout />}>
+        <Route path="/crew-briefing/acknowledge" element={<CrewBriefingAcknowledgmentPage />} />
+      </Route>
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
