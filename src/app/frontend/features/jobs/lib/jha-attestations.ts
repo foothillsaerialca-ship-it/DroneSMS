@@ -10,10 +10,6 @@ export type OperationalJhaAttestations = {
   rpicAcceptanceStale?: boolean;
 };
 
-/**
- * Implements operational role label for this module.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
 export type OperationalCompletionRequirements = {
   crewBriefed: boolean;
   controlsInPlace: boolean;

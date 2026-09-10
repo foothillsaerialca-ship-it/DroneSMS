@@ -1443,10 +1443,6 @@ function formatPhotoTimestamp(value: string | null) {
 }
 
 
-/**
- * Computes build preflight rows for the surrounding workflow.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
 export function buildPreflightRows(preflight: JobPacketPreflight | null) {
   if (!preflight) return [['Status', 'Preflight checklist not started.']];
   return [['Status', clean(preflight.status) || 'Draft'], ...buildPreflightPacketRows(preflight)];
@@ -1847,10 +1843,6 @@ function formatAttestationDateTime(value: string) {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
-/**
- * Computes format date for the surrounding workflow.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
 function formatDate(value: string | null | undefined) {
   return formatProposalDate(value, { month: '2-digit', day: '2-digit', year: 'numeric' });
 }

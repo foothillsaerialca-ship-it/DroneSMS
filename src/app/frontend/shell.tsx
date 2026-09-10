@@ -5,6 +5,7 @@
  */
 import { Outlet } from 'react-router-dom';
 import { DesktopSidebar, MobileTopBar } from './features/navigation/components/responsive-nav';
+import { CopyrightFooter } from './components/copyright-footer';
 
 /**
  * Implements app shell for this module.
@@ -20,6 +21,7 @@ export function AppShell() {
         <main className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 lg:px-8">
           <Outlet />
         </main>
+        <CopyrightFooter />
       </div>
     </div>
   );

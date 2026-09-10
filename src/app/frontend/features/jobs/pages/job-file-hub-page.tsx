@@ -202,12 +202,6 @@ type CloseoutFormState = {
 };
 
 const blankAssurance: SafetyAssuranceInput = { controlEffectiveness: '', effectivenessNarrative: '', operationalAction: '', followUpRequired: null, followUpAreas: [], unexpectedIssue: '', unexpectedIssueNarrative: '' };
-
-/**
- * Purpose: Represents the complete safety event form state used by the job file hub page workflow.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
 type SafetyEventFormState = typeof initialSafetyEventFormState;
 
 /**
@@ -930,7 +924,7 @@ export function JobFileHubPage() {
   }
 
   /**
-   * Handles edit safety event while keeping the feature state consistent.
+   * Handles save closeout while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
   async function handleSaveCloseout(event: FormEvent<HTMLFormElement>) {
