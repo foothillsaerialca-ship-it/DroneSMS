@@ -201,16 +201,13 @@ type CloseoutFormState = {
   relatedSafetyEventId: string;
 };
 
-<<<<<<< HEAD
+const blankAssurance: SafetyAssuranceInput = { controlEffectiveness: '', effectivenessNarrative: '', operationalAction: '', followUpRequired: null, followUpAreas: [], unexpectedIssue: '', unexpectedIssueNarrative: '' };
+
 /**
  * Purpose: Represents the complete safety event form state used by the job file hub page workflow.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-=======
-const blankAssurance: SafetyAssuranceInput = { controlEffectiveness: '', effectivenessNarrative: '', operationalAction: '', followUpRequired: null, followUpAreas: [], unexpectedIssue: '', unexpectedIssueNarrative: '' };
-
->>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
 type SafetyEventFormState = typeof initialSafetyEventFormState;
 
 /**
@@ -932,63 +929,10 @@ export function JobFileHubPage() {
     }
   }
 
-<<<<<<< HEAD
   /**
    * Handles edit safety event while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
-  function handleEditSafetyEvent(safetyEvent: JobSafetyEvent) {
-    setEditingSafetyEventId(safetyEvent.id);
-    setSafetyEventFormData({
-      category: safetyEvent.category,
-      description: safetyEvent.description,
-      immediateActionsTaken: safetyEvent.immediate_actions_taken ?? '',
-      outcome: safetyEvent.outcome,
-      promoteToHazardLibrary: safetyEvent.promote_to_hazard_library
-    });
-    setSafetyEventError(null);
-    setSafetyEventMessage(null);
-    setIsSafetyEventFormOpen(true);
-  }
-
-  /**
-   * Handles delete safety event while keeping the feature state consistent.
-   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
-   */
-  async function handleDeleteSafetyEvent(safetyEvent: JobSafetyEvent) {
-    if (!job) return;
-
-    const confirmed = window.confirm('Delete this safety event from the Job File? This cannot be undone.');
-    if (!confirmed) return;
-
-    setSafetyEventError(null);
-    setSafetyEventMessage(null);
-    setRemovingSafetyEventId(safetyEvent.id);
-
-    try {
-      const { error: deleteError } = await supabase.from('job_safety_events').delete().eq('id', safetyEvent.id);
-      if (deleteError) throw deleteError;
-
-      if (editingSafetyEventId === safetyEvent.id) {
-        resetSafetyEventForm();
-        setIsSafetyEventFormOpen(false);
-      }
-
-      await loadSafetyEvents(job.id);
-      setSafetyEventMessage('Safety event deleted from this Job File.');
-    } catch (deleteError) {
-      setSafetyEventError(getErrorMessage(deleteError));
-    } finally {
-      setRemovingSafetyEventId(null);
-    }
-  }
-
-  /**
-   * Handles save closeout while keeping the feature state consistent.
-   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
-   */
-=======
->>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
   async function handleSaveCloseout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 

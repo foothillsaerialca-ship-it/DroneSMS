@@ -26,6 +26,7 @@ import { getProposalScopeDefaults, hasCustomizedProposalScope } from '@frontend/
 import {
   normalizeProposalEquipment,
   normalizeProposalPersonnel,
+  resolveProposalRpicBioSnapshot,
   proposalPersonnelRoles,
   proposalStatuses,
   serviceTypes,
@@ -72,7 +73,6 @@ type ProposalFormState = {
   description: string;
   deliverables: string;
   exclusions: string;
-  proposedRpicId: string;
   airspaceClass: string;
   relevantAirportHeliport: string;
   knownAirspaceRestrictions: string;
@@ -103,7 +103,6 @@ const initialFormState: ProposalFormState = {
   description: '',
   deliverables: initialScopeDefaults.deliverables,
   exclusions: initialScopeDefaults.exclusions,
-  proposedRpicId: '',
   airspaceClass: airspaceClasses[0],
   relevantAirportHeliport: '',
   knownAirspaceRestrictions: '',
@@ -176,11 +175,6 @@ type RepositoryEquipment = {
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type RpicSnapshot = {
-  full_name: string;
-  credentials: string | null;
-  professional_bio: string | null;
-};
 
 /**
  * Purpose: Defines the proposed rpic data contract used by the new proposal page module.
@@ -306,7 +300,6 @@ function mapProposalToFormState(proposal: ProposalRecord) {
     description: proposal.description ?? '',
     deliverables: proposal.deliverables ?? getProposalScopeDefaults(proposal.service_type).deliverables,
     exclusions: proposal.exclusions ?? getProposalScopeDefaults(proposal.service_type).exclusions,
-    proposedRpicId: proposal.proposed_rpic_id ?? '',
     airspaceClass: proposal.airspace_class ?? airspaceClasses[0],
     relevantAirportHeliport: proposal.relevant_airport_heliport ?? '',
     knownAirspaceRestrictions: proposal.known_airspace_restrictions ?? '',
@@ -495,30 +488,6 @@ export function NewProposalPage() {
       isMounted = false;
     };
   }, [proposalId]);
-
-  const selectedRpic = useMemo(() => personnel.find((person) => person.id === formData.proposedRpicId) ?? null, [personnel, formData.proposedRpicId]);
-
-  const rpicCredentials = useMemo(() => buildFallbackCredentials(selectedRpic), [selectedRpic]);
-
-  const displayedRpicSnapshot = useMemo<RpicSnapshot | null>(() => {
-    if (selectedRpic) {
-      return {
-        full_name: selectedRpic.full_name,
-        credentials: rpicCredentials,
-        professional_bio: selectedRpic.professional_bio?.trim() || null
-      };
-    }
-
-    if (isEditMode && loadedProposal?.proposed_rpic_name && formData.proposedRpicId === (loadedProposal.proposed_rpic_id ?? '')) {
-      return {
-        full_name: loadedProposal.proposed_rpic_name,
-        credentials: loadedProposal.proposed_rpic_credentials,
-        professional_bio: loadedProposal.proposed_rpic_bio
-      };
-    }
-
-    return null;
-  }, [formData.proposedRpicId, isEditMode, loadedProposal, rpicCredentials, selectedRpic]);
 
   const isFormDisabled = isSaving || isLoadingProposal;
 
@@ -759,7 +728,12 @@ export function NewProposalPage() {
         id: proposedRpicAssignment?.personnel_id ?? null,
         full_name: proposedRpicAssignment?.personnel_name ?? null,
         credentials: proposedRpicAssignment?.qualifications_summary ?? null,
-        professional_bio: proposedRpicRecord?.professional_bio?.trim() || null
+        professional_bio: resolveProposalRpicBioSnapshot(
+          loadedProposal?.proposed_rpic_id,
+          loadedProposal?.proposed_rpic_bio,
+          proposedRpicAssignment?.personnel_id,
+          proposedRpicRecord?.professional_bio,
+        )
       };
 
       const proposalPayload = {
@@ -1373,87 +1347,6 @@ function HazardSelection({
   );
 }
 
-
-/**
- * Renders the personnel select field interface and coordinates its user interactions.
- * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
- */
-function PersonnelSelectField({
-  label,
-  value,
-  personnel,
-  onChange,
-  disabled,
-  currentSnapshot
-}: {
-  label: string;
-  value: string;
-  personnel: ProposedRpic[];
-  onChange: (value: string) => void;
-  disabled: boolean;
-  currentSnapshot: RpicSnapshot | null;
-}) {
-  const hasCurrentPersonnelOption = personnel.some((person) => person.id === value);
-
-  return (
-    <label className="block text-sm font-medium text-slate-700">
-      {label}
-      <select
-        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 sm:py-2 sm:text-sm"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-      >
-        <option value="">Select a proposed RPIC</option>
-        {value && currentSnapshot && !hasCurrentPersonnelOption ? (
-          <option value={value}>{currentSnapshot.full_name} (saved snapshot)</option>
-        ) : null}
-        {personnel.map((person) => (
-          <option key={person.id} value={person.id}>
-            {person.full_name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-/**
- * Renders the rpic snapshot card interface and coordinates its user interactions.
- * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
- */
-function RpicSnapshotCard({ snapshot, isLoading }: { snapshot: RpicSnapshot | null; isLoading: boolean }) {
-  if (isLoading && !snapshot) {
-    return <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 sm:col-span-2">Loading personnel...</div>;
-  }
-
-  if (!snapshot) {
-    return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600 sm:col-span-2">
-        Select a personnel record to snapshot the proposed RPIC name, certifications, and professional bio into this proposal.
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3 rounded-lg border border-brand-100 bg-brand-50 p-3 sm:col-span-2">
-      <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-brand-700">Selected RPIC Snapshot</p>
-        <h3 className="mt-1 text-base font-semibold text-brand-900">{snapshot.full_name}</h3>
-      </div>
-      <div className="grid gap-3 text-sm lg:grid-cols-2">
-        <div className="rounded-lg bg-white p-3">
-          <h4 className="font-semibold text-brand-900">Certifications Summary</h4>
-          <p className="mt-1 whitespace-pre-wrap text-slate-700">{snapshot.credentials || 'No certifications summary on file yet.'}</p>
-        </div>
-        <div className="rounded-lg bg-white p-3">
-          <h4 className="font-semibold text-brand-900">Professional Bio</h4>
-          <p className="mt-1 whitespace-pre-wrap text-slate-700">{snapshot.professional_bio?.trim() || 'No professional bio on file yet.'}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /**
  * Implements form section for this module.

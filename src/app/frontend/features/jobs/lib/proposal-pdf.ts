@@ -1030,21 +1030,17 @@ type JobPacketRecord = {
   id: string; organization_id: string; user_id: string | null; name: string; service_type: string | null; location: string | null; planned_date: string | null; status: string | null; source_proposal_id: string | null; source_proposal_number: string | null; client_name?: string | null; site_address?: string | null;
 };
 
-<<<<<<< HEAD
 /**
  * Purpose: Defines the job packet personnel assignment data contract used by the proposal pdf module.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: { full_name: string | null; role: string | null; part_107_expiration_date: string | null; training_expiration_date: string | null; status: string | null } | null };
+type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: { id: string; full_name: string | null; role: string | null; part_107_expiration_date: string | null; training_expiration_date: string | null; status: string | null } | null };
 /**
  * Purpose: Represents job packet equipment reference document data read, written, or rendered by the proposal pdf workflow.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-=======
-type JobPacketPersonnelAssignment = { assigned_role: string | null; personnel: { id: string; full_name: string | null; role: string | null; part_107_expiration_date: string | null; training_expiration_date: string | null; status: string | null } | null };
->>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
 type JobPacketEquipmentReferenceDocument = { document_type: string; file_name: string | null; display_file_name: string | null; storage_path: string | null; mime_type: string | null; created_at: string | null };
 /**
  * Purpose: Defines the job packet equipment assignment data contract used by the proposal pdf module.
@@ -1058,29 +1054,9 @@ type JobPacketEquipmentAssignment = { equipment: { name: string | null; equipmen
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
 type JobPacketSafetyEvent = { category: string | null; description: string | null; immediate_actions_taken: string | null; outcome: string | null; created_at: string | null };
-<<<<<<< HEAD
-/**
- * Purpose: Defines the job packet jha data contract used by the proposal pdf module.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
-type JobPacketJha = { status: string | null; faa_airspace_class: string | null; laanc_required: string | null; relevant_airport_heliport: string | null; nearby_airport_heliport?: string | null; known_airspace_restrictions: string | null; additional_authorization_required: string | null; nearest_hospital: string | null; emergency_facility_address: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; ppe_requirements: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
-/**
- * Purpose: Defines the job packet preflight data contract used by the proposal pdf module.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
-type JobPacketPreflight = Record<string, boolean | string | null> & { status: string | null; notes?: string | null; final_rpic_approval?: boolean | null };
-/**
- * Purpose: Defines the job packet closeout data contract used by the proposal pdf module.
- * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
- * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
- */
-=======
 type JobPacketJha = { status: string | null; safety_manager_name: string | null; safety_manager_role_label: string | null; safety_manager_reviewed_at: string | null; safety_manager_review_stale: boolean | null; rpic_name: string | null; rpic_role_label: string | null; rpic_accepted_at: string | null; rpic_acceptance_stale: boolean | null; faa_airspace_class: string | null; laanc_required: string | null; relevant_airport_heliport: string | null; nearby_airport_heliport?: string | null; known_airspace_restrictions: string | null; additional_authorization_required: string | null; nearest_hospital: string | null; emergency_facility_address: string | null; crew_briefed: boolean | null; controls_in_place: boolean | null; certified_at: string | null; hazard_entries: unknown; ppe_requirements: unknown; runoff_risk: boolean | null; containment_plan: string | null; water_body_proximity: boolean | null; secondary_containment_in_place: boolean | null; reclamation_method: string | null; reclamation_volume_estimate: number | string | null; disposal_vendor_name_contact: string | null; water_body_distance: number | string | null; water_body_type: string | null };
 type JobPacketPreflight = Record<string, unknown> & { status: string | null; notes?: string | null; checklist_states?: unknown; final_rpic_approval?: boolean | null };
 type JobPacketReadiness = OperationReadinessRecord & { rpic_name: string | null; approved_by_name: string | null; approved_by_user_id: string | null };
->>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
 /**
  * Purpose: Represents job packet photo data read, written, or rendered by the proposal pdf workflow.
@@ -1467,15 +1443,11 @@ function formatPhotoTimestamp(value: string | null) {
 }
 
 
-<<<<<<< HEAD
 /**
  * Computes build preflight rows for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function buildPreflightRows(preflight: JobPacketPreflight | null) {
-=======
 export function buildPreflightRows(preflight: JobPacketPreflight | null) {
->>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
   if (!preflight) return [['Status', 'Preflight checklist not started.']];
   return [['Status', clean(preflight.status) || 'Draft'], ...buildPreflightPacketRows(preflight)];
 }
@@ -1493,19 +1465,7 @@ function buildEnvironmentalRows(jha: JobPacketJha | null): Array<[string, string
   return [...(concern ? [['Environmental Considerations', categories.join(', ') || 'Mission-specific concern documented'] as [string, string]] : []), ...(clean(String(metadata.__environmentalConcernOther ?? '')) ? [['Other Environmental Condition', clean(String(metadata.__environmentalConcernOther))] as [string, string]] : []), ['Runoff Planning', jha.runoff_risk ? 'Documented as applicable' : 'Not marked applicable'], ['Containment Plan', clean(jha.containment_plan) || 'Not recorded'], ['Water Body Proximity', jha.water_body_proximity ? `Yes${jha.water_body_distance ? ` - ${jha.water_body_distance} feet` : ''}${jha.water_body_type ? ` (${jha.water_body_type})` : ''}` : 'Not marked applicable'], ['Secondary Containment', jha.secondary_containment_in_place ? 'In place' : 'Not recorded'], ['Reclamation Method', clean(jha.reclamation_method) || 'Not recorded'], ['Estimated Volume', jha.reclamation_volume_estimate ? `${jha.reclamation_volume_estimate} gallons` : 'Not recorded'], ['Vendor / Contact', clean(jha.disposal_vendor_name_contact) || 'Not recorded']];
 }
 
-<<<<<<< HEAD
-/**
- * Computes build packet placeholder proposal for the surrounding workflow.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
-function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, relevant_airport_heliport: null, known_airspace_restrictions: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_amount: null, estimated_duration: null, payment_terms: null, valid_until: null, created_at: null }; }
-/**
- * Computes build job packet storage file name for the surrounding workflow.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
-=======
-function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_rpic_id: null, converted_job_id: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, relevant_airport_heliport: null, known_airspace_restrictions: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_amount: null, estimated_duration: null, payment_terms: null, valid_until: null, created_at: null }; }
->>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
+function buildPacketPlaceholderProposal(job: JobPacketRecord): ProposalPdfRecord { return { id: job.source_proposal_id ?? job.id, organization_id: job.organization_id, user_id: job.user_id ?? '', proposal_number: job.source_proposal_number, proposal_name: job.name, client_name: job.client_name ?? null, contact_name: null, phone: null, email: null, service_type: job.service_type, site_address: job.site_address ?? job.location, description: null, deliverables: null, exclusions: null, proposed_rpic: null, proposed_rpic_id: null, converted_job_id: null, proposed_crew: null, proposed_aircraft: null, proposed_rpic_name: null, proposed_rpic_credentials: null, proposed_rpic_bio: null, airspace_class: null, relevant_airport_heliport: null, known_airspace_restrictions: null, laanc_required: null, additional_authorization_required: null, hazard: null, proposed_mitigation: null, hazard_assessment: [], proposal_equipment: [], proposal_personnel: [], proposal_amount: null, estimated_duration: null, payment_terms: null, valid_until: null, created_at: null }; }
 function buildJobPacketStorageFileName(job: JobPacketRecord, userId: string) { const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); return `job_packet_pdf-user_${sanitizeFileName(userId)}-${timestamp}-${crypto.randomUUID()}-${sanitizeFileName(job.name)}.pdf`; }
 /**
  * Computes build job packet display file name for the surrounding workflow.
@@ -1632,13 +1592,6 @@ async function loadLogoImage(organization: OrganizationSettings | null): Promise
   }
 }
 
-<<<<<<< HEAD
-/**
- * Renders the build executive summary interface and coordinates its user interactions.
- * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
- */
-function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: OrganizationSettings | null) {
-=======
 async function loadProposalOperationalPersonnel(proposal: ProposalPdfRecord): Promise<ProposalOperationalPersonnel[]> {
   return proposalOperationalPersonnel(proposal);
 }
@@ -1651,7 +1604,6 @@ function proposalOperationalPersonnel(proposal: ProposalPdfRecord): ProposalOper
 }
 
 function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: OrganizationSettings | null, personnelLanguage = buildProposalPersonnelLanguage(proposalOperationalPersonnel(proposal)), displayedRpicName?: string) {
->>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
   const operatorName = companyNameFor(organization);
   const contactName = clean(proposal.contact_name) || 'your team';
   const clientName = clean(proposal.client_name) || 'your organization';
@@ -1891,17 +1843,14 @@ function clean(value: string | null | undefined) {
   return value?.trim() ?? '';
 }
 
-<<<<<<< HEAD
-/**
- * Computes format date for the surrounding workflow.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
-=======
 function formatAttestationDateTime(value: string) {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
->>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
+/**
+ * Computes format date for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
 function formatDate(value: string | null | undefined) {
   return formatProposalDate(value, { month: '2-digit', day: '2-digit', year: 'numeric' });
 }

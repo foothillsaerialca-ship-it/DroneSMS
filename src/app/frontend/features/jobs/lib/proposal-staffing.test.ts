@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import test from 'node:test';
-import { normalizeProposalPersonnel } from './workflow-types.ts';
+import { normalizeProposalPersonnel, resolveProposalRpicBioSnapshot } from './workflow-types.ts';
 import { buildProposalPersonnelLanguage } from './proposal-language.ts';
 
 test('historical proposals and proposals with no crew normalize safely', () => {
@@ -37,4 +38,22 @@ test('migration defaults historical proposal staffing without rewriting old reco
   const migration = readFileSync('supabase/migrations/20260910000000_add_proposal_staffing.sql', 'utf8');
   assert.match(migration, /proposal_personnel jsonb not null default '\[\]'::jsonb/);
   assert.doesNotMatch(migration, /update public\.proposals/i);
+});
+
+test('unchanged RPIC preserves its saved bio when active Personnel data is unavailable', () => {
+  assert.equal(resolveProposalRpicBioSnapshot('rpic-1', 'Saved historical bio', 'rpic-1', undefined), 'Saved historical bio');
+  assert.equal(resolveProposalRpicBioSnapshot('rpic-1', 'Saved historical bio', 'rpic-1', null), 'Saved historical bio');
+});
+
+test('changing RPIC uses only the newly selected Personnel bio', () => {
+  assert.equal(resolveProposalRpicBioSnapshot('rpic-1', 'Old bio', 'rpic-2', 'New bio'), 'New bio');
+  assert.equal(resolveProposalRpicBioSnapshot('rpic-1', 'Old bio', 'rpic-2', null), null);
+  assert.equal(resolveProposalRpicBioSnapshot('rpic-1', 'Old bio', null, undefined), null);
+});
+
+test('tracked project files contain no unresolved merge conflict markers', () => {
+  const trackedFiles = execFileSync('git', ['ls-files'], { encoding: 'utf8' }).trim().split('\n')
+    .filter((file) => /^(src|supabase)\//.test(file) || /^(package|tsconfig|vite|postcss|tailwind)[^/]*\.(json|js|ts)$/.test(file));
+  const unresolved = trackedFiles.filter((file) => /^(<<<<<<<|=======|>>>>>>>)/m.test(readFileSync(file, 'utf8')));
+  assert.deepEqual(unresolved, []);
 });

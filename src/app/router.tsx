@@ -3,7 +3,7 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { Link, Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './frontend/shell';
 import { DashboardPage } from './frontend/features/dashboard/pages/dashboard-page';
 import { JobsPage } from './frontend/features/jobs/pages/jobs-page';
@@ -31,39 +31,6 @@ import { ForgotPasswordPage } from './frontend/features/auth/pages/forgot-passwo
 import { ResetPasswordPage } from './frontend/features/auth/pages/reset-password-page';
 import { AuthCallbackPage } from './frontend/features/auth/pages/auth-callback-page';
 import { CrewBriefingAcknowledgmentPage } from './frontend/features/jobs/pages/crew-briefing-acknowledgment-page';
-
-/**
- * Renders the landing interface and coordinates its user interactions.
- * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
- */
-function LandingPage() {
-  return (
-    <section className="mx-auto w-full max-w-xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-      <div className="space-y-4 text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-brand-700">Welcome to</p>
-        <h1 className="text-4xl font-bold tracking-tight text-slate-900">DroneSMS</h1>
-        <p className="mx-auto max-w-lg text-sm leading-6 text-slate-600">
-          A practical operational safety system for drone operators, helping teams identify hazards, document mitigations, capture evidence, generate operational records, and demonstrate due diligence throughout every stage of flight operations.
-        </p>
-      </div>
-
-      <div className="mt-8 grid gap-3 sm:grid-cols-2">
-        <Link
-          to="/login"
-          className="inline-flex items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-800"
-        >
-          Sign In
-        </Link>
-        <Link
-          to="/register"
-          className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
-        >
-          Register
-        </Link>
-      </div>
-    </section>
-  );
-}
 
 /**
  * Implements app router for this module.

@@ -82,6 +82,18 @@ export function normalizeProposalPersonnel(value: unknown): ProposalPersonnelAss
   });
 }
 
+/** Keeps an existing historical bio when its RPIC identity is unchanged. */
+export function resolveProposalRpicBioSnapshot(
+  savedRpicId: string | null | undefined,
+  savedBio: string | null | undefined,
+  selectedRpicId: string | null | undefined,
+  selectedPersonnelBio: string | null | undefined,
+) {
+  return savedRpicId && savedRpicId === selectedRpicId
+    ? savedBio?.trim() || null
+    : selectedPersonnelBio?.trim() || null;
+}
+
 /**
  * Converts untrusted proposal JSON into complete equipment snapshots.
  * Fallback/error behavior: non-arrays return an empty list; entries without both an ID and name are discarded and missing optional fields use empty/null defaults.
