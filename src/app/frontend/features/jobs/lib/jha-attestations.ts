@@ -10,12 +10,6 @@ export type OperationalJhaAttestations = {
   rpicAcceptanceStale?: boolean;
 };
 
-<<<<<<< HEAD
-/**
- * Implements operational role label for this module.
- * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
- */
-=======
 export type OperationalCompletionRequirements = {
   crewBriefed: boolean;
   controlsInPlace: boolean;
@@ -43,7 +37,6 @@ export function operationalAttestationStatus(timestamp: string | null, stale: bo
   return timestamp ? completedLabel : pendingLabel;
 }
 
->>>>>>> ba31bcb3390a51c22a598b340d1a6e7bc45bc1e7
 export function operationalRoleLabel(isSafetyManager: boolean, isRpic: boolean) {
   if (isSafetyManager && isRpic) return 'Safety Manager / RPIC';
   if (isSafetyManager) return 'Safety Manager';
