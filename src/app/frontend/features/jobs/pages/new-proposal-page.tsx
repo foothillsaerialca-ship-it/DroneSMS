@@ -25,9 +25,12 @@ import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@fro
 import { getProposalScopeDefaults, hasCustomizedProposalScope } from '@frontend/features/jobs/lib/proposal-scope';
 import {
   normalizeProposalEquipment,
+  normalizeProposalPersonnel,
+  proposalPersonnelRoles,
   proposalStatuses,
   serviceTypes,
-  type ProposalEquipmentAssignment
+  type ProposalEquipmentAssignment,
+  type ProposalPersonnelAssignment
 } from '@frontend/features/jobs/lib/workflow-types';
 /**
  * Purpose: Stores the shared airspace classes structure used by the new proposal page module.
@@ -145,6 +148,7 @@ type ProposalRecord = {
   additional_authorization_required: boolean | null;
   hazard_assessment: unknown;
   proposal_equipment: unknown;
+  proposal_personnel: unknown;
   proposal_amount: number | string | null;
   estimated_duration: string | null;
   payment_terms: string | null;
@@ -192,6 +196,7 @@ type ProposedRpic = {
   part_107_expiration_date: string | null;
   certifications_summary: string | null;
   professional_bio: string | null;
+  training_expiration_date: string | null;
 };
 
 /**
@@ -331,6 +336,7 @@ export function NewProposalPage() {
   const [personnel, setPersonnel] = useState<ProposedRpic[]>([]);
   const [equipment, setEquipment] = useState<RepositoryEquipment[]>([]);
   const [selectedEquipment, setSelectedEquipment] = useState<ProposalEquipmentAssignment[]>([]);
+  const [selectedPersonnel, setSelectedPersonnel] = useState<ProposalPersonnelAssignment[]>([]);
   const [loadedProposal, setLoadedProposal] = useState<ProposalRecord | null>(null);
   const [isLoadingProposal, setIsLoadingProposal] = useState(Boolean(proposalId));
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
@@ -384,7 +390,7 @@ export function NewProposalPage() {
       try {
         const { data, error: personnelError } = await supabase
           .from('personnel')
-          .select('id, full_name, role, status, part_107_certificate_number, part_107_expiration_date, certifications_summary, professional_bio')
+          .select('id, full_name, role, status, part_107_certificate_number, part_107_expiration_date, certifications_summary, professional_bio, training_expiration_date')
           .eq('status', 'Active')
           .order('full_name', { ascending: true });
 
@@ -435,7 +441,7 @@ export function NewProposalPage() {
       try {
         const { data, error: proposalLoadError } = await supabase
           .from('proposals')
-          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, deliverables, exclusions, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required, hazard_assessment, proposal_equipment, proposal_amount, estimated_duration, payment_terms, valid_until, status')
+          .select('id, organization_id, user_id, client_name, contact_name, phone, email, proposal_number, proposal_name, service_type, site_address, description, deliverables, exclusions, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required, hazard_assessment, proposal_equipment, proposal_personnel, proposal_amount, estimated_duration, payment_terms, valid_until, status')
           .eq('id', proposalId)
           .is('deleted_at', null)
           .single();
@@ -448,6 +454,8 @@ export function NewProposalPage() {
           setFormData(mapProposalToFormState(proposal));
           setSelectedHazards(normalizeSelectedHazards(proposal.hazard_assessment));
           setSelectedEquipment(normalizeProposalEquipment(proposal.proposal_equipment));
+          const staffing = normalizeProposalPersonnel(proposal.proposal_personnel);
+          setSelectedPersonnel(staffing.length ? staffing : proposal.proposed_rpic_id && proposal.proposed_rpic_name ? [{ personnel_id: proposal.proposed_rpic_id, personnel_name: proposal.proposed_rpic_name, proposed_role: 'RPIC', qualifications_summary: proposal.proposed_rpic_credentials }] : []);
         }
       } catch (loadError) {
         if (isMounted) setError(getErrorMessage(loadError));
@@ -513,6 +521,19 @@ export function NewProposalPage() {
   }, [formData.proposedRpicId, isEditMode, loadedProposal, rpicCredentials, selectedRpic]);
 
   const isFormDisabled = isSaving || isLoadingProposal;
+
+  function addProposedPerson(personnelId: string) {
+    const person = personnel.find((item) => item.id === personnelId);
+    if (!person || selectedPersonnel.some((item) => item.personnel_id === personnelId)) return;
+    const qualifications = buildFallbackCredentials(person) || (person.training_expiration_date ? `Training expires ${person.training_expiration_date}` : null);
+    setSelectedPersonnel((current) => [...current, { personnel_id: person.id, personnel_name: person.full_name, proposed_role: current.some((item) => item.proposed_role === 'RPIC') ? 'Crew Member' : 'RPIC', qualifications_summary: qualifications }]);
+  }
+
+  function updateProposedRole(personnelId: string, role: string) {
+    setSelectedPersonnel((current) => current.map((item) => item.personnel_id === personnelId
+      ? { ...item, proposed_role: role }
+      : role === 'RPIC' && item.proposed_role === 'RPIC' ? { ...item, proposed_role: 'Crew Member' } : item));
+  }
 
   /**
    * Renders the update field interface and coordinates its user interactions.
@@ -732,25 +753,14 @@ export function NewProposalPage() {
       }
 
       const summarizedHazards = summarizeSelectedHazards(selectedHazards);
-      const unchangedExistingRpic =
-        isEditMode &&
-        loadedProposal &&
-        formData.proposedRpicId &&
-        formData.proposedRpicId === (loadedProposal.proposed_rpic_id ?? '') &&
-        !selectedRpic;
-      const rpicSnapshot = unchangedExistingRpic
-        ? {
-            id: loadedProposal.proposed_rpic_id,
-            full_name: loadedProposal.proposed_rpic_name,
-            credentials: loadedProposal.proposed_rpic_credentials,
-            professional_bio: loadedProposal.proposed_rpic_bio
-          }
-        : {
-            id: selectedRpic?.id ?? null,
-            full_name: selectedRpic?.full_name ?? null,
-            credentials: buildFallbackCredentials(selectedRpic),
-            professional_bio: selectedRpic?.professional_bio?.trim() || null
-          };
+      const proposedRpicAssignment = selectedPersonnel.find((assignment) => assignment.proposed_role === 'RPIC');
+      const proposedRpicRecord = personnel.find((person) => person.id === proposedRpicAssignment?.personnel_id);
+      const rpicSnapshot = {
+        id: proposedRpicAssignment?.personnel_id ?? null,
+        full_name: proposedRpicAssignment?.personnel_name ?? null,
+        credentials: proposedRpicAssignment?.qualifications_summary ?? null,
+        professional_bio: proposedRpicRecord?.professional_bio?.trim() || null
+      };
 
       const proposalPayload = {
         client_name: formData.clientName.trim(),
@@ -785,6 +795,7 @@ export function NewProposalPage() {
           status,
           purpose: purpose.trim()
         })),
+        proposal_personnel: selectedPersonnel,
         proposal_amount: formData.proposalAmount ? Number(formData.proposalAmount) : null,
         estimated_duration: formData.estimatedDuration.trim() || null,
         payment_terms: formData.paymentTerms.trim() || null,
@@ -879,17 +890,7 @@ export function NewProposalPage() {
           <TextAreaField label="Exclusions" value={formData.exclusions} onChange={(value) => updateField('exclusions', value)} disabled={isFormDisabled} helperText="Clarify work, services, or responsibilities not included in this proposal." />
         </FormSection>
 
-        <FormSection title="Proposed RPIC">
-          <PersonnelSelectField
-            label="Proposed RPIC"
-            value={formData.proposedRpicId}
-            personnel={personnel}
-            onChange={(value) => updateField('proposedRpicId', value)}
-            disabled={isFormDisabled || isLoadingPersonnel}
-            currentSnapshot={displayedRpicSnapshot}
-          />
-          <RpicSnapshotCard snapshot={displayedRpicSnapshot} isLoading={isLoadingPersonnel} />
-        </FormSection>
+        <ProposedCrewSelection personnel={personnel} selected={selectedPersonnel} disabled={isFormDisabled || isLoadingPersonnel} isLoading={isLoadingPersonnel} onAdd={addProposedPerson} onRemove={(id) => setSelectedPersonnel((current) => current.filter((item) => item.personnel_id !== id))} onRoleChange={updateProposedRole} />
 
         <EquipmentSelection
           equipment={equipment}
@@ -1008,6 +1009,40 @@ function ConfirmationDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+function ProposedCrewSelection({ personnel, selected, disabled, isLoading, onAdd, onRemove, onRoleChange }: {
+  personnel: ProposedRpic[];
+  selected: ProposalPersonnelAssignment[];
+  disabled: boolean;
+  isLoading: boolean;
+  onAdd: (id: string) => void;
+  onRemove: (id: string) => void;
+  onRoleChange: (id: string, role: string) => void;
+}) {
+  const selectedIds = new Set(selected.map((item) => item.personnel_id));
+  return (
+    <fieldset className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <legend className="px-1 text-base font-semibold text-brand-900">Proposed Crew</legend>
+      <p className="mt-2 text-sm text-slate-600">Optional planning-stage staffing. Final operational assignments and authorizations are confirmed after conversion.</p>
+      <label className="mt-4 block text-sm font-medium text-slate-700">
+        Add from Personnel
+        <select className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value="" disabled={disabled} onChange={(event) => onAdd(event.target.value)}>
+          <option value="">{isLoading ? 'Loading personnel…' : 'Select a person'}</option>
+          {personnel.filter((person) => !selectedIds.has(person.id)).map((person) => <option key={person.id} value={person.id}>{person.full_name} — {person.role}</option>)}
+        </select>
+      </label>
+      <div className="mt-4 space-y-3">
+        {selected.length === 0 ? <p className="text-sm text-slate-500">No proposed crew selected. This proposal will retain solo wording.</p> : selected.map((assignment) => (
+          <div key={assignment.personnel_id} className="rounded-lg border border-slate-200 p-3">
+            <div className="flex items-start justify-between gap-3"><strong className="text-sm text-brand-900">{assignment.personnel_name}</strong><button type="button" className="text-sm font-medium text-red-700" disabled={disabled} onClick={() => onRemove(assignment.personnel_id)}>Remove</button></div>
+            <label className="mt-2 block text-sm text-slate-700">Proposed role<select className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={assignment.proposed_role} disabled={disabled} onChange={(event) => onRoleChange(assignment.personnel_id, event.target.value)}>{proposalPersonnelRoles.map((role) => <option key={role}>{role}</option>)}</select></label>
+            <p className="mt-2 text-xs text-slate-500"><span className="font-medium">Qualifications / certifications (read-only):</span> {assignment.qualifications_summary || 'None recorded in Personnel.'}</p>
+          </div>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 

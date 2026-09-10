@@ -5,7 +5,8 @@
  */
 import { supabase } from '@frontend/lib/supabase';
 import {
-  normalizeProposalEquipment
+  normalizeProposalEquipment,
+  normalizeProposalPersonnel
 } from '@frontend/features/jobs/lib/workflow-types';
 import { saveGeneratedDocument } from '@frontend/features/jobs/lib/generated-documents';
 import { buildReadinessPacketRows, resolveReadinessApproverIdentity, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
@@ -105,6 +106,7 @@ type ProposalPdfRecord = {
   proposed_mitigation: string | null;
   hazard_assessment: unknown;
   proposal_equipment: unknown;
+  proposal_personnel: unknown;
   proposal_amount: number | string | null;
   estimated_duration: string | null;
   payment_terms: string | null;
@@ -509,10 +511,10 @@ class ProposalPdfRenderer {
     this.table(
       [
         ['Role', 'Assigned Individual', 'Credentials / Notes'],
-        ['Remote Pilot in Command', displayedRpic.name || 'To be assigned', displayedRpic.usesProposalSnapshot ? clean(this.proposal.proposed_rpic_credentials) || 'Credentials verified before operation' : 'Credentials verified before operation'],
+        ['Remote Pilot in Command', displayedRpic.name || 'To be assigned', this.operationalPersonnel.find((assignment) => assignment.role === 'RPIC')?.qualificationsSummary || clean(this.proposal.proposed_rpic_credentials) || 'Credentials verified before operation'],
         ...this.operationalPersonnel
           .filter((assignment) => assignment.role !== 'RPIC' && assignment.name)
-          .map((assignment) => [clean(assignment.role) || 'Operational Support', clean(assignment.name), 'Assigned for site support as required']),
+          .map((assignment) => [clean(assignment.role) || 'Operational Support', clean(assignment.name), clean(assignment.qualificationsSummary) || 'No qualifications recorded']),
       ],
       [130, 170, 187],
     );
@@ -1586,7 +1588,7 @@ async function retainProposalPdf(
 async function loadProposalForPdf(proposalId: string) {
   const { data, error } = await supabase
     .from('proposals')
-    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, deliverables, exclusions, proposed_rpic, proposed_rpic_id, converted_job_id, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_amount, estimated_duration, payment_terms, valid_until, created_at')
+    .select('id, organization_id, user_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, description, deliverables, exclusions, proposed_rpic, proposed_rpic_id, converted_job_id, proposed_crew, proposed_aircraft, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required, hazard, proposed_mitigation, hazard_assessment, proposal_equipment, proposal_personnel, proposal_amount, estimated_duration, payment_terms, valid_until, created_at')
     .eq('id', proposalId)
     .is('deleted_at', null)
     .single();
@@ -1638,22 +1640,12 @@ async function loadLogoImage(organization: OrganizationSettings | null): Promise
 function buildExecutiveSummary(proposal: ProposalPdfRecord, organization: OrganizationSettings | null) {
 =======
 async function loadProposalOperationalPersonnel(proposal: ProposalPdfRecord): Promise<ProposalOperationalPersonnel[]> {
-  if (!proposal.converted_job_id) return proposalOperationalPersonnel(proposal);
-
-  const { data, error } = await supabase
-    .from('job_personnel')
-    .select('assigned_role, personnel:personnel_id(id, full_name)')
-    .eq('job_id', proposal.converted_job_id);
-  if (error) return proposalOperationalPersonnel(proposal);
-
-  const assignments = (data ?? []).map((assignment) => {
-    const personnel = Array.isArray(assignment.personnel) ? assignment.personnel[0] : assignment.personnel;
-    return { personnelId: personnel?.id, name: personnel?.full_name, role: assignment.assigned_role };
-  });
-  return assignments.length ? assignments : proposalOperationalPersonnel(proposal);
+  return proposalOperationalPersonnel(proposal);
 }
 
 function proposalOperationalPersonnel(proposal: ProposalPdfRecord): ProposalOperationalPersonnel[] {
+  const staffing = normalizeProposalPersonnel(proposal.proposal_personnel);
+  if (staffing.length) return staffing.map((assignment) => ({ personnelId: assignment.personnel_id, name: assignment.personnel_name, role: assignment.proposed_role, qualificationsSummary: assignment.qualifications_summary }));
   const name = clean(proposal.proposed_rpic_name) || clean(proposal.proposed_rpic);
   return proposal.proposed_rpic_id || name ? [{ personnelId: proposal.proposed_rpic_id, name, role: 'RPIC' }] : [];
 }

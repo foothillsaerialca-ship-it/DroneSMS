@@ -9,12 +9,15 @@ export const OPERATIONAL_PERSONNEL_ROLES = new Set([
   'Visual Observer',
   'Payload Operator',
   'Ground Crew',
+  'Crew Member',
+  'Safety Support',
 ]);
 
 export type ProposalOperationalPersonnel = {
   personnelId?: string | null;
   name?: string | null;
   role?: string | null;
+  qualificationsSummary?: string | null;
 };
 
 export function resolveProposalRpic(

@@ -56,6 +56,32 @@ export type ProposalEquipmentAssignment = {
   purpose: string;
 };
 
+export const proposalPersonnelRoles = ['RPIC', 'Pilot', 'Visual Observer', 'Payload Operator', 'Ground Crew', 'Crew Member', 'Safety Support', 'Other'] as const;
+
+export type ProposalPersonnelAssignment = {
+  personnel_id: string;
+  personnel_name: string;
+  proposed_role: string;
+  qualifications_summary: string | null;
+};
+
+/** Normalizes the immutable-at-conversion personnel snapshots stored on proposals. */
+export function normalizeProposalPersonnel(value: unknown): ProposalPersonnelAssignment[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Partial<ProposalPersonnelAssignment>;
+    const personnel_id = typeof record.personnel_id === 'string' ? record.personnel_id.trim() : '';
+    const personnel_name = typeof record.personnel_name === 'string' ? record.personnel_name.trim() : '';
+    const proposed_role = typeof record.proposed_role === 'string' ? record.proposed_role.trim() : '';
+    const key = `${personnel_id}:${proposed_role}`;
+    if (!personnel_id || !personnel_name || !proposed_role || seen.has(key)) return [];
+    seen.add(key);
+    return [{ personnel_id, personnel_name, proposed_role, qualifications_summary: typeof record.qualifications_summary === 'string' && record.qualifications_summary.trim() ? record.qualifications_summary.trim() : null }];
+  });
+}
+
 /**
  * Converts untrusted proposal JSON into complete equipment snapshots.
  * Fallback/error behavior: non-arrays return an empty list; entries without both an ID and name are discarded and missing optional fields use empty/null defaults.
