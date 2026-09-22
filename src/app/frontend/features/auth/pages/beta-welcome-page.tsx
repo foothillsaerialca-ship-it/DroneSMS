@@ -4,7 +4,7 @@
  * Known limitation: The page relies on the configured auth provider and browser navigation state.
  */
 import { useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/use-auth';
 import {
   hasStartedBetaAuthAttempt,
@@ -16,6 +16,7 @@ import { LoginPage } from './login-page';
 export function BetaWelcomePage() {
   const { status } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [hasStartedSignIn, setHasStartedSignIn] = useState(hasStartedBetaAuthAttempt);
 
   if (status === 'loading') {
@@ -27,7 +28,12 @@ export function BetaWelcomePage() {
   }
 
   if (status === 'authenticated') {
-    return <Navigate to="/dashboard" replace />;
+    if (location.pathname === '/login') return <LoginPage />;
+    const requestedPath = (location.state as { from?: unknown } | null)?.from;
+    const destination = typeof requestedPath === 'string' && requestedPath.startsWith('/') && !requestedPath.startsWith('//')
+      ? requestedPath
+      : '/dashboard';
+    return <Navigate to={destination} replace />;
   }
 
   if (!isBetaWelcomeEnabled || hasStartedSignIn) {

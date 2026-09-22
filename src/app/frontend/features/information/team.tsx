@@ -3,9 +3,9 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { Link } from 'react-router-dom';
-import placeholderImage from '@backend/informaton-images/placeholder.svg';
-import nicholasImage from '@backend/informaton-images/nblackson.jpeg';
+import { Link } from "react-router-dom";
+import placeholderImage from "@backend/informaton-images/placeholder.svg";
+import nicholasImage from "@backend/informaton-images/nblackson.jpeg";
 
 /**
  * Purpose: Defines the team member data contract used by the team module.
@@ -30,24 +30,27 @@ type TeamMember = {
  */
 const teamMembers: TeamMember[] = [
   {
-    name: 'Bryce Finger',
-    role: 'FOUNDER',
-    bio: 'Bryce brings a background spanning aviation safety, occupational safety, regulatory operations, and military leadership to DroneSMS. An FAA certificated Remote Pilot and U.S. Army veteran, he holds a B.S. in Technical Management with a focus in Occupational Safety and Health and Aviation Safety from Embry Riddle Aeronautical University.\n\nDroneSMS grew from his experience exploring commercial UAS operations and recognizing a recurring gap: small operators had access to capable aircraft, but often lacked the structured safety and operational systems common throughout traditional aviation. He founded DroneSMS to help close that gap by translating established Safety Management System principles into practical tools built specifically for commercial drone operations.',
-    initials: 'BF',
+    name: "Bryce Finger",
+    role: "FOUNDER",
+    bio: "Bryce brings a background spanning aviation safety, occupational safety, regulatory operations, and military leadership to DroneSMS. An FAA certificated Remote Pilot and U.S. Army veteran, he holds a B.S. in Technical Management with a focus in Occupational Safety and Health and Aviation Safety from Embry Riddle Aeronautical University.\n\nDroneSMS grew from his experience exploring commercial UAS operations and recognizing a recurring gap: small operators had access to capable aircraft, but often lacked the structured safety and operational systems common throughout traditional aviation. He founded DroneSMS to help close that gap by translating established Safety Management System principles into practical tools built specifically for commercial drone operations.",
+    initials: "BF",
     image: placeholderImage,
-    interests: ['Aviation', 'Drones', 'Safety', 'Family'],
-    links: { github: 'Placeholder' }
+    interests: ["Aviation", "Drones", "Safety", "Family"],
+    links: { github: "Placeholder" },
   },
   {
-    name: 'Nicholas Blackson',
-    role: 'Lead Developer',
-    bio: 'Nicholas brings a deep appreciation for robust systems and practical engineering, often connecting the discipline of embedded work with the flexibility of modern web applications.',
-    initials: 'NB',
+    name: "Nicholas Blackson",
+    role: "Lead Developer",
+    bio: "Nicholas brings a deep appreciation for robust systems and practical engineering, often connecting the discipline of embedded work with the flexibility of modern web applications.",
+    initials: "NB",
     image: nicholasImage,
-    pronouns: 'He/Him/His',
-    interests: ['Hiking', 'Cooking', 'Traveling', 'Family'],
-    links: { github: 'http://github.com/TwoFang173', linkedin: 'http://www.linkedin.com/in/nblackson' }
-  }
+    pronouns: "He/Him/His",
+    interests: ["Hiking", "Cooking", "Traveling", "Family"],
+    links: {
+      github: "http://github.com/TwoFang173",
+      linkedin: "http://www.linkedin.com/in/nblackson",
+    },
+  },
 ];
 
 /**
@@ -83,16 +86,32 @@ export function AboutPage() {
     <section className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="max-w-3xl space-y-3">
-          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-brand-700">ABOUT DRONESMS</p>
-          <h1 className="text-3xl font-semibold tracking-tight text-brand-900">Built to bring aviation-grade safety structure to commercial drone operations.</h1>
+          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-brand-700">
+            ABOUT DRONESMS
+          </p>
+          <h1 className="text-3xl font-semibold tracking-tight text-brand-900">
+            Built to bring aviation-grade safety structure to commercial drone
+            operations.
+          </h1>
           <p className="text-sm leading-7 text-slate-600">
-            DroneSMS is a Safety Management System and operational documentation platform built for commercial UAS operators. It brings safety planning, risk management, operational workflows, and job documentation together in one structured system, from proposal and preflight planning through execution and closeout.
+            DroneSMS is a Safety Management System and operational documentation
+            platform built for commercial UAS operators. It brings safety
+            planning, risk management, operational workflows, and job
+            documentation together in one structured system, from proposal and
+            preflight planning through execution and closeout.
           </p>
           <p className="text-sm leading-7 text-slate-600">
-            Built around the four pillars of Safety Management Systems: Safety Policy, Safety Risk Management, Safety Assurance, and Safety Promotion, DroneSMS is designed to help operators build repeatable processes, document their decisions, and demonstrate a professional approach to safety and compliance.
+            Built around the four pillars of Safety Management Systems: Safety
+            Policy, Safety Risk Management, Safety Assurance, and Safety
+            Promotion, DroneSMS is designed to help operators build repeatable
+            processes, document their decisions, and demonstrate a professional
+            approach to safety and compliance.
           </p>
           <p className="text-sm leading-7 text-slate-600">
-            DroneSMS was created to make the principles that have shaped safety throughout commercial aviation practical and accessible for the growing UAS industry, giving operators a structured foundation they can build on as their operations grow.
+            DroneSMS was created to make the principles that have shaped safety
+            throughout commercial aviation practical and accessible for the
+            growing UAS industry, giving operators a structured foundation they
+            can build on as their operations grow.
           </p>
         </div>
       </div>
@@ -100,21 +119,37 @@ export function AboutPage() {
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-brand-900">Meet the team</h2>
-            <p className="mt-1 text-sm text-slate-600">The people behind the platform are shaping it around thoughtful operations, dependable systems, and a strong sense of collaboration.</p>
+            <h2 className="text-xl font-semibold text-brand-900">
+              Meet the team
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              The people behind the platform are shaping it around thoughtful
+              operations, dependable systems, and a strong sense of
+              collaboration.
+            </p>
           </div>
-          <Link to="/dashboard" className="text-sm font-semibold text-brand-700 transition hover:text-brand-900">
+          <Link
+            to="/dashboard"
+            className="text-sm font-semibold text-brand-700 transition hover:text-brand-900"
+          >
             Return to dashboard
           </Link>
         </div>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           {teamMembers.map((member) => (
-            <article key={member.name} className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <article
+              key={member.name}
+              className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-brand-700">{member.role}</p>
-                  <h3 className="mt-1 text-lg font-semibold text-brand-900">{member.name}</h3>
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-brand-700">
+                    {member.role}
+                  </p>
+                  <h3 className="mt-1 text-lg font-semibold text-brand-900">
+                    {member.name}
+                  </h3>
                 </div>
                 <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-700 text-sm font-bold text-white">
                   {member.initials}
@@ -126,20 +161,31 @@ export function AboutPage() {
                   <img
                     src={member.image}
                     alt={member.name}
+                    width={80}
+                    height={80}
+                    loading="lazy"
+                    decoding="async"
                     className="h-20 w-20 rounded-full border border-slate-200 object-cover shadow-sm"
                   />
                 ) : null}
-                <p className="whitespace-pre-line text-sm leading-7 text-slate-700">{member.bio}</p>
+                <p className="whitespace-pre-line text-sm leading-7 text-slate-700">
+                  {member.bio}
+                </p>
               </div>
 
               {member.pronouns ? (
-                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Pronouns • {member.pronouns}</p>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Pronouns • {member.pronouns}
+                </p>
               ) : null}
 
               {member.interests.length ? (
                 <div className="mt-4 flex flex-wrap gap-2">
                   {member.interests.map((interest) => (
-                    <span key={interest} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+                    <span
+                      key={interest}
+                      className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200"
+                    >
                       {interest}
                     </span>
                   ))}

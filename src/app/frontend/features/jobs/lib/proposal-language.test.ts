@@ -80,7 +80,7 @@ test('live personnel without an RPIC does not mix in the historical RPIC', () =>
 test('proposal sections remain intact and completed-record terminology is unchanged', () => {
   const source = readFileSync(new URL('./proposal-pdf.ts', import.meta.url), 'utf8');
   for (const section of ['EXECUTIVE SUMMARY', 'SCOPE OF WORK', 'PERSONNEL', 'EQUIPMENT', 'PRELIMINARY HAZARD ASSESSMENT', 'AIRSPACE REVIEW', 'PRICING', 'PROJECT ASSUMPTIONS & SAFETY CONDITIONS', 'ACCEPTANCE']) assert.ok(source.includes(section));
-  assert.match(source, /renderer\.section\('CREW ASSIGNMENT'\)/);
-  assert.match(source, /renderer\.section\('EMERGENCY PLANNING \/ CREW BRIEFING'\)/);
+  assert.match(source, /renderer\.section\(["']CREW ASSIGNMENT["']\)/);
+  assert.match(source, /renderer\.section\(["']EMERGENCY PLANNING \/ CREW BRIEFING["']\)/);
   assert.match(source, /Operations may be delayed, modified, or stopped when safety or quality conditions require it/);
 });

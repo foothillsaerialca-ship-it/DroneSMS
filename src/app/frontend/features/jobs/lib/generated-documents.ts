@@ -4,8 +4,8 @@
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
 import { supabase } from '@frontend/lib/supabase';
-
-export const generatedDocumentsBucket = 'generated-documents';
+import { createFormSnapshot } from './form-snapshot';
+export { createFormSnapshot } from './form-snapshot';
 
 /**
  * Purpose: Defines the generated document type data contract used by the generated documents module.
@@ -49,8 +49,9 @@ export type GeneratedDocumentRecord = {
   archived_by_user_id: string | null;
   file_name: string | null;
   display_file_name: string | null;
-  storage_path: string;
   file_size: number | null;
+  form_data: Record<string, unknown>;
+  snapshot_id?: string | null;
   generated_at: string;
   created_at: string;
 };
@@ -122,8 +123,10 @@ export async function loadGeneratedDocuments({
 
   let query = supabase
     .from('generated_documents')
+    // Snapshot JSON is normalized once per record revision. The legacy
+    // form_data column remains selected during rolling migration deployment.
     .select(
-      'id, organization_id, document_type, record_type, record_id, generated_by_user_id, archived_at, archived_by_user_id, file_name, display_file_name, storage_path, file_size, generated_at, created_at',
+      'id, organization_id, document_type, record_type, record_id, generated_by_user_id, archived_at, archived_by_user_id, file_name, display_file_name, file_size, form_data, snapshot_id, snapshot:generated_document_snapshots(form_data), generated_at, created_at'
     )
     .eq('record_type', recordType)
     .in('record_id', recordIds)
@@ -136,7 +139,13 @@ export async function loadGeneratedDocuments({
   const { data, error } = await query;
 
   if (error) throw error;
-  return (data ?? []) as GeneratedDocumentRecord[];
+  return (data ?? []).map((row) => {
+    const snapshot = (row as { snapshot?: { form_data?: Record<string, unknown> } | null }).snapshot;
+    return {
+      ...row,
+      form_data: snapshot?.form_data ?? (row.form_data as Record<string, unknown> | null) ?? {}
+    } as GeneratedDocumentRecord;
+  });
 }
 
 /**
@@ -144,47 +153,11 @@ export async function loadGeneratedDocuments({
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
 export function getGeneratedDocumentFileName(document: GeneratedDocumentRecord) {
-  const storageFileName = document.storage_path.split('/').pop();
   return (
     document.display_file_name ||
     document.file_name ||
-    storageFileName ||
     'generated-document.pdf'
   );
-}
-
-/**
- * Performs open generated document for the surrounding workflow.
- * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
- */
-export async function openGeneratedDocument(document: GeneratedDocumentRecord) {
-  const { data, error } = await supabase.storage
-    .from(generatedDocumentsBucket)
-    .createSignedUrl(document.storage_path, 60 * 10, { download: false });
-
-  if (error) throw error;
-  window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
-}
-
-/**
- * Performs download generated document for the surrounding workflow.
- * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
- */
-export async function downloadGeneratedDocument(document: GeneratedDocumentRecord) {
-  const { data, error } = await supabase.storage
-    .from(generatedDocumentsBucket)
-    .download(document.storage_path);
-
-  if (error) throw error;
-
-  const url = URL.createObjectURL(data);
-  const link = window.document.createElement('a');
-  link.href = url;
-  link.download = getGeneratedDocumentFileName(document);
-  window.document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
 }
 
 /**
@@ -201,12 +174,13 @@ type SaveGeneratedDocumentInput = {
   generatedByUserId: string;
   fileName: string;
   displayFileName?: string;
-  storagePath: string;
+  formData: Record<string, unknown>;
 };
+
 
 /**
  * Performs save generated document for the surrounding workflow.
- * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
+ * Fallback/error behavior: Database or authentication failures are returned or thrown to the caller for user-visible handling; the PDF blob is only used to record its local generation size.
  */
 export async function saveGeneratedDocument({
   blob,
@@ -217,18 +191,8 @@ export async function saveGeneratedDocument({
   generatedByUserId,
   fileName,
   displayFileName,
-  storagePath,
+  formData,
 }: SaveGeneratedDocumentInput) {
-  const { error: uploadError } = await supabase.storage
-    .from(generatedDocumentsBucket)
-    .upload(storagePath, blob, {
-      cacheControl: '31536000',
-      contentType: 'application/pdf',
-      upsert: false,
-    });
-
-  if (uploadError) throw uploadError;
-
   const { error: insertError } = await supabase
     .from('generated_documents')
     .insert({
@@ -239,8 +203,9 @@ export async function saveGeneratedDocument({
       generated_by_user_id: generatedByUserId,
       file_name: fileName,
       display_file_name: displayFileName ?? null,
-      storage_path: storagePath,
+      storage_path: null,
       file_size: blob.size,
+      form_data: createFormSnapshot(formData),
       generated_at: new Date().toISOString(),
     });
 

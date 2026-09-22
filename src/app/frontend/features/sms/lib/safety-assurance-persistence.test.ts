@@ -12,8 +12,8 @@ const closeoutPage = readFileSync(new URL('../../jobs/pages/job-file-hub-page.ts
 const assuranceArea = readFileSync(new URL('../components/safety-assurance-area.tsx', import.meta.url), 'utf8');
 
 test('closeout and assurance are persisted by one transactional database function', () => {
-  assert.match(closeoutPage, /rpc\('save_operation_closeout_with_assurance'/);
-  assert.doesNotMatch(closeoutPage, /from\('job_operation_closeouts'\)\s*\.upsert/);
+  assert.match(closeoutPage, /rpc\(\s*["']save_operation_closeout_with_assurance["']/);
+  assert.doesNotMatch(closeoutPage, /from\(["']job_operation_closeouts["']\)\s*\.upsert/);
   assert.match(migration, /insert into public\.job_operation_closeouts[\s\S]*insert into public\.safety_assurance_reviews/);
 });
 
@@ -25,9 +25,9 @@ test('a replacement makes every prior Open review non-actionable without deletin
 });
 
 test('review action state resets both when switching and after completion', () => {
-  assert.match(assuranceArea, /setActionType\('No further action'\);setActionReference\(''\)/);
-  assert.match(assuranceArea, /setSelectedId\(record\.id\);resetActionState\(record\)/);
-  assert.match(assuranceArea, /setSelectedId\(''\);resetActionState\(\)/);
+  assert.match(assuranceArea, /setActionType\(["']No further action["']\);\s*setActionReference\(["']["']\)/);
+  assert.match(assuranceArea, /setSelectedId\(record\.id\);\s*resetActionState\(record\)/);
+  assert.match(assuranceArea, /setSelectedId\(["']["']\);\s*resetActionState\(\)/);
 });
 
 test('evidence has no direct insert or update grant and completion is narrowly controlled', () => {

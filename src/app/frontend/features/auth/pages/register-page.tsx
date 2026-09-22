@@ -3,14 +3,18 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { type FormEvent, useState, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { supabase, isSupabaseConfigured } from '@frontend/lib/supabase';
+import { type FormEvent, useState, useMemo, useCallback } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { supabase, isSupabaseConfigured } from "@frontend/lib/supabase";
 import {
   validatePasswordRequirements,
   areAllRequirementsMet,
-} from '@frontend/lib/password-utils';
-import { friendlyAuthError, getAppUrl } from '../lib/auth-helpers';
+} from "@frontend/lib/password-utils";
+import { friendlyAuthError, getAppUrl } from "../lib/auth-helpers";
+import {
+  CaptchaChallenge,
+  captchaSiteKey,
+} from "../components/captcha-challenge";
 
 /**
  * Renders the register interface and coordinates its user interactions.
@@ -18,24 +22,26 @@ import { friendlyAuthError, getAppUrl } from '../lib/auth-helpers';
  */
 export function RegisterPage() {
   const navigate = useNavigate();
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
   const configured = isSupabaseConfigured();
+  const captchaError = useCallback((message: string) => setError(message), []);
 
   const passwordRequirements = useMemo(
     () => validatePasswordRequirements(password),
-    [password]
+    [password],
   );
 
   const allRequirementsMet = useMemo(
     () => areAllRequirementsMet(passwordRequirements),
-    [passwordRequirements]
+    [passwordRequirements],
   );
 
   const passwordsMatch = password === confirmPassword && password.length > 0;
@@ -48,7 +54,9 @@ export function RegisterPage() {
     event.preventDefault();
 
     if (!configured) {
-      setError('Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.');
+      setError(
+        "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.",
+      );
       return;
     }
 
@@ -56,17 +64,21 @@ export function RegisterPage() {
     const trimmedLastName = lastName.trim();
 
     if (!trimmedFirstName || !trimmedLastName || !email.trim() || !password) {
-      setError('First name, last name, email, and password are required.');
+      setError("First name, last name, email, and password are required.");
       return;
     }
 
     if (!allRequirementsMet) {
-      setError('Password does not meet all requirements.');
+      setError("Password does not meet all requirements.");
       return;
     }
 
     if (!passwordsMatch) {
-      setError('Passwords do not match.');
+      setError("Passwords do not match.");
+      return;
+    }
+    if (captchaSiteKey && !captchaToken) {
+      setError("Complete the abuse-protection challenge.");
       return;
     }
 
@@ -75,41 +87,52 @@ export function RegisterPage() {
     setIsSubmitting(true);
 
     try {
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          emailRedirectTo: getAppUrl('/auth/callback'),
-          data: {
-            first_name: trimmedFirstName,
-            last_name: trimmedLastName
-          }
-        }
-      });
+      const { data: authData, error: signUpError } = await supabase.auth.signUp(
+        {
+          email: email.trim(),
+          password,
+          options: {
+            emailRedirectTo: getAppUrl("/auth/callback"),
+            captchaToken: captchaToken || undefined,
+            data: {
+              first_name: trimmedFirstName,
+              last_name: trimmedLastName,
+            },
+          },
+        },
+      );
 
       if (signUpError) throw signUpError;
-      if (!authData.user?.id) throw new Error('Signup succeeded but user ID was not returned.');
+      if (!authData.user?.id)
+        throw new Error("Signup succeeded but user ID was not returned.");
 
       if (!authData.session) {
-        setSuccessMessage('Account created. Check your email to confirm your account, then sign in.');
+        setSuccessMessage(
+          "Account created. Check your email to confirm your account, then sign in.",
+        );
         return;
       }
 
-      const { error: profileError } = await supabase.from('profiles').upsert(
+      const { error: profileError } = await supabase.from("profiles").upsert(
         {
           id: authData.user.id,
           first_name: trimmedFirstName,
           last_name: trimmedLastName,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         },
-        { onConflict: 'id' }
+        { onConflict: "id" },
       );
 
       if (profileError) throw profileError;
 
-      navigate('/dashboard', { replace: true });
+      navigate("/dashboard", { replace: true });
     } catch (submitError) {
-      setError(friendlyAuthError(submitError, 'Unable to create account. Please try again.'));
+      setError(
+        friendlyAuthError(
+          submitError,
+          "Unable to create account. Please try again.",
+        ),
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -117,12 +140,24 @@ export function RegisterPage() {
 
   return (
     <section className="mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h1 className="text-xl font-semibold text-brand-900">Operator Registration</h1>
-      <p className="mt-2 text-sm text-slate-600">Create your account to access DroneSMS.</p>
+      <h1 className="text-xl font-semibold text-brand-900">
+        Operator Registration
+      </h1>
+      <p className="mt-2 text-sm text-slate-600">
+        Create your account to access DroneSMS.
+      </p>
 
       {!configured ? (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Supabase is not configured. Please add <code className="rounded bg-slate-100 px-1.5 py-0.5">VITE_SUPABASE_URL</code> and <code className="rounded bg-slate-100 px-1.5 py-0.5">VITE_SUPABASE_ANON_KEY</code> to your environment.
+          Supabase is not configured. Please add{" "}
+          <code className="rounded bg-slate-100 px-1.5 py-0.5">
+            VITE_SUPABASE_URL
+          </code>{" "}
+          and{" "}
+          <code className="rounded bg-slate-100 px-1.5 py-0.5">
+            VITE_SUPABASE_ANON_KEY
+          </code>{" "}
+          to your environment.
         </div>
       ) : null}
 
@@ -238,27 +273,41 @@ export function RegisterPage() {
         )}
 
         {error ? (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+          <p
+            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            role="alert"
+          >
             {error}
           </p>
         ) : null}
         {successMessage ? (
-          <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700" role="status">
+          <p
+            className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700"
+            role="status"
+          >
             {successMessage}
           </p>
         ) : null}
 
+        <CaptchaChallenge onToken={setCaptchaToken} onError={captchaError} />
+
         <button
           type="submit"
           className="w-full rounded-lg bg-brand-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-          disabled={isSubmitting || !configured || !allRequirementsMet || !passwordsMatch}
+          disabled={
+            isSubmitting ||
+            !configured ||
+            !allRequirementsMet ||
+            !passwordsMatch ||
+            Boolean(captchaSiteKey && !captchaToken)
+          }
         >
-          {isSubmitting ? 'Creating account...' : 'Create Account'}
+          {isSubmitting ? "Creating account..." : "Create Account"}
         </button>
       </form>
 
       <p className="mt-4 text-sm text-slate-600">
-        Already registered?{' '}
+        Already registered?{" "}
         <Link className="text-brand-700" to="/login">
           Sign in
         </Link>

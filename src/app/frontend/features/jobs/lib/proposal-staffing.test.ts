@@ -25,11 +25,13 @@ test('multiple Personnel snapshots retain proposal roles and read-only qualifica
 test('proposal flow stores snapshots, seeds independent job assignments, and keeps qualifications read-only', () => {
   const form = readFileSync(new URL('../pages/new-proposal-page.tsx', import.meta.url), 'utf8');
   const conversion = readFileSync(new URL('../pages/jobs-page.tsx', import.meta.url), 'utf8');
+  const hardeningMigration = readFileSync('supabase/migrations/20260918000000_full_application_hardening.sql', 'utf8');
   const pdf = readFileSync(new URL('./proposal-pdf.ts', import.meta.url), 'utf8');
   assert.match(form, /proposal_personnel: selectedPersonnel/);
   assert.match(form, /Qualifications \/ certifications \(read-only\)/);
   assert.doesNotMatch(form, /\.from\('personnel'\)\s*\.update/);
-  assert.match(conversion, /\.from\("job_personnel"\)\s*\.insert\(personnelAssignments\)/s);
+  assert.match(conversion, /rpc\("convert_proposal_to_job"/);
+  assert.match(hardeningMigration, /insert into public\.job_personnel[\s\S]+source\.proposal_personnel/);
   assert.match(pdf, /normalizeProposalPersonnel\(proposal\.proposal_personnel\)/);
   assert.doesNotMatch(pdf, /\.from\('job_personnel'\)[\s\S]{0,200}converted_job_id/);
 });

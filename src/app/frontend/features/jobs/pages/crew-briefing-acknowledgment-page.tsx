@@ -21,7 +21,13 @@ function Value({ value, fallback = 'Not recorded' }: { value: unknown; fallback?
 }
 
 export function CrewBriefingAcknowledgmentPage() {
-  const token = new URLSearchParams(window.location.search).get('token') ?? '';
+  const [token] = useState(() => {
+    const hashToken = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token');
+    const queryToken = new URLSearchParams(window.location.search).get('token');
+    const value = hashToken ?? queryToken ?? '';
+    if (value) window.history.replaceState(null, document.title, window.location.pathname);
+    return value;
+  });
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [typedName, setTypedName] = useState('');
   const [reviewed, setReviewed] = useState(false);
@@ -29,6 +35,7 @@ export function CrewBriefingAcknowledgmentPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { void (async () => {
+    if (!token) { setError('This acknowledgment link is missing its secure token.'); return; }
     const { data, error: loadError } = await supabase.rpc('get_public_crew_briefing', { p_token: token });
     if (loadError) setError(loadError.message); else setBriefing(data as Briefing);
   })(); }, [token]);

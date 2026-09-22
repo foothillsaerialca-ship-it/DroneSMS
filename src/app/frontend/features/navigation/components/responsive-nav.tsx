@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BetaBadge } from '@frontend/components/beta-badge';
 import { supabase } from '@frontend/lib/supabase';
+import { featureFlags } from '@frontend/lib/feature-flags';
 import { resetBetaAuthAttempt } from '../../auth/lib/beta-welcome';
 
 /**
@@ -20,7 +21,7 @@ const navItems = [
   { to: '/jobs', label: 'Jobs', end: true },
   { to: '/personnel', label: 'Personnel', end: true },
   { to: '/equipment', label: 'Equipment', end: true },
-  { to: '/reports', label: 'Reports', end: true },
+  ...(featureFlags.reports ? [{ to: '/reports', label: 'Reports', end: true }] : []),
   { to: '/sms', label: 'SMS', end: true },
   { to: '/settings/organization', label: 'Settings' },
   { to: '/about', label: 'About', end: true }

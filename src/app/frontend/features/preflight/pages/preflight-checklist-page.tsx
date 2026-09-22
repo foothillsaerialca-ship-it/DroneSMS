@@ -7,20 +7,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { checklistItems, checklistSections, emptyChecklistStates, getCompletionError, getPostChecklistDestination, readChecklistStates, type ChecklistItemState, type ChecklistKey, type ChecklistStates } from '../lib/preflight-checklist';
-const statusLabels = { Draft: 'Draft', Complete: 'Complete' } as const;
-
-type ChecklistStatus = keyof typeof statusLabels;
+type ChecklistStatus = 'Draft' | 'Complete';
 type Job = { id: string; organization_id: string; name: string; service_type: string; location: string; planned_date: string | null; status: string };
 type Checklist = { states: ChecklistStates; notes: string; status: ChecklistStatus };
 type PreflightChecklistRow = Partial<Record<ChecklistKey, boolean>> & { id: string; checklist_states?: unknown; notes: string | null; status: string | null };
-type ChecklistPayload = Record<ChecklistKey, boolean> & {
+type ChecklistPayload = {
   checklist_states: ChecklistStates;
-  job_id: string;
-  organization_id: string;
-  user_id: string;
   notes: string | null;
   status: ChecklistStatus;
-  updated_at: string;
 };
 
 const emptyChecklist: Checklist = {
@@ -94,7 +88,7 @@ export function PreflightChecklistPage() {
 
         const { data: checklistData, error: checklistError } = await supabase
           .from('preflight_checklists')
-          .select('*')
+          .select('id, checklist_states, notes, status, aircraft_selected, battery_condition_checked, propellers_inspected, firmware_app_status_checked, gps_signal_confirmed, home_point_verified, storage_media_checked, weather_verified, wind_conditions_acceptable, airspace_reviewed, laanc_confirmed_if_required, notam_tfr_checked, visual_observer_assigned_if_needed, emergency_procedures_reviewed, crew_communications_confirmed, final_rpic_approval')
           .eq('job_id', jobId)
           .order('updated_at', { ascending: false })
           .limit(1)
@@ -141,37 +135,18 @@ export function PreflightChecklistPage() {
     setSaveMessage(null);
 
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!userData.user) throw new Error('You must be signed in to save a pre-flight checklist.');
-
       const payload: ChecklistPayload = {
-        ...(Object.fromEntries(checklistItems.map(({ key }) => [key, checklist.states[key] === 'confirmed'])) as Record<ChecklistKey, boolean>),
         checklist_states: checklist.states,
-        job_id: job.id,
-        organization_id: job.organization_id,
-        user_id: userData.user.id,
         notes: checklist.notes.trim() || null,
-        status,
-        updated_at: new Date().toISOString()
+        status
       };
-
-      const { data: existingChecklist, error: existingChecklistError } = await supabase
-        .from('preflight_checklists')
-        .select('id')
-        .eq('job_id', job.id)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (existingChecklistError) throw existingChecklistError;
-
-      if (existingChecklist) {
-        const { error } = await supabase.from('preflight_checklists').update(payload).eq('id', existingChecklist.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('preflight_checklists').insert(payload);
-        if (error) throw error;
-      }
+      const { error } = await supabase.rpc('save_preflight_checklist', {
+        target_job_id: job.id,
+        states: payload.checklist_states,
+        checklist_notes: payload.notes,
+        requested_status: payload.status
+      });
+      if (error) throw error;
 
       setChecklist((current) => ({
         ...current,

@@ -3,9 +3,20 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { type PropsWithChildren, createContext, useCallback, useEffect, useMemo, useState } from 'react';
-import { supabase } from '@frontend/lib/supabase';
-import type { AuthContextValue, AuthStatus, ProfileState } from '../types/auth-context';
+import {
+  type PropsWithChildren,
+  createContext,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { supabase } from "@frontend/lib/supabase";
+import type {
+  AuthContextValue,
+  AuthStatus,
+  ProfileState,
+} from "../types/auth-context";
 
 /**
  * Purpose: Stores the shared auth context structure used by the auth provider module.
@@ -19,7 +30,9 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to check company onboarding status.';
+  return error instanceof Error
+    ? error.message
+    : "Unable to check company onboarding status.";
 }
 
 /**
@@ -27,78 +40,89 @@ function getErrorMessage(error: unknown) {
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
 export function AuthProvider({ children }: PropsWithChildren) {
-  const [status, setStatus] = useState<AuthStatus>('loading');
-  const [session, setSession] = useState<AuthContextValue['session']>(null);
-  const [profileState, setProfileState] = useState<ProfileState>('loading');
+  const [status, setStatus] = useState<AuthStatus>("loading");
+  const [session, setSession] = useState<AuthContextValue["session"]>(null);
+  const [profileState, setProfileState] = useState<ProfileState>("loading");
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [passwordRecoveryStartedAt, setPasswordRecoveryStartedAt] = useState<
+    number | null
+  >(null);
+  const clearPasswordRecoveryAuthorization = useCallback(
+    () => setPasswordRecoveryStartedAt(null),
+    [],
+  );
 
   const refreshProfileState = useCallback(async () => {
     if (!session?.user?.id) {
       setProfileError(null);
-      setProfileState('missing');
+      setProfileState("missing");
       return;
     }
 
     setProfileError(null);
-    setProfileState('loading');
+    setProfileState("loading");
 
     try {
       const { data: profile, error: profileLookupError } = await supabase
-        .from('profiles')
-        .select('id, company_name, organization_id')
-        .eq('id', session.user.id)
+        .from("profiles")
+        .select("id, company_name, organization_id")
+        .eq("id", session.user.id)
         .maybeSingle();
 
       if (profileLookupError) throw profileLookupError;
 
       if (profile?.organization_id) {
-        const { data: linkedOrganization, error: linkedOrganizationError } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('id', profile.organization_id)
-          .maybeSingle();
+        const { data: linkedOrganization, error: linkedOrganizationError } =
+          await supabase
+            .from("organizations")
+            .select("id")
+            .eq("id", profile.organization_id)
+            .maybeSingle();
 
         if (linkedOrganizationError) throw linkedOrganizationError;
 
         if (linkedOrganization) {
-          setProfileState('complete');
+          setProfileState("complete");
           return;
         }
       }
 
-      const { data: ownedOrganizations, error: organizationLookupError } = await supabase
-        .from('organizations')
-        .select('id, name')
-        .eq('owner_user_id', session.user.id)
-        .limit(1);
+      const { data: ownedOrganizations, error: organizationLookupError } =
+        await supabase
+          .from("organizations")
+          .select("id, name")
+          .eq("owner_user_id", session.user.id)
+          .limit(1);
 
       if (organizationLookupError) throw organizationLookupError;
 
       const organization = ownedOrganizations?.[0];
 
       if (!organization) {
-        setProfileState('incomplete');
+        setProfileState("incomplete");
         return;
       }
 
-      const { error: profileUpsertError } = await supabase.from('profiles').upsert(
-        {
-          id: session.user.id,
-          organization_id: organization.id,
-          company_name: profile?.company_name || organization.name,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'id' }
-      );
+      const { error: profileUpsertError } = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: session.user.id,
+            organization_id: organization.id,
+            company_name: profile?.company_name || organization.name,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        );
 
       if (profileUpsertError) throw profileUpsertError;
 
-      setProfileState('complete');
+      setProfileState("complete");
     } catch (error) {
       setProfileError(getErrorMessage(error));
-      setProfileState('error');
+      setProfileState("error");
     }
-  }, [session?.user?.id]);
+  }, [session]);
 
   useEffect(() => {
     let isMounted = true;
@@ -112,11 +136,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const { data } = await supabase.auth.getSession();
         if (!isMounted) return;
         setSession(data.session);
-        setStatus(data.session ? 'authenticated' : 'unauthenticated');
+        setStatus(data.session ? "authenticated" : "unauthenticated");
       } catch {
         if (!isMounted) return;
         setSession(null);
-        setStatus('unauthenticated');
+        setStatus("unauthenticated");
       }
     }
 
@@ -124,10 +148,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     let authListenerSubscription: { unsubscribe: () => void } | null = null;
     try {
-      const { data: authListener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-        setSession(nextSession);
-        setStatus(nextSession ? 'authenticated' : 'unauthenticated');
-      });
+      const { data: authListener } = supabase.auth.onAuthStateChange(
+        (event, nextSession) => {
+          if (event === "PASSWORD_RECOVERY")
+            setPasswordRecoveryStartedAt(Date.now());
+          if (event === "SIGNED_OUT") setPasswordRecoveryStartedAt(null);
+          setSession(nextSession);
+          setStatus(nextSession ? "authenticated" : "unauthenticated");
+        },
+      );
       authListenerSubscription = authListener.subscription;
     } catch {
       authListenerSubscription = null;
@@ -140,18 +169,34 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    if (status === 'authenticated') {
+    if (status === "authenticated") {
       void refreshProfileState();
       return;
     }
 
     setProfileError(null);
-    setProfileState('missing');
+    setProfileState("missing");
   }, [status, refreshProfileState]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, session, profileState, profileError, refreshProfileState }),
-    [status, session, profileState, profileError, refreshProfileState]
+    () => ({
+      status,
+      session,
+      profileState,
+      profileError,
+      passwordRecoveryStartedAt,
+      clearPasswordRecoveryAuthorization,
+      refreshProfileState,
+    }),
+    [
+      status,
+      session,
+      profileState,
+      profileError,
+      passwordRecoveryStartedAt,
+      clearPasswordRecoveryAuthorization,
+      refreshProfileState,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

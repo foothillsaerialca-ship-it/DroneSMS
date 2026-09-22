@@ -4,17 +4,14 @@
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { todayIsoDate } from "@frontend/lib/date-utils";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@frontend/lib/supabase";
 import { OrganizationIdentityCard } from "@frontend/features/settings/components/organization-identity-card";
 import { generateProposalPdf } from "@frontend/features/jobs/lib/proposal-pdf";
 import {
   archiveGeneratedDocument,
-  downloadGeneratedDocument,
   formatFileSize,
   loadGeneratedDocuments,
-  openGeneratedDocument,
   getGeneratedDocumentFileName,
   getGeneratedDocumentTypeLabel,
   type GeneratedDocumentRecord,
@@ -69,7 +66,9 @@ type Proposal = {
   status: ProposalStatus;
   created_at: string;
   hazard_assessment: SelectedPreliminaryHazard[] | null;
-  proposal_equipment: Array<Pick<ProposalEquipmentAssignment, "equipment_id">> | null;
+  proposal_equipment: Array<
+    Pick<ProposalEquipmentAssignment, "equipment_id">
+  > | null;
   proposal_personnel: ProposalPersonnelAssignment[] | null;
   proposed_rpic_id: string | null;
   proposed_rpic_name: string | null;
@@ -86,6 +85,7 @@ type Proposal = {
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
 type JobsTab = "proposals" | "active" | "completed";
+const LIST_PAGE_SIZE = 100;
 /**
  * Purpose: Defines the input contract accepted by the jobs page component.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
@@ -172,6 +172,8 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
   const [isLoadingProposals, setIsLoadingProposals] = useState(true);
+  const [hasMoreJobs, setHasMoreJobs] = useState(false);
+  const [hasMoreProposals, setHasMoreProposals] = useState(false);
   const [jobsError, setJobsError] = useState<string | null>(null);
   const [proposalsError, setProposalsError] = useState<string | null>(null);
   const [updatingProposalId, setUpdatingProposalId] = useState<string | null>(
@@ -197,7 +199,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     useState<OrganizationSettings | null>(null);
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
 
-  const loadJobs = useCallback(async () => {
+  const loadJobs = useCallback(async (offset = 0, signal: AbortSignal = new AbortController().signal) => {
     setIsLoadingJobs(true);
     setJobsError(null);
 
@@ -207,19 +209,23 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         .select("id, name, service_type, location, planned_date, status")
         .is("deleted_at", null)
         .order("planned_date", { ascending: true })
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .range(offset, offset + LIST_PAGE_SIZE - 1)
+        .abortSignal(signal);
 
       if (jobsLoadError) throw jobsLoadError;
 
-      setJobs((data ?? []) as Job[]);
+      const page = (data ?? []) as Job[];
+      setJobs((current) => (offset === 0 ? page : [...current, ...page]));
+      setHasMoreJobs(page.length === LIST_PAGE_SIZE);
     } catch (loadError) {
-      setJobsError(getErrorMessage(loadError));
+      if (!signal.aborted) setJobsError(getErrorMessage(loadError));
     } finally {
       setIsLoadingJobs(false);
     }
   }, []);
 
-  const loadProposals = useCallback(async () => {
+  const loadProposals = useCallback(async (offset = 0, signal: AbortSignal = new AbortController().signal) => {
     setIsLoadingProposals(true);
     setProposalsError(null);
 
@@ -230,21 +236,23 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
           "id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposal_equipment, proposal_personnel, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, converted_to_job, converted_job_id, converted_at",
         )
         .is("deleted_at", null)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .range(offset, offset + LIST_PAGE_SIZE - 1)
+        .abortSignal(signal);
 
       if (proposalsLoadError) throw proposalsLoadError;
 
-      setProposals(
-        ((data ?? []) as Proposal[]).map((proposal) => ({
-          ...proposal,
-          hazard_assessment: normalizeSelectedHazards(
-            proposal.hazard_assessment,
-          ),
-          proposal_personnel: normalizeProposalPersonnel(proposal.proposal_personnel),
-        })),
-      );
+      const page = ((data ?? []) as Proposal[]).map((proposal) => ({
+        ...proposal,
+        hazard_assessment: normalizeSelectedHazards(proposal.hazard_assessment),
+        proposal_personnel: normalizeProposalPersonnel(
+          proposal.proposal_personnel,
+        ),
+      }));
+      setProposals((current) => (offset === 0 ? page : [...current, ...page]));
+      setHasMoreProposals(page.length === LIST_PAGE_SIZE);
     } catch (loadError) {
-      setProposalsError(getErrorMessage(loadError));
+      if (!signal.aborted) setProposalsError(getErrorMessage(loadError));
     } finally {
       setIsLoadingProposals(false);
     }
@@ -256,9 +264,9 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       try {
         setProposalDocuments(
           await loadGeneratedDocuments({
-            recordType: 'proposal',
+            recordType: "proposal",
             recordIds: proposalIds,
-            documentType: 'proposal_pdf',
+            documentType: "proposal_pdf",
           }),
         );
       } catch (documentsLoadError) {
@@ -289,6 +297,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
 
   useEffect(() => {
     let isMounted = true;
+    const controller = new AbortController();
 
     /**
      * Performs load company identity for the surrounding workflow.
@@ -315,11 +324,12 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     }
 
     void loadCompanyIdentity();
-    void loadJobs();
-    void loadProposals();
+    void loadJobs(0, controller.signal);
+    void loadProposals(0, controller.signal);
 
     return () => {
       isMounted = false;
+      controller.abort();
     };
   }, [loadJobs, loadProposals]);
 
@@ -339,9 +349,14 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   );
   const showProposalsView = mode === "proposals" || activeTab === "proposals";
   const showJobsView = mode !== "proposals" && activeTab !== "proposals";
-  const isLoadingCurrentTab = showProposalsView ? isLoadingProposals : isLoadingJobs;
+  const isLoadingCurrentTab = showProposalsView
+    ? isLoadingProposals
+    : isLoadingJobs;
   const currentError = showProposalsView ? proposalsError : jobsError;
-  const tabs = mode === "proposals" ? [{ id: "proposals" as JobsTab, label: "Proposals" }] : jobsTabs;
+  const tabs =
+    mode === "proposals"
+      ? [{ id: "proposals" as JobsTab, label: "Proposals" }]
+      : jobsTabs;
 
   /**
    * Computes select tab for the surrounding workflow.
@@ -373,105 +388,18 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       if (!userData.user)
         throw new Error("You must be signed in to create a job.");
 
-      const { data: currentProposal, error: currentProposalError } = await supabase
-        .from("proposals")
-        .select("converted_to_job, converted_job_id")
-        .eq("id", proposal.id)
-        .maybeSingle();
-
-      if (currentProposalError) throw currentProposalError;
-      if (currentProposal?.converted_to_job && currentProposal.converted_job_id) {
-        navigate(`/jobs/${currentProposal.converted_job_id}`);
-        return;
-      }
-
-      const proposalNumber =
-        proposal.proposal_number ?? proposal.id.slice(0, 8).toUpperCase();
-      const { data, error } = await supabase
-        .from("jobs")
-        .insert({
-          organization_id: proposal.organization_id,
-          user_id: userData.user.id,
-          name: proposal.proposal_name,
-          service_type: proposal.service_type,
-          location: proposal.site_address || proposal.client_name,
-          planned_date: todayIsoDate(),
-          notes: `Created from proposal ${proposalNumber}. Confirm planned date during Mission Planning / JHA.`,
-          status: "Planned",
-          source_proposal_id: proposal.id,
-          source_proposal_number: proposalNumber,
-          client_name: proposal.client_name,
-          contact_name: proposal.contact_name,
-          client_phone: proposal.phone,
-          client_email: proposal.email,
-          site_address: proposal.site_address,
-          preliminary_hazards: proposal.hazard_assessment ?? [],
-          proposed_rpic_id: proposal.proposed_rpic_id,
-          proposed_rpic_name: proposal.proposed_rpic_name,
-          proposed_rpic_credentials: proposal.proposed_rpic_credentials,
-          proposed_rpic_bio: proposal.proposed_rpic_bio,
-        })
-        .select("id, name, service_type, location, planned_date, status")
-        .single();
-
+      const { data, error } = await supabase.rpc("convert_proposal_to_job", {
+        target_proposal_id: proposal.id,
+      });
       if (error) throw error;
-
-      const createdJob = data as Job;
-
-      // Proposal selections are copied into the operational assignment tables.
-      // These are independent rows, so subsequent job edits never rewrite the
-      // historical proposal snapshot.
-      const operationalRoles = new Set(['RPIC', 'Pilot', 'Visual Observer', 'Payload Operator', 'Ground Crew']);
-      const snapshotAssignments = normalizeProposalPersonnel(proposal.proposal_personnel);
-      const personnelAssignments = (snapshotAssignments.length ? snapshotAssignments : proposal.proposed_rpic_id ? [{ personnel_id: proposal.proposed_rpic_id, proposed_role: 'RPIC' }] : [])
-        .filter((assignment) => operationalRoles.has(assignment.proposed_role))
-        .map((assignment) => ({ job_id: createdJob.id, organization_id: proposal.organization_id, personnel_id: assignment.personnel_id, assigned_role: assignment.proposed_role }));
-      const equipmentAssignments = (proposal.proposal_equipment ?? [])
-        .filter((assignment) => Boolean(assignment?.equipment_id))
-        .map((assignment) => ({
-          job_id: createdJob.id,
-          organization_id: proposal.organization_id,
-          equipment_id: assignment.equipment_id,
-        }));
-
-      if (personnelAssignments.length) {
-        const { error: personnelAssignmentError } = await supabase
-          .from("job_personnel")
-          .insert(personnelAssignments);
-        if (personnelAssignmentError) {
-          throw new Error(`Job created, but proposal personnel could not be carried forward: ${personnelAssignmentError.message}`);
-        }
-      }
-
-      if (equipmentAssignments.length) {
-        const { error: equipmentAssignmentError } = await supabase
-          .from("job_equipment")
-          .insert(equipmentAssignments);
-        if (equipmentAssignmentError) {
-          throw new Error(`Job created, but proposal equipment could not be carried forward: ${equipmentAssignmentError.message}`);
-        }
-      }
-
-      const convertedAt = new Date().toISOString();
-      const { error: proposalUpdateError } = await supabase
-        .from("proposals")
-        .update({
-          converted_to_job: true,
-          converted_job_id: createdJob.id,
-          converted_at: convertedAt,
-          status: "Accepted",
-          updated_at: convertedAt,
-        })
-        .eq("id", proposal.id)
-        .eq("converted_to_job", false)
-        .select("id")
-        .single();
-
-      if (proposalUpdateError) {
+      if (!data || typeof data !== "object" || !("id" in data)) {
         throw new Error(
-          "Job was created, but the source proposal could not be marked converted. Please refresh and contact support before creating another job from this proposal.",
+          "Proposal conversion did not return the operational job.",
         );
       }
+
+      const createdJob = data as Job;
+      const convertedAt = new Date().toISOString();
 
       setJobs((current) => [createdJob, ...current]);
       setProposals((current) =>
@@ -527,7 +455,6 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     }
   }
 
-
   /**
    * Handles generate proposal pdf while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
@@ -542,14 +469,14 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       const result = await generateProposalPdf(proposalId);
       if (result.saved) {
         setWorkspaceMessage(
-          "Proposal PDF downloaded and saved to DroneSMS records.",
+          "Proposal PDF downloaded. Form metadata saved to DroneSMS records.",
         );
         await loadDocumentsForProposals(
           proposals.map((proposal) => proposal.id),
         );
       } else {
         setWorkspaceWarning(
-          "Proposal PDF downloaded successfully. Unable to save a copy to DroneSMS records.",
+          "Proposal PDF downloaded successfully. Unable to save form metadata to DroneSMS records.",
         );
       }
     } catch (pdfError) {
@@ -633,13 +560,14 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     }
   }
 
-
   /**
    * Handles remove generated document while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
   async function removeGeneratedDocument(documentId: string) {
-    if (!window.confirm("Remove this document from the proposal documents list?")) {
+    if (
+      !window.confirm("Remove this document from the proposal documents list?")
+    ) {
       return;
     }
 
@@ -848,7 +776,6 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
           </div>
         ) : null}
 
-
         <section
           className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3"
           aria-label="Proposal documents"
@@ -859,7 +786,8 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
                 Documents
               </h3>
               <p className="text-xs text-slate-500">
-                Retained proposal files are listed newest first.
+                Proposal form snapshots are listed newest first. PDFs download
+                locally and are not retained.
               </p>
             </div>
           </div>
@@ -881,20 +809,9 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
                     </p>
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <button
-                      type="button"
-                      className="rounded-lg border border-brand-700 bg-white px-3 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50"
-                      onClick={() => void openGeneratedDocument(document)}
-                    >
-                      View
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-lg border border-brand-700 bg-brand-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-900"
-                      onClick={() => void downloadGeneratedDocument(document)}
-                    >
-                      Download
-                    </button>
+                    <span className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-500">
+                      PDF not retained
+                    </span>
                     <button
                       type="button"
                       className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
@@ -908,8 +825,8 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
             </div>
           ) : (
             <p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-500">
-              No proposal documents have been saved yet. Generate a Proposal PDF
-              to retain a copy in DroneSMS records.
+              No proposal document metadata has been saved yet. Generate a
+              Proposal PDF to save its form snapshot in DroneSMS records.
             </p>
           )}
         </section>
@@ -1124,6 +1041,17 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         </div>
       ) : null}
 
+      {showProposalsView && hasMoreProposals ? (
+        <button
+          className="mx-auto block rounded-lg border border-brand-700 px-4 py-2 text-sm font-semibold text-brand-700 disabled:border-slate-300"
+          disabled={isLoadingProposals}
+          onClick={() => void loadProposals(proposals.length)}
+          type="button"
+        >
+          {isLoadingProposals ? "Loading..." : "Load more proposals"}
+        </button>
+      ) : null}
+
       {showJobsView &&
       !isLoadingJobs &&
       !jobsError &&
@@ -1181,6 +1109,17 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
             </article>
           ))}
         </div>
+      ) : null}
+
+      {showJobsView && hasMoreJobs ? (
+        <button
+          className="mx-auto block rounded-lg border border-brand-700 px-4 py-2 text-sm font-semibold text-brand-700 disabled:border-slate-300"
+          disabled={isLoadingJobs}
+          onClick={() => void loadJobs(jobs.length)}
+          type="button"
+        >
+          {isLoadingJobs ? "Loading..." : "Load more jobs"}
+        </button>
       ) : null}
 
       {showProposalsView &&

@@ -27,3 +27,153 @@ Longterm vision:
     advertisement?
     subscription based.
         not navigate around ads, make relevant from insurance/other companies that "partner" with DroneSMS
+
+
+Full application audit - 2026-09-18
+Priority key: P0 = critical, P1 = high, P2 = medium, P3 = low.
+Scope: React/Vite client, Supabase schema/migrations/RLS/RPCs/storage/Edge Function, dependencies, tests, build tooling, documentation, performance, and repository storage. The in-app browser connection was unavailable, so interactive UI behavior was not browser-verified.
+
+1. [P0 - Critical] Problem: An authenticated user can insert or update their own profiles row with an arbitrary organization_id. Most tenant RLS trusts that value, so learning another organization's UUID can become a cross-tenant membership and data-access escalation.
+   Best-case solution: Make organization_id client-immutable, split identity from an organization_memberships table, and allow membership only through an owner/admin invitation-acceptance RPC. Backfill existing memberships, add immutable/audit triggers, and add adversarial two-tenant RLS tests.
+
+2. [P0 - Critical] Problem: The optimized organizations update policy allows either the owner or any matching profile member to update the organization row. Because the grant is not column-limited, an ordinary member can change protected settings and potentially owner_user_id.
+   Best-case solution: Restore owner/admin-only updates, revoke direct writes to ownership and security-sensitive columns, and perform ownership transfer through a separately authorized transactional RPC with reauthentication and an audit record.
+
+3. [P0 - Critical] Problem: Safety Manager and RPIC JHA attestation fields can still be changed through the table's broad member UPDATE permission. A direct API client can forge reviewer identity/timestamps, clear stale flags, or bypass the secure attestation RPCs.
+   Best-case solution: Revoke client updates to all attestation and workflow columns. Permit transitions only through security-definer RPCs or a validating trigger, derive actor/time on the server, and retain an append-only attestation history.
+
+4. [P0 - Critical] Problem: New personnel rows are created with user_id equal to the logged-in creator, even when that person is adding someone else. Broad personnel updates also allow user_id to be reassigned, while authorization RPCs trust this field; the creator can therefore appear to attest as another named person.
+   Best-case solution: Replace user_id with separate created_by_user_id and nullable, unique, immutable auth_user_id fields. Bind auth_user_id only after the named person accepts a verified invitation, restrict changes to a server/admin workflow, and backfill only identities that can be verified.
+
+5. [P0 - Critical] Problem: The operation-closeout assurance RPC is not an enforced boundary. Existing direct INSERT/UPDATE grants on job_operation_closeouts let a member close an operation without atomically creating the required safety-assurance review.
+   Best-case solution: Revoke direct closeout writes and make the transactional RPC the only write path. Add a database invariant/trigger proving that each closeout revision and assurance review are created together, then test direct PostgREST bypass attempts.
+
+6. [P0 - Critical] Problem: Management-of-change rows retain broad UPDATE access. A permitted user can directly change status, approval identity, and approval timestamps instead of using approve_management_of_change and its required-action checks.
+   Best-case solution: Protect all workflow/audit columns with column grants and a state-machine trigger. Route initiation, approval, completion, and cancellation through version-checked RPCs that validate required actions and record the authenticated actor.
+
+7. [P1 - High] Problem: There is no durable organization role/membership model. In many tables every member has similar create/update/delete power, which violates least privilege and makes accidental or malicious record changes hard to contain.
+   Best-case solution: Add organization_memberships with owner, admin, safety_manager, operator, and read_only roles; centralize authorization helpers; apply least-privilege RLS and column grants; and provide the planned admin page without exposing raw auth metadata or secrets.
+
+8. [P1 - High] Problem: Crew acknowledgment has contradictory behavior. Email links and the public route expect unauthenticated token access, but later migrations revoke anon access to both public crew-briefing RPCs, so recipients who are not already signed in cannot complete the flow.
+   Best-case solution: Choose and enforce one model. Either use a high-entropy, hashed, single-use, expiring, rate-limited capability token, or require a verified linked account and redirect through login while preserving the invitation. Align the route, email copy, grants, migrations, and tests.
+
+9. [P1 - High] Problem: Proposal-to-job conversion is a sequence of client-side inserts and updates. Concurrent conversions can create duplicate jobs, and a partial failure can leave an orphaned job or incomplete personnel/equipment assignments; source_proposal_id is indexed but not unique.
+   Best-case solution: Move conversion into one idempotent database transaction using SELECT FOR UPDATE, add a unique partial constraint on jobs.source_proposal_id, and return the already-created job on safe retries.
+
+10. [P1 - High] Problem: Preflight "final RPIC approval" is a client-controlled JSON/status value. Any member with checklist UPDATE access can mark it confirmed/Complete, and the database does not prove that the assigned RPIC performed the approval.
+    Best-case solution: Store approver_user_id and approved_at in protected columns, require the assigned RPIC in a server RPC, prevent direct completion updates, and make ready-to-operate checks validate this server-created approval.
+
+11. [P1 - High] Problem: A job can have multiple RPIC assignments. Several authorization paths select the first RPIC by created_at, making approval authority ambiguous and potentially choosing the wrong person.
+    Best-case solution: Resolve existing duplicates, add a unique partial index for one RPIC per job, and use a transactional replacement RPC that preserves assignment history.
+
+12. [P1 - High] Problem: Several important domain values are validated only by the React client, including job, personnel, and equipment statuses/roles/types. Direct API callers can persist unsupported values and break filters or workflows.
+    Best-case solution: Clean existing data, add CHECK constraints or database enums for stable domains, validate transitions server-side, and generate client types/options from the canonical schema.
+
+13. [P1 - High] Problem: The lockfile audit currently reports 9 known dependency vulnerabilities (5 high, 3 moderate, 1 low), including the locked React Router and PostCSS dependency paths. The installed node_modules contains some newer packages than package-lock.json, so local success does not represent a clean npm ci deployment.
+    Best-case solution: Update and commit the lockfile through the currently supported patched versions, run the full regression suite, address any advisory that requires a controlled major upgrade, and add automated dependency update PRs plus an audit gate appropriate to production/runtime risk.
+
+14. [P1 - High] Problem: Automated tests are predominantly domain and static SQL-text tests. There is no local/staging Supabase integration suite, DOM test suite, browser end-to-end suite, or CI workflow, so passing tests do not prove RLS, grants, RPCs, storage policies, migrations, or critical user journeys.
+    Best-case solution: Add CI for npm ci, lockfile audit, lint, tests, typecheck, build, and migration validation. Run Supabase integration tests with two organizations and multiple roles, plus React Testing Library and Playwright smoke tests for authentication and safety-critical workflows.
+
+15. [P1 - High] Problem: Jobs, personnel, equipment, MOC, assurance, hazard-review, and dashboard queries retrieve whole tenant datasets and filter/count them in the browser. At scale this wastes bandwidth and can silently omit records at the Supabase response-row cap.
+    Best-case solution: Use cursor pagination, server-side search/filter/sort, explicit count queries, and a dashboard aggregate RPC or maintained summary view. Define page-size and performance budgets and test beyond the configured API row limit.
+
+16. [P2 - Medium] Problem: Multiple data paths use select('*') and nested wildcard relationships. This transfers unused data and makes a future column addition an accidental exposure/performance change.
+    Best-case solution: Replace wildcards with explicit, typed projections per screen/RPC and review every new selected column as part of schema changes.
+
+17. [P2 - Medium] Problem: Data loading is implemented independently across large pages without a shared cache, request cancellation, or consistent invalidation. This causes duplicate requests and permits stale responses to overwrite newer UI state.
+    Best-case solution: Adopt a small repository/query layer or TanStack Query with AbortController support, scoped query keys, deduplication, targeted invalidation, retry rules, and stale/loading/error conventions.
+
+18. [P2 - Medium] Problem: Storage and database writes are not atomic. Equipment/reference uploads, organization-logo replacement, and hazard main-image/thumbnail/metadata creation can partially fail, leaving orphaned files, metadata, or duplicate records on retry.
+    Best-case solution: Use a server-side orchestration workflow or explicit saga with idempotency keys and compensating cleanup. Add a scheduled reconciliation job that safely identifies unreferenced objects after a grace period.
+
+19. [P2 - Medium] Problem: Deleting equipment cascades reference metadata but not the underlying Storage objects, while hazard-photo removal is metadata-only and retained indefinitely. Storage usage will grow without a documented retention/legal-hold policy.
+    Best-case solution: Define retention by artifact class, use tombstones and a recovery grace period, then purge eligible objects through a privileged queue/job. Report retained bytes by organization and preserve only records required for safety, legal, or customer commitments.
+
+20. [P2 - Medium] Problem: Upload validation relies heavily on browser MIME/extension metadata. Large images are decoded before strict byte/pixel limits, and documents are not verified by file signature or malware scanning, creating mobile memory and hostile-file risks.
+    Best-case solution: Enforce bucket limits plus server-side magic-byte validation, allowlists, quarantine/scanning, and sanitized filenames. Reject oversized image dimensions before full decode and move expensive image work to a worker or trusted server process.
+
+21. [P2 - Medium] Problem: Job-packet and proposal PDFs are assembled in the browser from many datasets and potentially large images/reference documents. A complex job can exhaust memory or freeze a mobile device.
+    Best-case solution: Enforce packet size/page/asset bounds, lazy-load and downscale assets, warn and skip unsupported oversized attachments, and move large packet generation to a queued server worker while retaining the current local path for small/offline-compatible documents.
+
+22. [P2 - Medium] Problem: Generated PDF bytes are no longer retained, which saves space, but every generation can store another large, repeated form_data JSON snapshot. There is no deduplication or lifecycle policy for those immutable snapshots.
+    Best-case solution: Hash and version canonical snapshots, store one immutable snapshot per record revision, reference it from lightweight generation events, compress/archive cold history, and apply a documented retention schedule without removing compliance-required evidence.
+
+23. [P2 - Medium] Problem: The crew-acknowledgment email function has no application-level cooldown, quota, or idempotency protection; permissive CORS and repeated sends can enable spam/cost abuse. A missing PUBLIC_APP_URL also falls back to an unsuitable function-origin link, and internal/provider errors may be returned too directly.
+    Best-case solution: Require PUBLIC_APP_URL at startup, add per-user/job/recipient throttles and idempotency keys, constrain CORS to deployed application origins, normalize client errors, and log provider details only in redacted server telemetry.
+
+24. [P2 - Medium] Problem: The reset-password page treats any existing authenticated session as enough to enter the reset flow. A normal signed-in session can therefore bypass the intended recovery-event boundary and the account-settings reauthentication experience.
+    Best-case solution: Require a validated PASSWORD_RECOVERY event/nonce on the reset route; keep normal password changes behind recent-password/secure-password-change verification and enable MFA/recovery controls in Supabase.
+
+25. [P2 - Medium] Problem: No deployment security-header policy was found. Missing CSP, HSTS, Referrer-Policy, Permissions-Policy, and X-Content-Type-Options increases the impact of injection, token-in-URL leakage, and browser feature misuse.
+    Best-case solution: Configure headers at the production host, start CSP in report-only mode, allow only required Supabase/email/image endpoints, remove unsafe allowances, and add an automated deployed-header check.
+
+26. [P2 - Medium] Problem: There is no React error boundary around the application/routes. A render error or failed lazy-loaded chunk can blank the entire SPA without a recovery path.
+    Best-case solution: Add a top-level and route-level error boundary with a safe retry/reload action, redacted correlation ID, and a non-sensitive fallback screen; test chunk-load and offline failures.
+
+27. [P2 - Medium] Problem: Registration, password recovery, and sensitive account changes rely primarily on provider defaults, while MFA is still marked "Coming Soon." Abuse controls and exact production Auth settings are not captured as deployable configuration.
+    Best-case solution: Enable email confirmation, leaked-password protection, secure password changes, MFA, CAPTCHA/rate limits, redirect allowlists, and recovery-code handling; document and continuously verify the production Auth configuration.
+
+28. [P2 - Medium] Problem: Several source files are extremely large and partially compressed into very long lines (approximately 128 KB for the JHA page, 121 KB for proposal PDF logic, and 104 KB for the job file hub). This raises regression risk, merge conflicts, review time, and test difficulty.
+    Best-case solution: Split data access, state machines, validation, rendering, and PDF sections into focused modules/hooks/components. Apply Prettier and lint limits for complexity/file size while preserving route-level lazy loading and current behavior.
+
+29. [P2 - Medium] Problem: The database client is largely untyped and uses casts/manual row shapes. Schema changes can compile successfully while runtime queries or field assumptions have drifted.
+    Best-case solution: Generate Supabase database types from the migrated schema in CI, instantiate a typed client, add runtime validation at external/JSON boundaries, and fail CI when generated types are stale.
+
+30. [P3 - Low] Problem: Hazard/default catalogs and default SMS/service text are duplicated between TypeScript and SQL migrations. The copies can drift and increase maintenance and bundle/repository size.
+    Best-case solution: Maintain one versioned canonical data source, generate SQL seeds and TypeScript fallback artifacts from it, and verify checksums in tests while retaining an offline fallback where it is functionally required.
+
+31. [P3 - Low] Problem: bcryptjs, @types/bcryptjs, and the clean package appear unused. tsconfig.tsbuildinfo is tracked even though build-info files are ignored, and a large JPEG is shipped where a responsive modern format would be smaller.
+    Best-case solution: Remove proven-unused dependencies and refresh the lockfile, untrack generated build-info/cache artifacts, and serve an appropriately sized WebP/AVIF variant while retaining an archival original only if needed.
+
+32. [P3 - Low] Problem: Deployment documentation says to apply migrations in order but enumerates only an early subset of the much larger migration set, and Edge Function/configuration deployment is documented separately. This makes partial or insecure environments likely.
+    Best-case solution: Make Supabase CLI migration/deploy commands the single source of truth, add a generated migration inventory and environment checklist, and verify schema version, functions, secrets, buckets, policies, and Auth settings in CI/release automation.
+
+33. [P3 - Low] Problem: Error handling is mostly local UI state and console output, with no consistent production correlation, latency/storage trend monitoring, or demonstrated restore drill. Failures spanning browser, Edge Functions, Storage, and database transactions will be difficult to diagnose.
+    Best-case solution: Add structured redacted telemetry with correlation IDs, workflow failure metrics, query/function latency and storage-growth alerts, plus scheduled backup-restore tests. Never log tokens, full form snapshots, or sensitive customer/personnel data.
+
+34. [P3 - Low] Problem: Reports, parts of account security, SMS-pillar content, and other "Coming Soon" surfaces are visible as navigation/product UI. Empty destinations add bundle/maintenance surface and can make unfinished functionality look broken.
+    Best-case solution: Put incomplete modules behind centrally managed feature flags or hide their navigation until release-ready, while keeping the underlying roadmap/code branch available for development.
+
+35. [Audit verification] Problem: A green unit-test/typecheck result alone could be mistaken for full assurance. During this audit 113 tests passed and TypeScript no-emit checking passed, but lint could not start because ESLint 9 has no eslint.config.js/mjs/cjs, the dependency audit found the issues above, and interactive browser verification was unavailable.
+    Best-case solution: Add a valid flat ESLint configuration, make lint/test/typecheck/build/integration/E2E checks mandatory in CI, and perform an authenticated browser acceptance pass after the P0/P1 database changes are deployed to a non-production environment.
+
+
+Audit remediation status - 2026-09-21
+Status key: FIXED = implemented in this repository; MITIGATED = the immediate application risk is bounded but a larger optional architecture change remains; DEPLOYMENT ACTION = code/configuration is ready and must be enabled or verified in the hosted environment.
+
+1. [P0 - FIXED] Problem: Profile-based tenant escalation. Solution: Added authoritative organization_memberships, guarded profiles.organization_id with accepted active membership, added invitation acceptance, and added two-tenant adversarial pgTAP coverage.
+2. [P0 - FIXED] Problem: Ordinary members could update organization ownership/settings. Solution: Restricted updates to owner/admin roles, made owner_user_id trigger-protected, and added an AAL2 ownership-transfer RPC with an append-only audit record.
+3. [P0 - FIXED] Problem: Direct JHA attestation forgery. Solution: Protected all attestation/identity columns in the database, retained authorized RPCs as the write boundary, and added append-only Safety Manager/RPIC attestation history including a legacy backfill.
+4. [P0 - FIXED] Problem: Personnel creator identity was treated as the personnel identity. Solution: Split created_by_user_id from nullable verified user_id, made verified bindings unique and immutable, and added an email-matched claim RPC.
+5. [P0 - FIXED] Problem: Closeout could bypass safety-assurance creation. Solution: Revoked direct insert/update/delete access to job_operation_closeouts and retained the transactional closeout-and-assurance RPC as the only client write path.
+6. [P0 - FIXED] Problem: MOC workflow fields could be changed directly. Solution: Added a database workflow guard, routed state changes through authorized transition/approval RPCs, and revoked direct MOC deletion.
+7. [P1 - FIXED] Problem: No durable least-privilege organization roles. Solution: Added owner/admin/safety_manager/operator/read_only membership roles, centralized authorization helpers, write-role enforcement, member administration, invitation, and ownership-transfer screens.
+8. [P1 - FIXED] Problem: Crew acknowledgment links contradicted anonymous access. Solution: Standardized on high-entropy hashed, expiring, single-use capability tokens, restored only the two scoped anonymous RPCs, added send cooldown/quotas, and moved tokens to URL fragments.
+9. [P1 - FIXED] Problem: Proposal conversion was non-atomic and duplicate-prone. Solution: Added one locking/idempotent conversion RPC, repaired legacy duplicate links, and enforced one job per source proposal.
+10. [P1 - FIXED] Problem: Preflight final approval was client-controlled. Solution: Added server-owned RPIC identity/time fields, an assigned-RPIC save/complete RPC, direct-write revocation, and server validation in Ready to Operate.
+11. [P1 - FIXED] Problem: Multiple RPIC assignments made authority ambiguous. Solution: Archived legacy duplicate assignments, retained one deterministic RPIC, and added a unique partial index.
+12. [P1 - FIXED] Problem: Core domains were client-only. Solution: Added an organization-scoped normalization audit, conservative repair of unsupported legacy values, and validated job/personnel/equipment constraints.
+13. [P1 - FIXED] Problem: Vulnerable and inconsistent dependencies. Solution: Refreshed the lockfile, upgraded React Router/tooling, removed unused packages, added production audit CI, and verified npm reports zero vulnerabilities.
+14. [P1 - FIXED + DEPLOYMENT ACTION] Problem: No integration/browser/CI assurance. Solution: Added application quality CI, full local Supabase reset/lint/pgTAP CI, generated-type drift checking, and three passing Playwright public-route smoke tests. The authenticated staging workflow pass remains a release gate because it requires a deployed Auth project and test accounts.
+15. [P1 - FIXED] Problem: Unbounded tenant queries. Solution: Added bounded server queries, page-size limits/load-more behavior, scoped dashboard reads, and indexes for high-frequency organization/status/date paths.
+16. [P2 - FIXED] Problem: Wildcard projections expanded data/exposure silently. Solution: Replaced application select('*') calls with explicit projections.
+17. [P2 - FIXED] Problem: Duplicate/stale client requests. Solution: Added AbortController cancellation to major loaders plus a small deduplicating request cache and targeted invalidation for shared organization settings.
+18. [P2 - FIXED] Problem: Upload/database partial failures left orphans. Solution: Added validated upload sagas with compensating deletes, delayed cleanup queue triggers, and a retrying privileged cleanup function.
+19. [P2 - FIXED + DEPLOYMENT ACTION] Problem: Storage objects had no enforced lifecycle. Solution: Added artifact-class retention policy data, recovery grace periods, deletion queues, and daily cleanup processing. Production must schedule process-storage-cleanup and monitor its backlog.
+20. [P2 - FIXED + DEPLOYMENT ACTION] Problem: Upload validation trusted names/MIME. Solution: Added byte, magic-signature, image-dimension and sanitized-name checks plus Storage byte/MIME limits. Production malware quarantine/scanning requires the external scanner integration documented in docs/security-operations.md.
+21. [P2 - MITIGATED] Problem: Large browser PDF jobs could exhaust mobile memory. Solution: Added document/photo/asset byte and count budgets, bounded reads, private signed asset loading, image downscaling, and explicit oversize failures. A queued server renderer remains the preferred future path for unusually large packets.
+22. [P2 - FIXED] Problem: Repeated form_data snapshots wasted space. Solution: Added canonical SHA-256 snapshot deduplication, lightweight generation-event references, and retention classification while keeping required evidence.
+23. [P2 - FIXED + DEPLOYMENT ACTION] Problem: Crew email function allowed abuse and unsafe fallback configuration. Solution: Added required PUBLIC_APP_URL, origin allowlisting, RPC send throttles, idempotent send handling, generic client errors, and correlation logging. Hosted secrets/origins must be configured before deployment.
+24. [P2 - FIXED] Problem: A normal session could enter password recovery. Solution: Reset now requires the PASSWORD_RECOVERY event boundary; normal account changes remain in authenticated account settings.
+25. [P2 - FIXED + DEPLOYMENT ACTION] Problem: Missing browser security headers. Solution: Added CSP, HSTS, Referrer-Policy, Permissions-Policy, and nosniff policies for compatible static hosts and Vercel. Verify the effective deployed headers at release time.
+26. [P2 - FIXED] Problem: Render failures could blank the SPA. Solution: Added a top-level error boundary, safe reload path, redacted correlation ID, and global rejection/error telemetry hooks.
+27. [P2 - FIXED + DEPLOYMENT ACTION] Problem: MFA/CAPTCHA/Auth protections were absent or provider-default only. Solution: Added TOTP enrollment/challenge/removal, fail-closed AAL checks, Turnstile-capable registration/recovery, secure Auth config, and session revocation. Hosted email confirmation, CAPTCHA secret, leaked-password protection, and rate limits must be enabled per the runbook.
+28. [P2 - MITIGATED] Problem: Very large compressed source modules increased maintenance risk. Solution: Applied consistent formatting, extracted reusable form-snapshot/file-validation/request helpers, and added lint/type/build gates. Further UI/PDF component decomposition can continue incrementally without changing behavior.
+29. [P2 - FIXED] Problem: Supabase access was effectively untyped. Solution: Added the typed client and checked-in bootstrap types; CI regenerates types from the fully migrated local schema and fails TypeScript validation on drift.
+30. [P3 - FIXED] Problem: Default content/catalog copies could drift. Solution: Centralized application defaults in one module and added parity tests proving those defaults and every fallback hazard remain represented by the immutable baseline SQL seed.
+31. [P3 - FIXED] Problem: Unused packages/cache and oversized media consumed space. Solution: Removed unused packages, deleted tracked TypeScript build cache, added lazy image decoding/dimensions, and reduced the team image from 121,622 bytes to about 17 KB without changing its displayed function.
+32. [P3 - FIXED] Problem: Deployment documentation was incomplete. Solution: Reworked installation/release guidance around Supabase CLI migration history, both Edge Functions, secrets, Auth, Storage, headers, rollback evidence, and the release checklist.
+33. [P3 - FIXED + DEPLOYMENT ACTION] Problem: Inconsistent observability and no restore drill. Solution: Added redacted structured browser/Edge correlation telemetry and a security/operations runbook covering alerts, retention, backups, and quarterly restore drills. Production telemetry destination and scheduled drills remain operator responsibilities.
+34. [P3 - FIXED] Problem: Unfinished product surfaces were visible. Solution: Added centralized feature flags and hid disabled Reports navigation/routes while retaining the implementation for controlled rollout.
+35. [VERIFICATION - COMPLETE LOCALLY EXCEPT DATABASE RUNTIME] Problem: Unit tests alone were insufficient assurance. Solution: ESLint, TypeScript, production build, 120 unit/security/parity tests, three Chromium smoke tests, dependency audit, and diff checks are now release checks. Local Supabase runtime execution could not be completed on this workstation because Docker Desktop is unavailable; the mandatory CI database job performs reset, lint, pgTAP, and generated-type validation before merge/deploy.

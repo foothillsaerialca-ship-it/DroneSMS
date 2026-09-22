@@ -6,6 +6,7 @@ DroneSMS is a client-rendered React, TypeScript, Vite, and Supabase application.
 
 - Node.js 20.19+ or 22.12+ (Vite 7 requirement); a current Node.js LTS release is recommended
 - npm and network access to the configured package registry
+- Docker Desktop for local Supabase migration/RLS/pgTAP validation
 - A Supabase project
 - Permission to configure Supabase Authentication, run SQL migrations, and create the migration-defined Storage resources
 
@@ -29,15 +30,27 @@ No `pip install` step is required. `docs/requirements.txt` is informational and 
 
 ## 2. Configure Supabase
 
-Create a project and apply every SQL file in `supabase/migrations/` in filename order:
+Use the Supabase CLI as the migration source of truth; do not maintain or follow a hand-written migration list. For a disposable local stack:
 
-1. `20260524000000_merged.sql`
-2. `20260814000000_add_jha_site_planning_fields.sql`
-3. `20260814010000_add_airspace_workflow_fields.sql`
-4. `20260821000000_add_safety_representative_designation.sql`
-5. `20260821010000_add_jha_role_attestations.sql`
+```bash
+supabase start
+supabase db reset --local
+supabase db lint --local --level warning
+supabase test db
+```
 
-The migrations establish tables, indexes, row-level-security policies, RPC functions, and the `organization-logos`, `job-evidence-photos`, `generated-documents`, and `equipment-reference-documents` Storage buckets and policies. Use your normal Supabase CLI or SQL Editor deployment workflow. Do not run production migrations against an unbacked-up project.
+For a linked hosted project, take a verified backup and review the pending migration plan before running `supabase db push`. The migrations establish tables, indexes, RLS, grants, RPCs, retention metadata, cleanup queues, and Storage buckets/policies. The CI database job rebuilds the complete schema and runs adversarial cross-tenant tests on every change.
+
+Deploy both Edge Functions after schema deployment:
+
+```bash
+supabase functions deploy send-crew-acknowledgment
+supabase functions deploy process-storage-cleanup --no-verify-jwt
+```
+
+`process-storage-cleanup` authenticates its scheduler with `STORAGE_CLEANUP_SECRET`; it does not use a public browser token. Schedule it from a trusted secret-capable job runner and retain its correlation-ID logs.
+
+The final generated-document migration disables generated-PDF Storage access and keeps only metadata plus `form_data` JSONB. If the project already contains generated PDFs, set a server-only `SUPABASE_SERVICE_ROLE_KEY` and run `npm run purge:generated-pdfs` for a dry run, then `npm run purge:generated-pdfs -- --confirm` to permanently remove those objects through the Storage API. Never expose the service-role key through a `VITE_` variable.
 
 ## 3. Configure environment variables
 
@@ -47,10 +60,14 @@ Create a root `.env` file that is not committed:
 VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_ANON_KEY
 VITE_APP_URL=http://localhost:5173
+VITE_ENABLE_REPORTS=false
+VITE_TELEMETRY_ENDPOINT=
 ```
 
 - `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are required for live data and authentication.
 - `VITE_APP_URL` controls email-confirmation and recovery redirects. If omitted, the application uses `window.location.origin` in a browser and `/` outside a browser.
+- `VITE_ENABLE_REPORTS` keeps the unfinished Reports module out of navigation and routing unless deliberately enabled.
+- `VITE_TELEMETRY_ENDPOINT` is optional and should be a same-origin, first-party redacted event collector.
 - Never store a Supabase service-role key in a `VITE_` variable; Vite embeds such variables in browser assets.
 
 If the required Supabase values are absent, the client intentionally falls back to an unavailable-client proxy. The UI can render, but Supabase operations return a configuration error.
@@ -63,6 +80,7 @@ In Supabase Authentication URL settings:
 - Allow `http://localhost:5173/auth/callback` and `http://localhost:5173/reset-password` for local development.
 - Add the equivalent production URLs before deployment.
 - Keep email confirmation enabled and review Secure email change for the intended policy.
+- Enable leaked-password protection, TOTP MFA, CAPTCHA, provider rate limits, and only the exact deployed redirect origins.
 
 See [authentication-deployment.md](authentication-deployment.md).
 
@@ -78,15 +96,22 @@ Run the deterministic checks separately:
 
 ```bash
 npm test
+npm run lint
+npm run typecheck
 npm run build
+npm run audit:production
+npx playwright install chromium
+npm run test:e2e
 ```
 
-`npm run preview` serves the completed production build locally. `npm run lint` is currently known to fail before inspecting source because an ESLint 9 flat-config file is absent; see [documentation.md](documentation.md#known-errors-and-limitations).
+`npm run preview` serves the completed production build locally. The same checks are mandatory in `.github/workflows/quality.yml`, along with a clean local Supabase rebuild and database tests.
 
 ## Troubleshooting
 
 - Configuration error on every data action: verify the two required `VITE_SUPABASE_*` values, then restart Vite.
 - Confirmation/recovery returns to the wrong origin: set `VITE_APP_URL` and update Supabase's redirect allowlist.
-- Permission errors after login: confirm all migrations and RLS policies were applied in order and that the user has a valid `profiles`/organization relationship.
+- Permission errors after login: confirm all migrations and RLS policies were applied in order and that the user has an active `organization_memberships` row for the selected profile organization.
 - Storage upload or download errors: confirm migration-created buckets and object policies exist.
 - Blank page after a production deploy: inspect the browser console and verify the host serves `index.html` for client-side routes.
+
+See [security-operations.md](security-operations.md) for release, Auth, cleanup, retention, backup/restore, malware-scanning, and monitoring controls that require deployment-platform configuration.
