@@ -510,6 +510,56 @@ export function SettingsPage() {
     }
   }
 
+  /**
+   * Removes the organization's current logo reference and, when safely scoped, its storage object.
+   * Fallback/error behavior: The reference remains cleared if storage cleanup fails, and the retained object is reported to the user.
+   */
+  async function handleLogoRemove() {
+    if (!organizationId || !currentLogoUrl) return;
+
+    const logoPath = settings.logoPath;
+    const canDeleteLogoObject = Boolean(logoPath) && logoPath.startsWith(`${organizationId}/`);
+
+    setIsUploadingLogo(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      let updateQuery = supabase
+        .from('organizations')
+        .update({ logo_path: null, logo_url: null, updated_at: new Date().toISOString() })
+        .eq('id', organizationId);
+
+      updateQuery = logoPath ? updateQuery.eq('logo_path', logoPath) : updateQuery.eq('logo_url', settings.logoUrl);
+
+      const { data, error: updateError } = await updateQuery
+        .select(
+          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+        )
+        .single();
+
+      if (updateError) throw updateError;
+
+      const updatedSettings = normalizeSettings(data);
+      setSettings(updatedSettings);
+      setDraft(updatedSettings);
+
+      if (canDeleteLogoObject) {
+        const { error: removeError } = await supabase.storage.from('organization-logos').remove([logoPath]);
+        if (removeError) {
+          setError('Logo removed, but its stored file could not be deleted.');
+          return;
+        }
+      }
+
+      setMessage('Logo removed.');
+    } catch (logoError) {
+      setError(getErrorMessage(logoError, 'Unable to remove logo.'));
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  }
+
   return (
     <section className="mx-auto flex w-full max-w-3xl flex-col gap-4">
       <div>
@@ -556,6 +606,16 @@ export function SettingsPage() {
                       disabled={isUploadingLogo || !organizationId}
                     />
                   </label>
+                  {currentLogoUrl ? (
+                    <button
+                      type="button"
+                      className="mt-3 min-h-11 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                      onClick={() => void handleLogoRemove()}
+                      disabled={isUploadingLogo || !organizationId}
+                    >
+                      Remove logo
+                    </button>
+                  ) : null}
                   <p className="mt-2 text-xs text-slate-500">{isUploadingLogo ? 'Uploading logo...' : 'Choosing a new image replaces the current logo.'}</p>
                 </>
               )}

@@ -108,4 +108,7 @@ test('settings logo workflow uses the organization folder and remains compatible
   assert.match(settingsPage, /\.upload\(logoPath, file,[\s\S]*?upsert: true/);
   assert.match(settingsPage, /\.getPublicUrl\(logoPath\)/);
   assert.match(settingsPage, /\.remove\(\[settings\.logoPath\]\)/);
+  assert.match(settingsPage, /\.update\(\{ logo_path: null, logo_url: null,[\s\S]*?\.eq\('id', organizationId\)/);
+  assert.match(settingsPage, /logoPath\.startsWith\(`\$\{organizationId\}\/`\)/);
+  assert.match(settingsPage, /\.remove\(\[logoPath\]\)/);
 });
