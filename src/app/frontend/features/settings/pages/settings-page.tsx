@@ -516,6 +516,7 @@ export function SettingsPage() {
    */
   async function handleLogoRemove() {
     if (!organizationId || !currentLogoUrl) return;
+    if (!window.confirm('Remove the organization logo?')) return;
 
     const logoPath = settings.logoPath;
     const canDeleteLogoObject = Boolean(logoPath) && logoPath.startsWith(`${organizationId}/`);
@@ -542,7 +543,7 @@ export function SettingsPage() {
 
       const updatedSettings = normalizeSettings(data);
       setSettings(updatedSettings);
-      setDraft(updatedSettings);
+      setDraft((currentDraft) => ({ ...currentDraft, logoPath: updatedSettings.logoPath, logoUrl: updatedSettings.logoUrl }));
 
       if (canDeleteLogoObject) {
         const { error: removeError } = await supabase.storage.from('organization-logos').remove([logoPath]);
