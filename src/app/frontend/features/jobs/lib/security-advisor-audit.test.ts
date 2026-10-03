@@ -108,4 +108,17 @@ test('settings logo workflow uses the organization folder and remains compatible
   assert.match(settingsPage, /\.upload\(logoPath, file,[\s\S]*?upsert: true/);
   assert.match(settingsPage, /\.getPublicUrl\(logoPath\)/);
   assert.match(settingsPage, /\.remove\(\[settings\.logoPath\]\)/);
+  assert.match(settingsPage, /\.update\(\{ logo_path: null, logo_url: null,[\s\S]*?\.eq\('id', organizationId\)/);
+  assert.match(settingsPage, /logoPath\.startsWith\(`\$\{organizationId\}\/`\)/);
+  assert.match(settingsPage, /\.remove\(\[logoPath\]\)/);
+});
+
+test('logo removal preserves unsaved organization fields and can be cancelled before changes begin', () => {
+  const removeStart = settingsPage.indexOf('async function handleLogoRemove()');
+  const removeEnd = settingsPage.indexOf('\n  return (', removeStart);
+  const removal = settingsPage.slice(removeStart, removeEnd);
+
+  assert.ok(removal.indexOf("window.confirm('Remove the organization logo?')") < removal.indexOf('setIsUploadingLogo(true)'));
+  assert.match(removal, /setDraft\(\(currentDraft\) => \(\{ \.\.\.currentDraft, logoPath: updatedSettings\.logoPath, logoUrl: updatedSettings\.logoUrl \}\)\)/);
+  assert.doesNotMatch(removal, /setDraft\(updatedSettings\)/);
 });
