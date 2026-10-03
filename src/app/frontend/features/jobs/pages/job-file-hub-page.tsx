@@ -11,7 +11,7 @@ import { OrganizationIdentityCard } from '@frontend/features/settings/components
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 import { getOperationReadinessStatus, getReadinessBlockingReasons, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
-import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
+import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, currentCrewEvidence, manualFieldBriefingDisplayReason, manualFieldBriefingReasons, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
 import { followUpAreas, validateSafetyAssurance, type SafetyAssuranceInput } from '@frontend/features/sms/lib/safety-assurance';
 
 /**
@@ -342,6 +342,10 @@ export function JobFileHubPage() {
   const [briefingActionId, setBriefingActionId] = useState<string | null>(null);
   const [briefingError, setBriefingError] = useState<string | null>(null);
   const [briefingMessage, setBriefingMessage] = useState<string | null>(null);
+  const [manualBriefingAssignmentId, setManualBriefingAssignmentId] = useState<string | null>(null);
+  const [manualBriefingReason, setManualBriefingReason] = useState('');
+  const [manualBriefingReasonDetail, setManualBriefingReasonDetail] = useState('');
+  const [manualBriefingError, setManualBriefingError] = useState<string | null>(null);
   const [fitnessConfirmed, setFitnessConfirmed] = useState(false);
   const [readinessError, setReadinessError] = useState<string | null>(null);
   const [readinessMessage, setReadinessMessage] = useState<string | null>(null);
@@ -517,7 +521,7 @@ export function JobFileHubPage() {
           .maybeSingle();
         const readinessQuery = supabase.from('job_operation_readiness').select('approved_at, approval_stale, fitness_for_duty_confirmed, rpic_personnel_id').eq('job_id', jobId).maybeSingle();
         const userQuery = supabase.auth.getUser();
-        const crewEvidenceQuery = supabase.from('crew_briefing_acknowledgments').select('assignment_id, assigned_role, briefing_version, status, acknowledged_at, field_briefed_at').eq('job_id', jobId).order('created_at', { ascending: false });
+        const crewEvidenceQuery = supabase.from('crew_briefing_acknowledgments').select('assignment_id, assigned_role, briefing_version, status, acknowledged_at, field_briefed_at, manual_reason, manual_reason_detail, attested_by_rpic_personnel_id').eq('job_id', jobId).order('created_at', { ascending: false });
 
         const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult, jhaSummaryResult, preflightSummaryResult, closeoutResult, readinessResult, userResult, crewEvidenceResult] = await Promise.all([
           jobQuery,
@@ -638,7 +642,7 @@ export function JobFileHubPage() {
 
   async function reloadCrewEvidence() {
     if (!job) return;
-    const { data, error: evidenceError } = await supabase.from('crew_briefing_acknowledgments').select('assignment_id, assigned_role, briefing_version, status, acknowledged_at, field_briefed_at').eq('job_id', job.id).order('created_at', { ascending: false });
+    const { data, error: evidenceError } = await supabase.from('crew_briefing_acknowledgments').select('assignment_id, assigned_role, briefing_version, status, acknowledged_at, field_briefed_at, manual_reason, manual_reason_detail, attested_by_rpic_personnel_id').eq('job_id', job.id).order('created_at', { ascending: false });
     if (evidenceError) throw evidenceError;
     setCrewEvidence((data ?? []) as CrewBriefingEvidence[]);
     setJob((current) => current ? { ...current, crew_acknowledgment_required_at: current.crew_acknowledgment_required_at ?? new Date().toISOString() } : current);
@@ -658,20 +662,35 @@ export function JobFileHubPage() {
     finally { setBriefingActionId(null); }
   }
 
+  function openManualBriefing(assignmentId: string) {
+    setManualBriefingAssignmentId(assignmentId);
+    setManualBriefingReason('');
+    setManualBriefingReasonDetail('');
+    setManualBriefingError(null);
+    setBriefingError(null);
+  }
+
+  function closeManualBriefing() {
+    setManualBriefingAssignmentId(null);
+    setManualBriefingReason('');
+    setManualBriefingReasonDetail('');
+    setManualBriefingError(null);
+  }
+
   async function recordManualBriefing(assignmentId: string) {
-    const reason = window.prompt('Reason: No internet/cellular service; Crew member unable to access email; Device/access issue; or Other')?.trim() ?? '';
-    const detail = reason === 'Other' ? window.prompt('Short explanation')?.trim() ?? '' : '';
+    const reason = manualBriefingReason;
+    const detail = reason === 'Other' ? manualBriefingReasonDetail.trim() : '';
     const validation = validateManualFieldBriefing(reason, detail, true);
-    if (validation) { setBriefingError(validation); return; }
-    if (!window.confirm('I confirm that this crew member participated in the full operation briefing in person and was provided the opportunity to ask questions before operations began.')) return;
+    if (validation) { setManualBriefingError(validation); return; }
     setBriefingActionId(assignmentId); setBriefingError(null); setBriefingMessage(null);
     try {
       const { error: manualError } = await supabase.rpc('record_manual_field_briefing', { p_assignment_id: assignmentId, p_reason: reason, p_reason_detail: detail, p_attested: true });
       if (manualError) throw manualError;
       await reloadCrewEvidence();
+      closeManualBriefing();
       setBriefingMessage('Manual Field Briefing recorded.');
     } catch (manualError) {
-      setBriefingError(getErrorMessage(manualError));
+      setManualBriefingError(getErrorMessage(manualError));
     } finally {
       setBriefingActionId(null);
     }
@@ -1403,7 +1422,63 @@ export function JobFileHubPage() {
 
       <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="crew-briefing-heading">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="crew-briefing-heading" className="text-lg font-semibold text-brand-900">Crew Briefing / Crew Acknowledgment</h2><p className="mt-1 text-sm text-slate-600">After the RPIC conducts the full in-person operation briefing, send each assigned non-RPIC crew member a request to review and acknowledge it.</p></div><button type="button" className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={!jhaSummary || briefingActionId !== null || requiredCrewAssignments(assignments).length === 0 || currentUserId !== assignedRpic?.user_id} onClick={() => void (async () => { for (const assignment of requiredCrewAssignments(assignments)) await sendCrewAcknowledgment(assignment.id); })()}>Send Crew Acknowledgments</button></div>
-        <div className="mt-4 space-y-3">{assignments.filter((assignment) => assignment.assigned_role === 'RPIC' || requiredCrewAssignments([assignment]).length).map((assignment) => { const status = crewBriefingStatus(assignment, crewEvidence, briefingVersion); const busy = briefingActionId === assignment.id; return <article key={assignment.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-brand-900">{assignment.personnel?.full_name ?? 'Personnel unavailable'} — {assignment.assigned_role}</p><p className="mt-1 text-sm text-slate-600">Status: <strong>{status}</strong></p>{assignment.assigned_role !== 'RPIC' && !assignment.personnel?.email ? <p className="mt-1 text-xs text-amber-700">Add an email on the Personnel record to use electronic acknowledgment.</p> : null}</div>{assignment.assigned_role !== 'RPIC' ? <div className="flex flex-wrap gap-2"><button type="button" className="rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm font-medium text-brand-700 disabled:text-slate-400" disabled={busy || !jhaSummary || !assignment.personnel?.email || currentUserId !== assignedRpic?.user_id} onClick={() => void sendCrewAcknowledgment(assignment.id)}>{busy ? 'Working…' : status === 'Not Sent' ? 'Send' : 'Resend'}</button><button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:text-slate-400" disabled={busy || !jhaSummary || currentUserId !== assignedRpic?.user_id} onClick={() => void recordManualBriefing(assignment.id)}>Record Manual Field Briefing</button></div> : null}</div></article>; })}{requiredCrewAssignments(assignments).length === 0 ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Solo operation — no separate crew acknowledgment is required. The RPIC continues through the existing acceptance and readiness workflow.</p> : null}</div>
+        <div className="mt-4 space-y-3">
+          {assignments.filter((assignment) => assignment.assigned_role === 'RPIC' || requiredCrewAssignments([assignment]).length).map((assignment) => {
+            const status = crewBriefingStatus(assignment, crewEvidence, briefingVersion);
+            const currentEvidence = currentCrewEvidence(assignment, crewEvidence, briefingVersion);
+            const manualEvidence = currentEvidence?.status === 'Manual Field Briefing' ? currentEvidence : null;
+            const recorder = personnel.find((person) => person.id === manualEvidence?.attested_by_rpic_personnel_id);
+            const busy = briefingActionId === assignment.id;
+            const manualFormOpen = manualBriefingAssignmentId === assignment.id;
+            return (
+              <article key={assignment.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-brand-900">{assignment.personnel?.full_name ?? 'Personnel unavailable'} — {assignment.assigned_role}</p>
+                    <p className="mt-1 text-sm text-slate-600">Status: <strong>{status}</strong></p>
+                    {manualEvidence ? (
+                      <div className="mt-1 text-xs text-slate-600">
+                        <p>{manualFieldBriefingDisplayReason(manualEvidence)}</p>
+                        <p>Recorded by {recorder?.full_name ?? 'assigned RPIC'} • {manualEvidence.field_briefed_at ? new Date(manualEvidence.field_briefed_at).toLocaleString() : 'time unavailable'}</p>
+                      </div>
+                    ) : null}
+                    {assignment.assigned_role !== 'RPIC' && !assignment.personnel?.email ? <p className="mt-1 text-xs text-amber-700">Add an email on the Personnel record to use electronic acknowledgment.</p> : null}
+                  </div>
+                  {assignment.assigned_role !== 'RPIC' ? (
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className="rounded-lg border border-brand-200 bg-white px-3 py-2 text-sm font-medium text-brand-700 disabled:text-slate-400" disabled={busy || !jhaSummary || !assignment.personnel?.email || currentUserId !== assignedRpic?.user_id} onClick={() => void sendCrewAcknowledgment(assignment.id)}>{busy ? 'Working…' : status === 'Not Sent' ? 'Send' : 'Resend'}</button>
+                      <button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:text-slate-400" disabled={busy || !jhaSummary || currentUserId !== assignedRpic?.user_id} onClick={() => openManualBriefing(assignment.id)}>Record Manual Field Briefing</button>
+                    </div>
+                  ) : null}
+                </div>
+                {manualFormOpen ? (
+                  <div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
+                    <label className="block text-sm font-medium text-slate-700">
+                      Why is electronic acknowledgment unavailable?
+                      <select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100" value={manualBriefingReason} onChange={(event) => { setManualBriefingReason(event.target.value); setManualBriefingReasonDetail(''); setManualBriefingError(null); }} disabled={busy}>
+                        <option value="">Select a reason</option>
+                        {manualFieldBriefingReasons.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
+                      </select>
+                    </label>
+                    {manualBriefingReason === 'Other' ? (
+                      <label className="block text-sm font-medium text-slate-700">
+                        Enter reason
+                        <input required className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100" value={manualBriefingReasonDetail} onChange={(event) => { setManualBriefingReasonDetail(event.target.value); setManualBriefingError(null); }} disabled={busy} />
+                      </label>
+                    ) : null}
+                    <p className="text-xs text-slate-600">By recording this briefing, the RPIC confirms this crew member participated in the full operation briefing and had the opportunity to ask questions.</p>
+                    {manualBriefingError ? <p className="text-sm text-red-700" role="alert">{manualBriefingError}</p> : null}
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:text-slate-400" onClick={closeManualBriefing} disabled={busy}>Cancel</button>
+                      <button type="button" className="rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white disabled:bg-slate-400" onClick={() => void recordManualBriefing(assignment.id)} disabled={busy}>{busy ? 'Recording…' : 'Record Manual Briefing'}</button>
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+          {requiredCrewAssignments(assignments).length === 0 ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Solo operation — no separate crew acknowledgment is required. The RPIC continues through the existing acceptance and readiness workflow.</p> : null}
+        </div>
         {briefingError ? <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{briefingError}</p> : null}{briefingMessage ? <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700" role="status">{briefingMessage}</p> : null}
       </section>
 
