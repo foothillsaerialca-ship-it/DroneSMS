@@ -34,6 +34,11 @@ export function resolveInitialJobServiceType(primaryServiceType: unknown): Servi
     : serviceTypes[0];
 }
 
+/** Preserves an explicit form selection when an organization default finishes loading. */
+export function applyPrimaryServiceTypeDefault(currentServiceType: string, primaryServiceType: unknown, hasBeenTouched: boolean) {
+  return hasBeenTouched ? currentServiceType : resolveInitialJobServiceType(primaryServiceType);
+}
+
 /**
  * Purpose: Defines every proposal lifecycle status accepted by proposal forms and repository actions.
  * Fallback/error behavior: new proposals use the first value, `Draft`; unsupported persisted values must be handled by the loading form.

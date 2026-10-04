@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { resolveInitialJobServiceType, serviceTypes } from './workflow-types.ts';
+import { applyPrimaryServiceTypeDefault, resolveInitialJobServiceType, serviceTypes } from './workflow-types.ts';
 
 const newJobPage = readFileSync(new URL('../pages/new-job-page.tsx', import.meta.url), 'utf8');
 const settingsPage = readFileSync(new URL('../../settings/pages/settings-page.tsx', import.meta.url), 'utf8');
@@ -19,6 +19,23 @@ test('a user-selected service type remains the value written to a new job', () =
   form.serviceType = 'Roof Inspection';
   assert.equal(form.serviceType, 'Roof Inspection');
   assert.match(newJobPage, /service_type: formData\.serviceType/);
+});
+
+test('an explicit selection wins when organization settings resolve afterward', () => {
+  let serviceType = serviceTypes[0] as string;
+  let serviceTypeTouched = false;
+
+  serviceType = 'Roof Inspection';
+  serviceTypeTouched = true;
+  serviceType = applyPrimaryServiceTypeDefault(serviceType, 'Cleaning Operations', serviceTypeTouched);
+
+  assert.equal(serviceType, 'Roof Inspection');
+  assert.match(newJobPage, /serviceTypeTouched\.current = true/);
+  assert.match(newJobPage, /applyPrimaryServiceTypeDefault\(current\.serviceType, settings\?\.primaryServiceType, serviceTypeTouched\.current\)/);
+});
+
+test('the organization default applies when the service field is untouched', () => {
+  assert.equal(applyPrimaryServiceTypeDefault(serviceTypes[0], 'Agricultural', false), 'Agricultural');
 });
 
 test('organizations without a preference retain the existing first-option fallback', () => {
