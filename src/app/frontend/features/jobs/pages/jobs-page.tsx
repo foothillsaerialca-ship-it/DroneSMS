@@ -29,6 +29,7 @@ import {
   type SelectedPreliminaryHazard,
 } from "@frontend/features/safety/lib/preliminary-hazard-library";
 import {
+  buildJobPersonnelAssignments,
   proposalStatuses,
   normalizeProposalPersonnel,
   type ProposalEquipmentAssignment,
@@ -421,11 +422,16 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       // Proposal selections are copied into the operational assignment tables.
       // These are independent rows, so subsequent job edits never rewrite the
       // historical proposal snapshot.
-      const operationalRoles = new Set(['RPIC', 'Pilot', 'Visual Observer', 'Payload Operator', 'Ground Crew']);
       const snapshotAssignments = normalizeProposalPersonnel(proposal.proposal_personnel);
-      const personnelAssignments = (snapshotAssignments.length ? snapshotAssignments : proposal.proposed_rpic_id ? [{ personnel_id: proposal.proposed_rpic_id, proposed_role: 'RPIC' }] : [])
-        .filter((assignment) => operationalRoles.has(assignment.proposed_role))
-        .map((assignment) => ({ job_id: createdJob.id, organization_id: proposal.organization_id, personnel_id: assignment.personnel_id, assigned_role: assignment.proposed_role }));
+      const personnelAssignments = buildJobPersonnelAssignments(
+        snapshotAssignments.length
+          ? snapshotAssignments
+          : proposal.proposed_rpic_id
+            ? [{ personnel_id: proposal.proposed_rpic_id, personnel_name: proposal.proposed_rpic_name ?? '', proposed_role: 'RPIC', qualifications_summary: proposal.proposed_rpic_credentials }]
+            : [],
+        createdJob.id,
+        proposal.organization_id,
+      );
       const equipmentAssignments = (proposal.proposal_equipment ?? [])
         .filter((assignment) => Boolean(assignment?.equipment_id))
         .map((assignment) => ({
