@@ -622,7 +622,7 @@ export function SettingsPage() {
                       Remove logo
                     </button>
                   ) : null}
-                  <p className="mt-2 text-xs text-slate-500">{isUploadingLogo ? 'Uploading logo...' : 'Choosing a new image replaces the current logo.'}</p>
+                  <p className="mt-2 text-xs text-slate-500">{isUploadingLogo ? 'Uploading logo...' : 'For best results, upload a square or horizontal logo with a transparent or white background. PNG recommended. Choosing a new image replaces the current logo.'}</p>
                 </>
               )}
             </div>
