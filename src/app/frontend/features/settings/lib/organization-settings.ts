@@ -23,6 +23,7 @@ export type OrganizationSettings = {
   address: string;
   primaryContact: string;
   companyStatement: string;
+  primaryServiceType: string;
   isLicensed: boolean;
   isInsured: boolean;
   isBonded: boolean;
@@ -52,6 +53,7 @@ export function normalizeOrganizationSettings(data: Record<string, unknown> | nu
     address: String(data.physical_address ?? ''),
     primaryContact: String(data.primary_contact ?? ''),
     companyStatement: String(data.company_statement ?? ''),
+    primaryServiceType: String(data.primary_service_type ?? ''),
     isLicensed: Boolean(data.is_licensed),
     isInsured: Boolean(data.is_insured),
     isBonded: Boolean(data.is_bonded),
@@ -101,7 +103,7 @@ export async function loadOrganizationSettingsForUser(userId: string) {
 
   const { data: organization, error: organizationError } = await supabase
     .from('organizations')
-    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, logo_path, logo_url')
+    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, primary_service_type, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, logo_path, logo_url')
     .eq('id', profile.organization_id)
     .maybeSingle();
 
@@ -117,7 +119,7 @@ export async function loadOrganizationSettingsForUser(userId: string) {
 export async function loadOrganizationSettingsById(organizationId: string) {
   const { data: organization, error } = await supabase
     .from('organizations')
-    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, logo_path, logo_url')
+    .select('id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, primary_service_type, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, logo_path, logo_url')
     .eq('id', organizationId)
     .maybeSingle();
 

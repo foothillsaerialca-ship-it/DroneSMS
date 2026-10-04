@@ -27,6 +27,13 @@ export const serviceTypes = [
  */
 export type ServiceType = (typeof serviceTypes)[number];
 
+/** Returns an organization's valid preference, or the existing new-job default. */
+export function resolveInitialJobServiceType(primaryServiceType: unknown): ServiceType {
+  return typeof primaryServiceType === 'string' && serviceTypes.includes(primaryServiceType as ServiceType)
+    ? primaryServiceType as ServiceType
+    : serviceTypes[0];
+}
+
 /**
  * Purpose: Defines every proposal lifecycle status accepted by proposal forms and repository actions.
  * Fallback/error behavior: new proposals use the first value, `Draft`; unsupported persisted values must be handled by the loading form.

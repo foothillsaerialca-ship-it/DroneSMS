@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
-import { serviceTypes } from '@frontend/features/jobs/lib/workflow-types';
+import { resolveInitialJobServiceType, serviceTypes } from '@frontend/features/jobs/lib/workflow-types';
 
 /**
  * Purpose: Provides the stable default shape for initial form state in the new job page workflow.
@@ -17,7 +17,7 @@ import { serviceTypes } from '@frontend/features/jobs/lib/workflow-types';
  */
 const initialFormState = {
   jobName: '',
-  serviceType: serviceTypes[0],
+  serviceType: serviceTypes[0] as string,
   jobLocation: '',
   plannedDate: '',
   notes: ''
@@ -100,7 +100,13 @@ export function NewJobPage() {
 
         const userId = userData.user?.id;
         const settings = userId ? await loadOrganizationSettingsForUser(userId) : null;
-        if (isMounted) setOrganizationSettings(settings);
+        if (isMounted) {
+          setOrganizationSettings(settings);
+          setFormData((current) => ({
+            ...current,
+            serviceType: resolveInitialJobServiceType(settings?.primaryServiceType)
+          }));
+        }
       } catch {
         if (isMounted) setOrganizationSettings(null);
       } finally {

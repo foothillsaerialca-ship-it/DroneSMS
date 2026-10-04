@@ -7,6 +7,7 @@ import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../../lib/supabase';
 import { DEFAULT_SERVICE_COMMITMENT } from '../lib/organization-settings';
+import { serviceTypes } from '../../jobs/lib/workflow-types';
 import { useAuth } from '../../auth/components/use-auth';
 import {
   DEFAULT_EMERGENCY_PROCEDURES_SUMMARY,
@@ -54,6 +55,7 @@ type SettingsForm = {
   physicalAddress: string;
   primaryContact: string;
   companyStatement: string;
+  primaryServiceType: string;
   isLicensed: string;
   isInsured: string;
   isBonded: string;
@@ -91,6 +93,7 @@ const emptySettingsForm: SettingsForm = {
   physicalAddress: '',
   primaryContact: '',
   companyStatement: '',
+  primaryServiceType: '',
   isLicensed: 'No',
   isInsured: 'No',
   isBonded: 'No',
@@ -147,6 +150,7 @@ function normalizeSettings(organization: Record<string, unknown> | null | undefi
     physicalAddress: String(organization?.physical_address ?? ''),
     primaryContact: String(organization?.primary_contact ?? ''),
     companyStatement: String(organization?.company_statement ?? ''),
+    primaryServiceType: String(organization?.primary_service_type ?? ''),
     isLicensed: organization?.is_licensed ? 'Yes' : 'No',
     isInsured: organization?.is_insured ? 'Yes' : 'No',
     isBonded: organization?.is_bonded ? 'Yes' : 'No',
@@ -308,7 +312,7 @@ export function SettingsPage() {
         const { data: organization, error: organizationError } = await supabase
           .from('organizations')
           .select(
-            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, primary_service_type, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
           )
           .eq('id', profile.organization_id)
           .maybeSingle();
@@ -409,6 +413,7 @@ export function SettingsPage() {
                 physical_address: draft.physicalAddress.trim() || null,
                 primary_contact: draft.primaryContact.trim() || null,
                 company_statement: draft.companyStatement.trim() || null,
+                primary_service_type: draft.primaryServiceType || null,
                 is_licensed: draft.isLicensed === 'Yes',
                 is_insured: draft.isInsured === 'Yes',
                 is_bonded: draft.isBonded === 'Yes',
@@ -433,7 +438,7 @@ export function SettingsPage() {
           .update(changes)
           .eq('id', organizationId)
           .select(
-            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+            'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, primary_service_type, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
           )
           .single();
 
@@ -489,7 +494,7 @@ export function SettingsPage() {
         .update({ logo_path: logoPath, logo_url: logoUrl, updated_at: new Date().toISOString() })
         .eq('id', organizationId)
         .select(
-          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, primary_service_type, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
         )
         .single();
 
@@ -501,7 +506,7 @@ export function SettingsPage() {
 
       const updatedSettings = normalizeSettings(data);
       setSettings(updatedSettings);
-      setDraft(updatedSettings);
+      setDraft((currentDraft) => ({ ...currentDraft, logoPath: updatedSettings.logoPath, logoUrl: updatedSettings.logoUrl }));
       setMessage('Logo updated.');
     } catch (logoError) {
       setError(getErrorMessage(logoError, 'Unable to upload logo.'));
@@ -535,7 +540,7 @@ export function SettingsPage() {
 
       const { data, error: updateError } = await updateQuery
         .select(
-          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
+          'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, primary_service_type, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url'
         )
         .single();
 
@@ -659,6 +664,19 @@ export function SettingsPage() {
                         />
                       </div>
                     ))}
+                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                      Primary Service Type
+                      <select
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 disabled:text-slate-500 sm:py-2 sm:text-sm"
+                        value={draft.primaryServiceType}
+                        onChange={(event) => updateDraft('primaryServiceType', event.target.value)}
+                        disabled={isSaving}
+                      >
+                        <option value="">Not set</option>
+                        {serviceTypes.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}
+                      </select>
+                      <span className="mt-1 block text-xs font-normal text-slate-500">Used as the default service type when creating a new job. You can change it for any individual job.</span>
+                    </label>
                     <div className="sm:col-span-2">
                       <p className="text-sm font-medium text-slate-700">Company Credentials</p>
                       <div className="mt-2 grid gap-2 sm:grid-cols-3">
@@ -706,6 +724,9 @@ export function SettingsPage() {
                       <FieldDisplay label={field.label} value={settings[field.key]} />
                     </div>
                   ))}
+                  <div className="sm:col-span-2">
+                    <FieldDisplay label="Primary Service Type" value={settings.primaryServiceType} />
+                  </div>
                   <div className="sm:col-span-2">
                     <FieldDisplay label="Company Credentials" value={[settings.isLicensed === 'Yes' ? 'Licensed' : '', settings.isInsured === 'Yes' ? 'Insured' : '', settings.isBonded === 'Yes' ? 'Bonded' : ''].filter(Boolean).join(' • ')} />
                     <FieldDisplay label="Proposal Inclusion Controls" value={[settings.includePaymentTermsInProposal === 'Yes' ? 'Payment Terms' : '', settings.includeServiceCommitmentInProposal === 'Yes' ? 'Service Commitment' : '', settings.includeCompanyCredentialsInProposal === 'Yes' ? 'Company Credentials' : '', settings.includeMaterialsUsedInProposal === 'Yes' ? 'Materials Used' : ''].filter(Boolean).join(' • ')} />
