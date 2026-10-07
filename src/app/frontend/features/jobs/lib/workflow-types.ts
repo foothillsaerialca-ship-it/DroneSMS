@@ -77,6 +77,46 @@ export type ProposalPersonnelAssignment = {
   qualifications_summary: string | null;
 };
 
+export type JobPersonnelAssignmentInsert = {
+  job_id: string;
+  organization_id: string;
+  personnel_id: string;
+  assigned_role: 'RPIC' | 'Pilot' | 'Visual Observer' | 'Payload Operator' | 'Ground Crew';
+};
+
+const jobRoleByProposalRole: Record<string, JobPersonnelAssignmentInsert['assigned_role']> = {
+  RPIC: 'RPIC',
+  Pilot: 'Pilot',
+  'Visual Observer': 'Visual Observer',
+  'Payload Operator': 'Payload Operator',
+  'Ground Crew': 'Ground Crew',
+  'Crew Member': 'Ground Crew',
+  'Safety Support': 'Ground Crew',
+  Other: 'Ground Crew',
+};
+
+/** Builds canonical operational assignments without changing the proposal snapshots. */
+export function buildJobPersonnelAssignments(
+  proposalAssignments: ProposalPersonnelAssignment[],
+  jobId: string,
+  organizationId: string,
+): JobPersonnelAssignmentInsert[] {
+  const seen = new Set<string>();
+
+  return proposalAssignments.flatMap((assignment) => {
+    const assignedRole = jobRoleByProposalRole[assignment.proposed_role];
+    const key = `${assignment.personnel_id}:${assignedRole}`;
+    if (!assignedRole || seen.has(key)) return [];
+    seen.add(key);
+    return [{
+      job_id: jobId,
+      organization_id: organizationId,
+      personnel_id: assignment.personnel_id,
+      assigned_role: assignedRole,
+    }];
+  });
+}
+
 /** Normalizes the immutable-at-conversion personnel snapshots stored on proposals. */
 export function normalizeProposalPersonnel(value: unknown): ProposalPersonnelAssignment[] {
   if (!Array.isArray(value)) return [];
