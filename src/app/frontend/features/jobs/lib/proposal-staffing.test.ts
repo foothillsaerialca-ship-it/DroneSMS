@@ -59,6 +59,46 @@ test('job personnel conversion removes duplicate canonical assignments', () => {
   ]);
 });
 
+test('every supported proposal role maps to its canonical job role', () => {
+  const expected: Array<[string, string]> = [
+    ['RPIC', 'RPIC'],
+    ['Pilot', 'Pilot'],
+    ['Visual Observer', 'Visual Observer'],
+    ['Payload Operator', 'Payload Operator'],
+    ['Ground Crew', 'Ground Crew'],
+    ['Crew Member', 'Ground Crew'],
+    ['Safety Support', 'Ground Crew'],
+    ['Other', 'Ground Crew'],
+  ];
+  const proposalPersonnel = expected.map(([proposed_role], index) => ({
+    personnel_id: `person-${index}`, personnel_name: `Person ${index}`, proposed_role, qualifications_summary: null,
+  }));
+
+  assert.deepEqual(
+    buildJobPersonnelAssignments(proposalPersonnel, 'job-1', 'org-1').map(({ personnel_id, assigned_role }) => [personnel_id, assigned_role]),
+    expected.map(([, jobRole], index) => [`person-${index}`, jobRole]),
+  );
+});
+
+test('unsupported and Object.prototype role names never become job assignments', () => {
+  for (const proposed_role of ['Drone Wrangler', 'toString', 'constructor', '__proto__', 'hasOwnProperty', 'valueOf']) {
+    const proposalPersonnel = [
+      { personnel_id: 'person-1', personnel_name: 'Ethan Cole', proposed_role: 'RPIC', qualifications_summary: null },
+      { personnel_id: 'person-2', personnel_name: 'Maya Rodriguez', proposed_role, qualifications_summary: null },
+    ];
+
+    assert.deepEqual(buildJobPersonnelAssignments(proposalPersonnel, 'job-1', 'org-1'), [
+      { job_id: 'job-1', organization_id: 'org-1', personnel_id: 'person-1', assigned_role: 'RPIC' },
+    ], `role ${proposed_role} must not produce an assignment`);
+  }
+});
+
+test('Object.prototype role names from stored JSON are dropped after normalization', () => {
+  const stored = JSON.parse('[{"personnel_id":"person-1","personnel_name":"Ethan Cole","proposed_role":"__proto__"},{"personnel_id":"person-2","personnel_name":"Maya Rodriguez","proposed_role":"constructor"},{"personnel_id":"person-3","personnel_name":"Daniel Brooks","proposed_role":"toString"}]');
+
+  assert.deepEqual(buildJobPersonnelAssignments(normalizeProposalPersonnel(stored), 'job-1', 'org-1'), []);
+});
+
 test('proposal flow stores snapshots, seeds independent job assignments, and keeps qualifications read-only', () => {
   const form = readFileSync(new URL('../pages/new-proposal-page.tsx', import.meta.url), 'utf8');
   const conversion = readFileSync(new URL('../pages/jobs-page.tsx', import.meta.url), 'utf8');
