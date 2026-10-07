@@ -914,9 +914,6 @@ export function EquipmentPage() {
                     {isChemicalMaterial(item) ? <p className="mt-1 text-sm text-slate-600">{[item.product_category, item.typical_mix_ratio ? `Mix: ${item.typical_mix_ratio}` : null].filter(Boolean).join(' • ')}</p> : null}
                   </div>
                   <div className="flex gap-2">
-                    <Link to="/sms/moc" className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-brand-700 shadow-sm hover:text-brand-900">
-                      Start Change Review
-                    </Link>
                     <button type="button" className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-brand-700 shadow-sm hover:text-brand-900" onClick={() => handleEdit(item)}>
                       Edit
                     </button>
