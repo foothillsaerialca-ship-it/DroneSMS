@@ -23,6 +23,7 @@ import {
 import { getProposalScopeDefaults } from '@frontend/features/jobs/lib/proposal-scope';
 import { buildPreflightPacketRows } from '@frontend/features/preflight/lib/preflight-checklist';
 import { buildProposalPersonnelLanguage, resolveProposalRpic, type ProposalOperationalPersonnel } from '@frontend/features/jobs/lib/proposal-language';
+import { containImage, type ImageBounds } from '@frontend/features/jobs/lib/organization-logo-layout';
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -282,20 +283,6 @@ class PdfBuilder {
   }
 
   /**
-   * Performs draw image for the surrounding workflow.
-   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
-   */
-  drawImage(page: PageState, x: number, y: number, width: number, height: number, opacity = 1) {
-    if (!this.logoImageId) return;
-    page.commands.push('q');
-    if (opacity < 1) page.commands.push('/GS1 gs');
-    page.commands.push(`${formatNumber(width)} 0 0 ${formatNumber(height)} ${formatNumber(x)} ${formatNumber(y)} cm /Logo Do`);
-    page.commands.push('Q');
-  }
-
-
-
-  /**
    * Performs add jpeg image for the surrounding workflow.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
@@ -319,29 +306,15 @@ class PdfBuilder {
     page.commands.push('Q');
   }
 
-  /**
-   * Performs draw circular image for the surrounding workflow.
-   * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
-   */
-  drawCircularImage(page: PageState, centerX: number, centerY: number, diameter: number, opacity = 1) {
+  /** Draws the complete organization logo, proportionally scaled and centered inside the supplied bounds. */
+  drawContainedLogo(page: PageState, bounds: ImageBounds, opacity = 1) {
     const logo = this.logo;
     if (!this.logoImageId || !logo) return;
-    const radius = diameter / 2;
-    const kappa = 0.5522847498;
-    const imageRatio = logo.width / logo.height;
-    const drawWidth = imageRatio >= 1 ? diameter * imageRatio : diameter;
-    const drawHeight = imageRatio >= 1 ? diameter : diameter / imageRatio;
-    const drawX = centerX - drawWidth / 2;
-    const drawY = centerY - drawHeight / 2;
+    const placement = containImage(logo, bounds);
 
     page.commands.push('q');
     if (opacity < 1) page.commands.push('/GS1 gs');
-    page.commands.push(`${formatNumber(centerX)} ${formatNumber(centerY + radius)} m`);
-    page.commands.push(`${formatNumber(centerX + radius * kappa)} ${formatNumber(centerY + radius)} ${formatNumber(centerX + radius)} ${formatNumber(centerY + radius * kappa)} ${formatNumber(centerX + radius)} ${formatNumber(centerY)} c`);
-    page.commands.push(`${formatNumber(centerX + radius)} ${formatNumber(centerY - radius * kappa)} ${formatNumber(centerX + radius * kappa)} ${formatNumber(centerY - radius)} ${formatNumber(centerX)} ${formatNumber(centerY - radius)} c`);
-    page.commands.push(`${formatNumber(centerX - radius * kappa)} ${formatNumber(centerY - radius)} ${formatNumber(centerX - radius)} ${formatNumber(centerY - radius * kappa)} ${formatNumber(centerX - radius)} ${formatNumber(centerY)} c`);
-    page.commands.push(`${formatNumber(centerX - radius)} ${formatNumber(centerY + radius * kappa)} ${formatNumber(centerX - radius * kappa)} ${formatNumber(centerY + radius)} ${formatNumber(centerX)} ${formatNumber(centerY + radius)} c W n`);
-    page.commands.push(`${formatNumber(drawWidth)} 0 0 ${formatNumber(drawHeight)} ${formatNumber(drawX)} ${formatNumber(drawY)} cm /Logo Do`);
+    page.commands.push(`${formatNumber(placement.width)} 0 0 ${formatNumber(placement.height)} ${formatNumber(placement.x)} ${formatNumber(placement.y)} cm /Logo Do`);
     page.commands.push('Q');
   }
 
@@ -594,7 +567,7 @@ class ProposalPdfRenderer {
     const companyName = companyNameFor(this.organization);
     const logo = this.pdf.getLogo();
     const centerX = PAGE_WIDTH / 2;
-    if (logo) this.pdf.drawCircularImage(this.currentPage, centerX, PAGE_HEIGHT - 132, 82);
+    if (logo) this.pdf.drawContainedLogo(this.currentPage, { x: centerX - 90, y: PAGE_HEIGHT - 173, width: 180, height: 82 });
     else this.pdf.drawWrappedText(this.currentPage, companyName, MARGIN, PAGE_HEIGHT - 118, PAGE_WIDTH - MARGIN * 2, { size: 22, font: 'bold', color: NAVY, align: 'center', lineHeight: 26 });
     this.pdf.drawWrappedText(this.currentPage, 'Completed Job Record', MARGIN + 28, PAGE_HEIGHT - 226, PAGE_WIDTH - (MARGIN + 28) * 2, { size: 13, font: 'bold', color: BLUE, align: 'center', lineHeight: 16 });
     this.pdf.drawLine(this.currentPage, MARGIN + 82, PAGE_HEIGHT - 254, PAGE_WIDTH - MARGIN - 82, PAGE_HEIGHT - 254, BLUE, 1.1);
@@ -650,7 +623,7 @@ class ProposalPdfRenderer {
     const coverTextX = centerX - coverTextWidth / 2;
 
     if (logo) {
-      this.pdf.drawCircularImage(this.currentPage, centerX, PAGE_HEIGHT - 156, 108);
+      this.pdf.drawContainedLogo(this.currentPage, { x: centerX - 120, y: PAGE_HEIGHT - 210, width: 240, height: 108 });
     } else {
       this.pdf.drawWrappedText(this.currentPage, companyName, coverTextX, PAGE_HEIGHT - 148, coverTextWidth, { size: 24, font: 'bold', color: NAVY, align: 'center', lineHeight: 28 });
     }
@@ -688,7 +661,7 @@ class ProposalPdfRenderer {
     this.pdf.drawWrappedText(page, organizationAddress(this.organization), MARGIN, addressY, 330, { size: 6, color: GRAY, lineHeight: 7.4 });
     this.pdf.drawText(page, organizationContact(this.organization), MARGIN, credentials ? PAGE_HEIGHT - 57 : PAGE_HEIGHT - 51, { size: 6, color: GRAY });
     const logo = this.pdf.getLogo();
-    if (logo) this.pdf.drawImage(page, PAGE_WIDTH - 88, PAGE_HEIGHT - 54, 31, (31 * logo.height) / logo.width);
+    if (logo) this.pdf.drawContainedLogo(page, { x: PAGE_WIDTH - MARGIN - 84, y: PAGE_HEIGHT - 60, width: 84, height: 46 });
   }
 
   /**
@@ -709,7 +682,7 @@ class ProposalPdfRenderer {
   private watermark(page: PageState) {
     const logo = this.pdf.getLogo();
     if (logo) {
-      this.pdf.drawCircularImage(page, PAGE_WIDTH / 2, PAGE_HEIGHT / 2, 389, WATERMARK_OPACITY);
+      this.pdf.drawContainedLogo(page, { x: (PAGE_WIDTH - 389) / 2, y: (PAGE_HEIGHT - 389) / 2, width: 389, height: 389 }, WATERMARK_OPACITY);
       return;
     }
     this.pdf.drawText(page, companyNameFor(this.organization), PAGE_WIDTH / 2, PAGE_HEIGHT / 2, { size: 36, font: 'bold', color: LIGHT_GRAY, align: 'center' });
