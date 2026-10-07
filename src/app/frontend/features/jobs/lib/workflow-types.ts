@@ -84,16 +84,18 @@ export type JobPersonnelAssignmentInsert = {
   assigned_role: 'RPIC' | 'Pilot' | 'Visual Observer' | 'Payload Operator' | 'Ground Crew';
 };
 
-const jobRoleByProposalRole: Record<string, JobPersonnelAssignmentInsert['assigned_role']> = {
-  RPIC: 'RPIC',
-  Pilot: 'Pilot',
-  'Visual Observer': 'Visual Observer',
-  'Payload Operator': 'Payload Operator',
-  'Ground Crew': 'Ground Crew',
-  'Crew Member': 'Ground Crew',
-  'Safety Support': 'Ground Crew',
-  Other: 'Ground Crew',
-};
+// A Map only returns explicitly listed roles, so stored strings such as
+// "toString" or "__proto__" can never resolve through Object.prototype.
+const jobRoleByProposalRole = new Map<string, JobPersonnelAssignmentInsert['assigned_role']>([
+  ['RPIC', 'RPIC'],
+  ['Pilot', 'Pilot'],
+  ['Visual Observer', 'Visual Observer'],
+  ['Payload Operator', 'Payload Operator'],
+  ['Ground Crew', 'Ground Crew'],
+  ['Crew Member', 'Ground Crew'],
+  ['Safety Support', 'Ground Crew'],
+  ['Other', 'Ground Crew'],
+]);
 
 /** Builds canonical operational assignments without changing the proposal snapshots. */
 export function buildJobPersonnelAssignments(
@@ -104,7 +106,7 @@ export function buildJobPersonnelAssignments(
   const seen = new Set<string>();
 
   return proposalAssignments.flatMap((assignment) => {
-    const assignedRole = jobRoleByProposalRole[assignment.proposed_role];
+    const assignedRole = jobRoleByProposalRole.get(assignment.proposed_role);
     const key = `${assignment.personnel_id}:${assignedRole}`;
     if (!assignedRole || seen.has(key)) return [];
     seen.add(key);
