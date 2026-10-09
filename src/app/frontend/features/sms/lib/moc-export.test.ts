@@ -94,8 +94,17 @@ test('workbook sheets cover the full record in MOC order with no UUIDs outside R
 });
 
 test('activity details are described in plain language', () => {
-  assert.equal(describeMocActivity({ action: 'Action completed', details: { description: 'Train crew', status: 'Complete', owner_id: 'p-sam' } }), 'Train crew · Status: Complete');
-  assert.equal(describeMocActivity({ action: 'Administrative correction', details: { reason: 'Typo' } }), 'Reason: Typo');
+  const people = buildMocIdentityDirectory(data);
+  assert.equal(
+    describeMocActivity({ action: 'Action completed', details: { id: 'act-1', moc_id: 'm', description: 'Train crew', owner_id: 'p-sam', due_date: '2026-10-05', required_before_operational_use: true, status: 'Complete', completion_date: '2026-10-04', notes_or_evidence: 'Certificate on file', created_at: 'x', updated_at: 'x' } }, people),
+    'Train crew · Owner: Sam Ortiz (Visual Observer) · Due: 2026-10-05 · Required before operational use · Status: Complete · Completed: 2026-10-04 · Notes: Certificate on file',
+  );
+  assert.equal(describeMocActivity({ action: 'Action assigned', details: { description: 'Brief crew', owner_id: null, required_before_operational_use: false, status: 'Open' } }), 'Brief crew · Owner: Unassigned · Not required before operational use · Status: Open');
+  assert.equal(describeMocActivity({ action: 'Administrative correction', details: { reason: 'Typo', fields: { title: 'Introduce M30T', description: '' } } }), 'Reason: Typo · Title set to: Introduce M30T · Description set to: (blank)');
+  assert.equal(
+    describeMocActivity({ action: 'Linked record changed', details: { id: 'l1', moc_id: 'm', hazard_id: 'aaaaaaaa-0000-4000-8000-000000000001', link_type: 'Candidate Hazard', candidate_hazard_name: 'Thermal glare', control_text: null, created_by: 'u', created_at: 'x' } }),
+    'Link type: Candidate Hazard · Candidate hazard name: Thermal glare',
+  );
   assert.equal(describeMocActivity({ action: 'MOC updated', details: {} }), '');
 });
 

@@ -29,20 +29,20 @@ export async function loadMocExportContext() {
   const { data: profile, error: profileError } = await supabase.from('profiles').select('organization_id').eq('id', user.id).single();
   if (profileError || !profile?.organization_id) throw new Error(profileError?.message || 'Organization setup is required.');
   const organizationId = String(profile.organization_id);
-  const [organizationResult, personnelResult, designationResult] = await Promise.all([
+  const [organizationResult, personnel, designationResult] = await Promise.all([
     supabase.from('organizations').select('name,owner_user_id').eq('id', organizationId).single(),
     // All statuses are loaded so people who have since left still resolve on historical records.
-    supabase.from('personnel').select('id,user_id,full_name,role,email,status').eq('organization_id', organizationId),
+    loadAllPages<MocExportPersonnel>((from, to) => supabase.from('personnel').select('id,user_id,full_name,role,email,status').eq('organization_id', organizationId).order('id').range(from, to)),
     supabase.from('organization_safety_designations').select('personnel_id').eq('organization_id', organizationId).maybeSingle(),
   ]);
-  const error = organizationResult.error || personnelResult.error || designationResult.error;
+  const error = organizationResult.error || designationResult.error;
   if (error) throw new Error(error.message);
   return {
     organizationName: String(organizationResult.data?.name || 'Organization'),
     organizationOwnerUserId: (organizationResult.data?.owner_user_id as string | null) ?? null,
     safetyManagerPersonnelId: (designationResult.data?.personnel_id as string | null) ?? null,
     currentUser: { id: user.id, email: user.email ?? null },
-    personnel: (personnelResult.data ?? []) as MocExportPersonnel[],
+    personnel,
   };
 }
 

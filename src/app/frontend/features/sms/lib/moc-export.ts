@@ -85,14 +85,44 @@ function equipmentLabel(equipment: MocExportRecord['equipment']) {
   return model && !equipment.name.includes(model) ? `${equipment.name} (${model})` : equipment.name;
 }
 
-/** Describes an activity entry's recorded details in plain language. */
-export function describeMocActivity(entry: Pick<MocExportActivity, 'action' | 'details'>) {
+const INTERNAL_DETAIL_KEYS = new Set(['id', 'moc_id', 'organization_id', 'created_by', 'created_at', 'updated_at']);
+
+function detailLabel(key: string) { return key.replace(/_id$/, '').replace(/_/g, ' ').replace(/^./, (first) => first.toUpperCase()); }
+
+function detailValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  return JSON.stringify(value);
+}
+
+/**
+ * Describes an activity entry's recorded details in plain language, keeping every human-meaningful field the audit trigger stored.
+ * Personnel IDs resolve to names; other internal IDs and bookkeeping timestamps are left out because the row already records when and on which MOC.
+ */
+export function describeMocActivity(entry: Pick<MocExportActivity, 'action' | 'details'>, people?: MocIdentityDirectory) {
   const details = entry.details ?? {};
-  const text = (key: string) => (typeof details[key] === 'string' ? (details[key] as string) : '');
+  const text = (key: string) => detailValue(details[key]);
+  const join = (parts: string[]) => parts.filter(Boolean).join(' · ');
   if ('from' in details || 'to' in details) return `${text('from') || '(blank)'} → ${text('to') || '(blank)'}`;
-  if (entry.action.startsWith('Action')) return [text('description'), text('status') ? `Status: ${text('status')}` : ''].filter(Boolean).join(' · ');
-  if (entry.action === 'Administrative correction') return text('reason') ? `Reason: ${text('reason')}` : '';
-  return '';
+  if (entry.action.startsWith('Action')) {
+    const owner = typeof details.owner_id === 'string' ? formatPersonCell(people?.personnel(details.owner_id) ?? null) : 'owner_id' in details ? 'Unassigned' : '';
+    return join([
+      text('description'),
+      owner ? `Owner: ${owner}` : '',
+      text('due_date') ? `Due: ${text('due_date')}` : '',
+      details.required_before_operational_use === true ? 'Required before operational use' : details.required_before_operational_use === false ? 'Not required before operational use' : '',
+      text('status') ? `Status: ${text('status')}` : '',
+      text('completion_date') ? `Completed: ${text('completion_date')}` : '',
+      text('notes_or_evidence') ? `Notes: ${text('notes_or_evidence')}` : '',
+    ]);
+  }
+  if (entry.action === 'Administrative correction') {
+    const fields = details.fields && typeof details.fields === 'object' ? Object.entries(details.fields as Record<string, unknown>) : [];
+    return join([text('reason') ? `Reason: ${text('reason')}` : '', ...fields.map(([key, value]) => `${detailLabel(key)} set to: ${detailValue(value) || '(blank)'}`)]);
+  }
+  // Hazard-link changes and any future activity types: list every non-internal field rather than dropping them.
+  return join(Object.entries(details).filter(([key, value]) => !INTERNAL_DETAIL_KEYS.has(key) && !(key.endsWith('_id') && typeof value === 'string' && value.length === 36) && detailValue(value)).map(([key, value]) => `${detailLabel(key)}: ${detailValue(value)}`));
 }
 
 /** Builds the sheets for a Management of Change workbook covering the given records. */
@@ -147,7 +177,7 @@ export function buildMocWorkbookSheets(data: MocExportData, scope: MocExportScop
     {
       name: 'Activity',
       columns: [{ header: 'MOC ID', width: 10 }, { header: 'MOC title', width: 32 }, { header: 'When', width: 17 }, { header: 'Activity', width: 28 }, { header: 'Details', width: 50 }, { header: 'Performed by', width: 36 }, { header: 'Record ID', width: 38 }],
-      rows: activity.map((entry) => { const moc = mocById.get(entry.moc_id)!; return [...ref(moc), xlsxDateTime(entry.created_at), entry.action, describeMocActivity(entry), entry.performed_by ? formatPersonCell(people.user(entry.performed_by)) : 'System', entry.id]; }),
+      rows: activity.map((entry) => { const moc = mocById.get(entry.moc_id)!; return [...ref(moc), xlsxDateTime(entry.created_at), entry.action, describeMocActivity(entry, people), entry.performed_by ? formatPersonCell(people.user(entry.performed_by)) : 'System', entry.id]; }),
     },
   ];
 }
