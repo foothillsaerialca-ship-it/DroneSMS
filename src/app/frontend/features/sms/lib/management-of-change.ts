@@ -7,6 +7,8 @@ export const mocSources = ['Equipment', 'Safety Event', 'Manual'] as const;
 export const mocChangeTypes = ['New operational capability', 'Equipment or configuration change', 'Change resulting from a safety event', 'Organizational change', 'Other safety-relevant change'] as const;
 export const mocStatuses = ['Draft', 'Under Review', 'Actions Required', 'Approved for Operational Use', 'Monitoring', 'Complete', 'Cancelled'] as const;
 export const pendingMocStatuses = new Set(['Draft', 'Under Review', 'Actions Required']);
+/** Impact-review questions; answers are stored in management_of_change.impact_review keyed by question index. */
+export const mocImpactQuestions = ['Does this introduce a new operational capability?', 'Does it affect aircraft, payloads, equipment, or configuration?', 'Does it affect training or familiarization?', 'Does it affect an existing hazard or control?', 'Does it introduce a new hazard?', 'Does it affect emergency preparedness?', 'Does it affect operating instructions, manuals, checklists, or established ways of working?', 'Does it affect personnel, contractors, customers, or other involved parties?', 'Are external approvals or notifications required?', 'Is anything required before operational use?'] as const;
 
 export type MocSource = (typeof mocSources)[number];
 export type MocStatus = (typeof mocStatuses)[number];
@@ -35,8 +37,6 @@ export function eventReviewRoute(answers: EventReviewAnswers) {
   if (answers.controlResult === 'It was not used or followed' || answers.changeNeeded === 'Training or familiarization') return 'corrective-action';
   return 'no-organizational-change';
 }
-
-export function csvCell(value: unknown) { return `"${String(value ?? '').replace(/"/g, '""')}"`; }
 
 export function displayUserIdentity(identity: UserIdentity, fallbackEmail?: string | null) {
   const fullName = identity?.full_name?.trim();
