@@ -91,6 +91,7 @@ type PersonnelOption = {
   status: string;
   user_id: string | null;
   email: string | null;
+  archived_at?: string | null;
 };
 
 /**
@@ -482,7 +483,7 @@ export function JobFileHubPage() {
           .maybeSingle();
         const personnelQuery = supabase
           .from('personnel')
-          .select('id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id')
+          .select('id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id, archived_at')
           .order('full_name', { ascending: true });
         const assignmentsQuery = supabase
           .from('job_personnel')
@@ -591,7 +592,7 @@ export function JobFileHubPage() {
         });
         const settings = await loadOrganizationSettingsById((jobResult.data as Job).organization_id);
         if (isMounted) setOrganizationSettings(settings);
-        setSelectedPersonnelId(loadedPersonnel[0]?.id ?? '');
+        setSelectedPersonnelId(loadedPersonnel.find((person) => !person.archived_at)?.id ?? '');
         setSelectedEquipmentId(loadedEquipment.find((equipment) => !loadedAssignedEquipmentIds.has(equipment.id))?.id ?? loadedEquipment[0]?.id ?? '');
       } catch (loadError) {
         if (!isMounted) return;
@@ -615,7 +616,9 @@ export function JobFileHubPage() {
 
   const assignedPersonnelIds = useMemo(() => new Set(assignments.map((assignment) => assignment.personnel?.id).filter(Boolean)), [assignments]);
   const assignedEquipmentIds = useMemo(() => new Set(equipmentAssignments.map((assignment) => assignment.equipment?.id).filter(Boolean)), [equipmentAssignments]);
-  const activePersonnelCount = personnel.filter((person) => person.status === 'Active').length;
+  const activePersonnelCount = personnel.filter((person) => person.status === 'Active' && !person.archived_at).length;
+  // Archived people stay in `personnel` so existing records still resolve their names, but cannot be newly assigned.
+  const assignablePersonnel = useMemo(() => personnel.filter((person) => !person.archived_at), [personnel]);
   const jhaComplete = jhaSummary?.status === 'Complete';
   const crewBriefingComplete = Boolean(jhaSummary?.crew_briefed && jhaComplete);
   const airspaceReviewComplete = Boolean(jhaSummary && (jhaSummary.faa_airspace_class || jhaSummary.laanc_required));
@@ -1252,10 +1255,10 @@ export function JobFileHubPage() {
                 className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
                 value={selectedPersonnelId}
                 onChange={(event) => setSelectedPersonnelId(event.target.value)}
-                disabled={isSavingAssignment || personnel.length === 0}
+                disabled={isSavingAssignment || assignablePersonnel.length === 0}
               >
-                {personnel.length === 0 ? <option value="">No personnel records available</option> : null}
-                {personnel.map((person) => (
+                {assignablePersonnel.length === 0 ? <option value="">No personnel records available</option> : null}
+                {assignablePersonnel.map((person) => (
                   <option key={person.id} value={person.id}>
                     {person.full_name} — {person.role}{assignedPersonnelIds.has(person.id) ? ' (already assigned)' : ''}
                   </option>
@@ -1269,7 +1272,7 @@ export function JobFileHubPage() {
                 className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
                 value={selectedRole}
                 onChange={(event) => setSelectedRole(event.target.value)}
-                disabled={isSavingAssignment || personnel.length === 0}
+                disabled={isSavingAssignment || assignablePersonnel.length === 0}
               >
                 {crewRoleOptions.map((role) => (
                   <option key={role} value={role}>{role}</option>
@@ -1280,7 +1283,7 @@ export function JobFileHubPage() {
             <button
               type="submit"
               className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-              disabled={isSavingAssignment || personnel.length === 0}
+              disabled={isSavingAssignment || assignablePersonnel.length === 0}
             >
               {isSavingAssignment ? 'Assigning...' : 'Add Crew'}
             </button>
@@ -1295,7 +1298,7 @@ export function JobFileHubPage() {
           </form>
         ) : null}
 
-        {isCrewFormOpen && personnel.length === 0 ? (
+        {isCrewFormOpen && assignablePersonnel.length === 0 ? (
           <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
             Add personnel records before assigning crew to this job.
           </p>
