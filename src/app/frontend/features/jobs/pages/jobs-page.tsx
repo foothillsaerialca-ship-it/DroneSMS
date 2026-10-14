@@ -672,10 +672,11 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     setWorkspaceMessage(null);
 
     try {
-      const now = new Date().toISOString();
+      // updated_at is left alone: the dashboard uses it as the job's close time, and archiving
+      // is filing, not a change to the operation.
       const { error } = await supabase
         .from("jobs")
-        .update({ archived_at: archive ? now : null, updated_at: now })
+        .update({ archived_at: archive ? new Date().toISOString() : null })
         .eq("id", jobId);
 
       if (error) throw error;
@@ -711,10 +712,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     setWorkspaceMessage(null);
 
     try {
-      const now = new Date().toISOString();
+      // updated_at is left alone for the same reason as setJobArchived.
       const { error } = await supabase
         .from("jobs")
-        .update({ archived_at: now, updated_at: now })
+        .update({ archived_at: new Date().toISOString() })
         .in(
           "id",
           completedJobs.map((job) => job.id),

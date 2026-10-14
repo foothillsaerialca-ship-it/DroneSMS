@@ -24,6 +24,7 @@ type DashboardJob = {
   status: string;
   created_at: string;
   updated_at: string;
+  archived_at: string | null;
 };
 
 /**
@@ -165,7 +166,8 @@ function formatActivityDate(dateValue: string) {
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
 function isActiveJob(job: DashboardJob) {
-  return activeJobStatuses.has(normalizeStatus(job.status));
+  // Archived jobs stay loaded for activity history but leave every operational workflow.
+  return !job.archived_at && activeJobStatuses.has(normalizeStatus(job.status));
 }
 
 /**
@@ -355,7 +357,7 @@ async function loadDashboardData(userId: string): Promise<DashboardData> {
   const organizationSettingsPromise = loadOrganizationSettingsForUser(userId);
   const jobsQuery = supabase
     .from('jobs')
-    .select('id, name, client_name, service_type, planned_date, status, created_at, updated_at')
+    .select('id, name, client_name, service_type, planned_date, status, created_at, updated_at, archived_at')
     .is('deleted_at', null)
     .order('planned_date', { ascending: true })
     .order('created_at', { ascending: false });
