@@ -220,9 +220,10 @@ New jobs start as **Planned**.
 The **Job Detail** page holds these core fields, a link back to the source proposal, and the job
 **Status** (Planned, In Progress, Needs Review, Complete).
 
-> Changing the job's **name, location, planned date or service type** changes the crew
-> briefing content. Any crew acknowledgments must be redone, and a Ready to Operate approval
+> Changing the job's **location, planned date or service type** changes the operation the crew
+> was briefed on. Any crew acknowledgments must be redone, and a Ready to Operate approval
 > becomes stale (see [section 10](#10-what-resets-what)). Lock these down before briefing.
+> Renaming the job is safe at any time.
 
 ### 5.3 The Job File
 
@@ -350,8 +351,9 @@ is required."* The RPIC continues with JHA RPIC Acceptance and Ready to Operate.
 ## 7. The JHA in detail
 
 Open the JHA from **Job File → Open JHA**. There are six steps; the progress bar at the top lets
-you jump between them. **Next**, **Back**, clicking a step, and **Save Progress** all save your
-work, so you can stop at any point.
+you jump between them. **Next**, **Back**, clicking a step, and **Save Progress** all save any
+changes you've made, so you can stop at any point. If nothing changed, nothing is saved, so
+you can page through an approved JHA without affecting the approval.
 
 ### Step 1: Mission Basics
 
@@ -544,16 +546,16 @@ sign-offs.
 | If you change… | Then… |
 | --- | --- |
 | JHA content: conditions, airspace, environmental, hazards, PPE, emergency info, the crew-briefed or controls-in-place checkboxes | Safety Manager Review and RPIC Acceptance become **stale**, the JHA returns to **Draft**, and Ready to Operate becomes **Approval Stale** |
-| **Any save of the JHA** after approval, including Next/Back or clicking a step | Ready to Operate becomes **Approval Stale** |
+| **Any other edit to the JHA** after approval (for example the JHA number or permit status) | Ready to Operate becomes **Approval Stale**. Just paging through the JHA without editing doesn't count. |
 | Briefing content: JHA scope, hazards, PPE, crew, emergency info, site access, exclusion zone, airspace restrictions | Crew acknowledgments become **Stale**, and unused acknowledgment links stop working |
-| Job name, location, planned date or service type | Crew acknowledgments become **Stale**; Ready to Operate becomes **Approval Stale** |
+| Job location, planned date or service type | Crew acknowledgments become **Stale**; Ready to Operate becomes **Approval Stale** |
+| Job name | Nothing. Renaming is safe at any time. |
 | Crew assignments: add, remove or change a role | Crew acknowledgments become **Stale**; Ready to Operate becomes **Approval Stale** |
 | Equipment assignments | Ready to Operate becomes **Approval Stale** |
 | The pre-flight checklist | Ready to Operate becomes **Approval Stale** |
 
 **Rule of thumb:** finish planning, then brief, then approve, and don't edit after approving.
-If you need to look at the JHA after approval, read it without clicking Next, Back, a step, or
-Save.
+Reading the JHA after approval is safe.
 
 ---
 

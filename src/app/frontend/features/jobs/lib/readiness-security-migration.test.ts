@@ -151,7 +151,7 @@ test('every effective readiness helper caller is a locked-down security-definer 
   const callers = allMigrations
     .flatMap(({ sql }) => [...sql.matchAll(/perform\s+public\.mark_job_operation_readiness_stale\s*\(/gi)])
     .length;
-  assert.equal(callers, 7, 'review the execution context of every new helper call site');
+  assert.equal(callers, 8, 'review the execution context of every new helper call site');
 
   const { functions } = deriveFinalMigrationState();
 

@@ -12,6 +12,7 @@ const repairMigration = readFileSync('supabase/migrations/20260905010000_fix_cre
 const cryptoRepairMigration = readFileSync('supabase/migrations/20260905020000_fix_crew_invitation_crypto_schema.sql', 'utf8');
 const anonymousRevocationMigration = readFileSync('supabase/migrations/20260906090000_revoke_anonymous_crew_briefing_acknowledgment.sql', 'utf8');
 const anonymousLookupRevocationMigration = readFileSync('supabase/migrations/20260906100000_revoke_anonymous_crew_briefing_lookup.sql', 'utf8');
+const jobRenameMigration = readFileSync('supabase/migrations/20261015000000_job_rename_keeps_crew_briefing.sql', 'utf8');
 const sendFunction = readFileSync('supabase/functions/send-crew-acknowledgment/index.ts', 'utf8');
 
 test('crew invitation resolves pgcrypto without widening its SECURITY DEFINER search path', () => {
@@ -163,4 +164,12 @@ test('email function accepts supabase-js preflight and only marks Sent after pro
   const sentUpdate = sendFunction.indexOf('p_sent: true');
   assert.ok(providerCheck > -1 && sentUpdate > providerCheck);
   assert.match(sendFunction, /if \(invitationId\)[^\n]+p_sent: false/);
+});
+
+test('job rename no longer advances the crew briefing version while site, date, and service still do', () => {
+  const comparedFields = jobRenameMigration.match(/if row\(([^)]*)\) is distinct from/)?.[1] ?? '';
+  for (const field of ['location', 'planned_date', 'service_type']) assert.match(comparedFields, new RegExp(`new\\.${field}`));
+  assert.doesNotMatch(comparedFields, /new\.name/);
+  assert.match(jobRenameMigration, /security definer set search_path = pg_catalog, public/);
+  assert.match(jobRenameMigration, /revoke all on function public\.advance_crew_briefing_version_from_job\(\) from public, anon, authenticated/);
 });
