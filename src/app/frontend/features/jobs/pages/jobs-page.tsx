@@ -49,6 +49,7 @@ type Job = {
   location: string;
   planned_date: string;
   status: string;
+  archived_at: string | null;
 };
 
 /**
@@ -86,7 +87,7 @@ type Proposal = {
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type JobsTab = "proposals" | "active" | "completed";
+type JobsTab = "proposals" | "active" | "completed" | "archived";
 /**
  * Purpose: Defines the input contract accepted by the jobs page component.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
@@ -102,6 +103,7 @@ type JobsPageProps = { mode?: "jobs" | "proposals" };
 const jobsTabs: { id: Exclude<JobsTab, "proposals">; label: string }[] = [
   { id: "active", label: "Active Jobs" },
   { id: "completed", label: "Completed Jobs" },
+  { id: "archived", label: "Archived" },
 ];
 
 /**
@@ -154,7 +156,7 @@ function isCompletedJob(job: Job) {
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
 function getInitialTab(tab: string | null): JobsTab {
-  if (tab === "completed") return "completed";
+  if (tab === "completed" || tab === "archived") return tab;
   return "active";
 }
 
@@ -188,6 +190,8 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     string | null
   >(null);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const [archivingJobId, setArchivingJobId] = useState<string | null>(null);
+  const [isArchivingAllCompleted, setIsArchivingAllCompleted] = useState(false);
   const [workspaceMessage, setWorkspaceMessage] = useState<string | null>(null);
   const [workspaceWarning, setWorkspaceWarning] = useState<string | null>(null);
   const [proposalDocuments, setProposalDocuments] = useState<
@@ -205,7 +209,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     try {
       const { data, error: jobsLoadError } = await supabase
         .from("jobs")
-        .select("id, name, service_type, location, planned_date, status")
+        .select("id, name, service_type, location, planned_date, status, archived_at")
         .is("deleted_at", null)
         .order("planned_date", { ascending: true })
         .order("created_at", { ascending: false });
@@ -325,11 +329,29 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   }, [loadJobs, loadProposals]);
 
   const activeJobs = useMemo(
-    () => jobs.filter((job) => !isCompletedJob(job)),
+    () => jobs.filter((job) => !job.archived_at && !isCompletedJob(job)),
     [jobs],
   );
-  const completedJobs = useMemo(() => jobs.filter(isCompletedJob), [jobs]);
-  const visibleJobs = activeTab === "completed" ? completedJobs : activeJobs;
+  const completedJobs = useMemo(
+    () => jobs.filter((job) => !job.archived_at && isCompletedJob(job)),
+    [jobs],
+  );
+  // Most recently archived first, so a just-archived job is easy to find and restore.
+  const archivedJobs = useMemo(
+    () =>
+      jobs
+        .filter((job) => Boolean(job.archived_at))
+        .sort((left, right) =>
+          (right.archived_at ?? "").localeCompare(left.archived_at ?? ""),
+        ),
+    [jobs],
+  );
+  const visibleJobs =
+    activeTab === "completed"
+      ? completedJobs
+      : activeTab === "archived"
+        ? archivedJobs
+        : activeJobs;
   const activeProposals = useMemo(
     () => proposals.filter((proposal) => !proposal.converted_to_job),
     [proposals],
@@ -412,7 +434,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
           proposed_rpic_credentials: proposal.proposed_rpic_credentials,
           proposed_rpic_bio: proposal.proposed_rpic_bio,
         })
-        .select("id, name, service_type, location, planned_date, status")
+        .select("id, name, service_type, location, planned_date, status, archived_at")
         .single();
 
       if (error) throw error;
@@ -639,6 +661,78 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     }
   }
 
+  /**
+   * Archives or restores a job. Archived jobs leave the Active and Completed lists but keep
+   * every record and stay available under the Archived tab.
+   * Fallback/error behavior: Service errors are shown in the jobs error state; the list is reloaded on success.
+   */
+  async function setJobArchived(jobId: string, archive: boolean) {
+    setArchivingJobId(jobId);
+    setJobsError(null);
+    setWorkspaceMessage(null);
+
+    try {
+      // updated_at is left alone: the dashboard uses it as the job's close time, and archiving
+      // is filing, not a change to the operation.
+      const { error } = await supabase
+        .from("jobs")
+        .update({ archived_at: archive ? new Date().toISOString() : null })
+        .eq("id", jobId);
+
+      if (error) throw error;
+
+      setWorkspaceMessage(
+        archive
+          ? "Job archived. Find it under the Archived tab."
+          : "Job restored.",
+      );
+      await loadJobs();
+    } catch (archiveError) {
+      setJobsError(getErrorMessage(archiveError));
+    } finally {
+      setArchivingJobId(null);
+    }
+  }
+
+  /**
+   * Archives every completed job in one update to clear the Completed list.
+   * Fallback/error behavior: Service errors are shown in the jobs error state; the list is reloaded on success.
+   */
+  async function archiveAllCompletedJobs() {
+    if (completedJobs.length === 0) return;
+    if (
+      !window.confirm(
+        `Archive ${completedJobs.length} completed job${completedJobs.length === 1 ? "" : "s"}? They stay available under the Archived tab.`,
+      )
+    )
+      return;
+
+    setIsArchivingAllCompleted(true);
+    setJobsError(null);
+    setWorkspaceMessage(null);
+
+    try {
+      // updated_at is left alone for the same reason as setJobArchived.
+      const { error } = await supabase
+        .from("jobs")
+        .update({ archived_at: new Date().toISOString() })
+        .in(
+          "id",
+          completedJobs.map((job) => job.id),
+        );
+
+      if (error) throw error;
+
+      setWorkspaceMessage(
+        `${completedJobs.length} completed job${completedJobs.length === 1 ? "" : "s"} archived.`,
+      );
+      await loadJobs();
+    } catch (archiveError) {
+      setJobsError(getErrorMessage(archiveError));
+    } finally {
+      setIsArchivingAllCompleted(false);
+    }
+  }
 
   /**
    * Handles remove generated document while keeping the feature state consistent.
@@ -987,7 +1081,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       {mode === "jobs" ? (
         <div className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
           <div
-            className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+            className="grid grid-cols-1 gap-2 sm:grid-cols-3"
             role="tablist"
             aria-label="Jobs sections"
           >
@@ -1131,6 +1225,28 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       ) : null}
 
       {showJobsView &&
+      activeTab === "completed" &&
+      !isLoadingJobs &&
+      completedJobs.length > 0 ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-600">
+            Archive finished work to keep this list short. Archived jobs keep
+            all their records and can be restored.
+          </p>
+          <button
+            type="button"
+            className="min-h-11 shrink-0 rounded-lg border border-brand-700 bg-white px-3 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 sm:min-h-0 sm:py-2"
+            onClick={() => void archiveAllCompletedJobs()}
+            disabled={isArchivingAllCompleted}
+          >
+            {isArchivingAllCompleted
+              ? "Archiving..."
+              : `Archive all completed (${completedJobs.length})`}
+          </button>
+        </div>
+      ) : null}
+
+      {showJobsView &&
       !isLoadingJobs &&
       !jobsError &&
       visibleJobs.length > 0 ? (
@@ -1154,16 +1270,34 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
                 </Link>
                 <div className="flex flex-col gap-2 sm:items-end">
                   <span className="inline-flex w-fit rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-brand-700">
-                    {job.status}
+                    {job.archived_at ? `${job.status} • Archived` : job.status}
                   </span>
-                  <button
-                    type="button"
-                    className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0 sm:py-2"
-                    onClick={() => void deleteJob(job.id)}
-                    disabled={deletingJobId === job.id}
-                  >
-                    {deletingJobId === job.id ? "Removing..." : "Delete Job"}
-                  </button>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-brand-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0 sm:py-2"
+                      onClick={() =>
+                        void setJobArchived(job.id, !job.archived_at)
+                      }
+                      disabled={archivingJobId === job.id}
+                    >
+                      {archivingJobId === job.id
+                        ? "Saving..."
+                        : job.archived_at
+                          ? "Restore"
+                          : "Archive"}
+                    </button>
+                    {job.archived_at ? null : (
+                      <button
+                        type="button"
+                        className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0 sm:py-2"
+                        onClick={() => void deleteJob(job.id)}
+                        disabled={deletingJobId === job.id}
+                      >
+                        {deletingJobId === job.id ? "Removing..." : "Delete Job"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1215,13 +1349,16 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       visibleJobs.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center shadow-sm">
           <h2 className="text-base font-semibold text-brand-900">
-            No {activeTab === "completed" ? "completed jobs" : "active jobs"}{" "}
-            yet
+            {activeTab === "archived"
+              ? "No archived jobs"
+              : `No ${activeTab === "completed" ? "completed jobs" : "active jobs"} yet`}
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            {activeTab === "completed"
-              ? "Completed operations will appear here when a job status is complete."
-              : "Create your first job to start building an operations list."}
+            {activeTab === "archived"
+              ? "Jobs you archive appear here and can be restored at any time."
+              : activeTab === "completed"
+                ? "Completed operations will appear here when a job status is complete."
+                : "Create your first job to start building an operations list."}
           </p>
           {activeTab === "active" ? (
             <Link

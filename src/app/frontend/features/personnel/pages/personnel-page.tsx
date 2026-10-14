@@ -66,6 +66,7 @@ type Personnel = {
   profile_photo_url: string | null;
   notes: string | null;
   updated_at: string;
+  archived_at: string | null;
 };
 
 /**
@@ -271,6 +272,8 @@ export function PersonnelPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivingPersonId, setArchivingPersonId] = useState<string | null>(null);
 
   /**
    * Performs load personnel for the surrounding workflow.
@@ -283,7 +286,7 @@ export function PersonnelPage() {
     try {
       const { data, error: personnelError } = await supabase
         .from('personnel')
-        .select('id, full_name, role, email, phone, part_107_certificate_number, part_107_expiration_date, training_expiration_date, emergency_contact_name, emergency_contact_phone, status, professional_bio, certifications_summary, profile_photo_url, notes, updated_at')
+        .select('id, full_name, role, email, phone, part_107_certificate_number, part_107_expiration_date, training_expiration_date, emergency_contact_name, emergency_contact_phone, status, professional_bio, certifications_summary, profile_photo_url, notes, updated_at, archived_at')
         .order('status', { ascending: true })
         .order('full_name', { ascending: true });
 
@@ -301,8 +304,11 @@ export function PersonnelPage() {
     void loadPersonnel();
   }, []);
 
+  const rosterPersonnel = useMemo(() => personnel.filter((person) => !person.archived_at), [personnel]);
+  const archivedPersonnel = useMemo(() => personnel.filter((person) => Boolean(person.archived_at)), [personnel]);
+
   const readinessCounts = useMemo(() => {
-    return personnel.reduce(
+    return rosterPersonnel.reduce(
       (counts, person) => {
         const readiness = getReadinessState(person);
         const trainingStatus = getTrainingStatus(person);
@@ -316,15 +322,15 @@ export function PersonnelPage() {
       },
       { active: 0, pilots: 0, certBlocked: 0, trainingSoon: 0, trainingExpired: 0, renewSoon: 0 }
     );
-  }, [personnel]);
+  }, [rosterPersonnel]);
 
   const sortedPersonnel = useMemo(() => {
-    return [...personnel].sort((left, right) => {
+    return [...(showArchived ? archivedPersonnel : rosterPersonnel)].sort((left, right) => {
       const readinessDifference = getReadinessState(left).sortOrder - getReadinessState(right).sortOrder;
       if (readinessDifference !== 0) return readinessDifference;
       return left.full_name.localeCompare(right.full_name);
     });
-  }, [personnel]);
+  }, [showArchived, archivedPersonnel, rosterPersonnel]);
 
   /**
    * Renders the update field interface and coordinates its user interactions.
@@ -437,6 +443,49 @@ export function PersonnelPage() {
     setError(null);
     setSaveMessage(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /**
+   * Archives or restores a personnel record. Personnel are never deleted because signed JHAs,
+   * designations, and crew acknowledgments must keep pointing at the person who signed.
+   * Archiving also sets the status to Inactive so every Active-only picker drops the person;
+   * restoring leaves them Inactive until someone deliberately reactivates them.
+   * Fallback/error behavior: Service errors are shown in the page error state; the list is reloaded on success.
+   */
+  async function setPersonArchived(person: Personnel, archive: boolean) {
+    if (
+      archive &&
+      !window.confirm(
+        `Archive ${person.full_name}? They will be removed from the roster and crew pickers. Past jobs, JHAs, and acknowledgments keep their name.`
+      )
+    ) {
+      return;
+    }
+
+    setArchivingPersonId(person.id);
+    setError(null);
+    setSaveMessage(null);
+
+    try {
+      const now = new Date().toISOString();
+      const update = archive
+        ? { archived_at: now, status: 'Inactive', updated_at: now }
+        : { archived_at: null, updated_at: now };
+      const { error: archiveError } = await supabase.from('personnel').update(update).eq('id', person.id);
+      if (archiveError) throw archiveError;
+
+      if (editingPersonId === person.id) resetForm();
+      setSaveMessage(
+        archive
+          ? `${person.full_name} archived.`
+          : `${person.full_name} restored as Inactive. Edit the record to set them Active when ready.`
+      );
+      await loadPersonnel();
+    } catch (archiveError) {
+      setError(getErrorMessage(archiveError));
+    } finally {
+      setArchivingPersonId(null);
+    }
   }
 
   return (
@@ -683,13 +732,23 @@ export function PersonnelPage() {
               <h2 className="text-lg font-semibold text-brand-900">Personnel Records</h2>
               <p className="mt-1 text-sm text-slate-600">Review current crew readiness, then add or edit a record when needed.</p>
             </div>
-            <button
-              type="button"
-              className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
-              onClick={handleAdd}
-            >
-              + Add Personnel
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:min-h-0 sm:py-2"
+                onClick={() => setShowArchived((current) => !current)}
+                aria-pressed={showArchived}
+              >
+                {showArchived ? 'Show current roster' : `Show archived (${archivedPersonnel.length})`}
+              </button>
+              <button
+                type="button"
+                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 sm:min-h-0 sm:py-2"
+                onClick={handleAdd}
+              >
+                + Add Personnel
+              </button>
+            </div>
           </div>
           {error ? <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p> : null}
           {saveMessage ? <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{saveMessage}</p> : null}
@@ -701,7 +760,14 @@ export function PersonnelPage() {
           <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">Loading personnel...</div>
         ) : null}
 
-        {!isLoading && personnel.length === 0 ? (
+        {!isLoading && showArchived && archivedPersonnel.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center shadow-sm">
+            <h2 className="text-base font-semibold text-brand-900">No archived personnel</h2>
+            <p className="mt-2 text-sm text-slate-600">People you archive appear here and can be restored at any time.</p>
+          </div>
+        ) : null}
+
+        {!isLoading && !showArchived && rosterPersonnel.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center shadow-sm">
             <h2 className="text-base font-semibold text-brand-900">No personnel yet</h2>
             <p className="mt-2 text-sm text-slate-600">Add your first RPIC, visual observer, or crew member to begin readiness tracking.</p>
@@ -723,13 +789,25 @@ export function PersonnelPage() {
                   <p className="mt-1 text-sm font-medium text-slate-600">{person.role}</p>
                   <p className="mt-2 text-sm text-slate-600">{readiness.detail}</p>
                 </div>
-                <button
-                  type="button"
-                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:min-h-0"
-                  onClick={() => handleEdit(person)}
-                >
-                  Edit
-                </button>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {person.archived_at ? null : (
+                    <button
+                      type="button"
+                      className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:min-h-0"
+                      onClick={() => handleEdit(person)}
+                    >
+                      Edit
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 sm:min-h-0"
+                    onClick={() => void setPersonArchived(person, !person.archived_at)}
+                    disabled={archivingPersonId === person.id}
+                  >
+                    {archivingPersonId === person.id ? 'Saving...' : person.archived_at ? 'Restore' : 'Archive'}
+                  </button>
+                </div>
               </div>
 
               <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
