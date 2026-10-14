@@ -100,10 +100,22 @@ create trigger a0_guard_jha_attestations
 -- 'Actions Required' / 'Returned for changes', 'Cancelled', and moves an
 -- approved MOC to 'Monitoring' / 'Complete'. Approval itself must go through
 -- approve_management_of_change(), which checks the required actions.
+-- The app creates MOCs through start_management_of_change(); a direct browser
+-- insert may only create a Draft with no review, approval, or closure state.
 create or replace function public.guard_moc_approval()
 returns trigger language plpgsql set search_path = pg_catalog, public as $$
 begin
   if current_user not in ('authenticated', 'anon') then return new; end if;
+  if tg_op = 'INSERT' then
+    if new.status is distinct from 'Draft'
+       or num_nonnulls(new.safety_review_decision, new.safety_reviewer_id, new.safety_reviewed_at,
+                       new.operational_accepted_by, new.operational_acceptance_role,
+                       new.operational_accepted_at, new.approved_at, new.completed_at,
+                       new.cancelled_at) > 0 then
+      raise exception 'A new Management of Change must start as a Draft without review or approval details.';
+    end if;
+    return new;
+  end if;
   if new.status = 'Approved for Operational Use' and old.status is distinct from 'Approved for Operational Use' then
     raise exception 'Use the approval action to approve a Management of Change.';
   end if;
@@ -125,18 +137,24 @@ end $$;
 
 drop trigger if exists guard_moc_approval on public.management_of_change;
 create trigger guard_moc_approval
-  before update on public.management_of_change
+  before insert or update on public.management_of_change
   for each row execute function public.guard_moc_approval();
 
--- 3c. Generated documents: the browser may only archive.
+-- 3c. Generated documents: the browser may only archive, once. Archiving is a
+-- one-way NULL -> server-timestamp transition attributed to the caller; it
+-- cannot be undone or re-attributed from the browser.
 create or replace function public.guard_generated_document_update()
 returns trigger language plpgsql set search_path = pg_catalog, public as $$
 begin
-  if current_user in ('authenticated', 'anon')
-     and (to_jsonb(new) - 'archived_at' - 'archived_by_user_id')
-         is distinct from (to_jsonb(old) - 'archived_at' - 'archived_by_user_id') then
-    raise exception 'Generated documents can only be archived.';
+  if current_user not in ('authenticated', 'anon') then return new; end if;
+  if (to_jsonb(new) - 'archived_at' - 'archived_by_user_id')
+       is distinct from (to_jsonb(old) - 'archived_at' - 'archived_by_user_id')
+     or old.archived_at is not null
+     or new.archived_at is null
+     or new.archived_by_user_id is distinct from auth.uid() then
+    raise exception 'Generated documents can only be archived once, by the current user.';
   end if;
+  new.archived_at := now();
   return new;
 end $$;
 
@@ -177,6 +195,7 @@ revoke all on function public.guard_personnel_user_link() from public, anon, aut
 -- 7. M1 - Generated-document uploads must belong to the uploader's org
 -- =====================================================================
 -- Matches the paths the app already uses: proposal/<proposal id>/<file>.pdf
+-- The path is qualified as objects.name because jobs also has a "name" column.
 -- and job/<job id>/<file>.pdf. No frontend change needed.
 drop policy if exists "Users can upload generated document files" on storage.objects;
 create policy "Users can upload generated document files"
@@ -187,12 +206,12 @@ create policy "Users can upload generated document files"
     and (
       ((storage.foldername(name))[1] = 'proposal' and exists (
         select 1 from public.proposals p
-        where p.id::text = (storage.foldername(name))[2]
+        where p.id::text = (storage.foldername(objects.name))[2]
           and p.organization_id = public.current_user_organization_id()))
       or
       ((storage.foldername(name))[1] = 'job' and exists (
         select 1 from public.jobs j
-        where j.id::text = (storage.foldername(name))[2]
+        where j.id::text = (storage.foldername(objects.name))[2]
           and j.organization_id = public.current_user_organization_id()))
     )
   );
@@ -204,6 +223,9 @@ create or replace function public.limit_crew_briefing_invitations()
 returns trigger language plpgsql set search_path = pg_catalog, public as $$
 begin
   if new.acknowledgment_method = 'Electronic' and new.created_by_user_id is not null then
+    -- Serialize per user so concurrent requests cannot all pass the count
+    -- before any of them commits. The lock is released at transaction end.
+    perform pg_advisory_xact_lock(hashtextextended('crew_briefing_invitations:' || new.created_by_user_id::text, 0));
     if (select count(*) from public.crew_briefing_acknowledgments
         where created_by_user_id = new.created_by_user_id and acknowledgment_method = 'Electronic'
           and created_at > now() - interval '1 hour') >= 20
