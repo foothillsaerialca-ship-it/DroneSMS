@@ -75,6 +75,7 @@ At the 2026-08-25 audit, all 17 unit tests passed and the production build compl
 
 ## Documentation
 
+- [User guide: where to start and the operation workflow](user-guide.md)
 - [Complete documentation and history](documentation.md)
 - [Installation and local setup](install.md)
 - [Authentication deployment configuration](authentication-deployment.md)
