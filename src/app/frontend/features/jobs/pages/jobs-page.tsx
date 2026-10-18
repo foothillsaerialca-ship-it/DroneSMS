@@ -1251,10 +1251,12 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       !jobsError &&
       visibleJobs.length > 0 ? (
         <div className="space-y-3">
-          {visibleJobs.map((job) => (
+          {visibleJobs.map((job, index) => (
             <article
               key={job.id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className={`rounded-xl border border-slate-200 p-4 shadow-sm ${
+                index % 2 === 1 ? "bg-[#F3F8FF]" : "bg-white"
+              }`}
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <Link

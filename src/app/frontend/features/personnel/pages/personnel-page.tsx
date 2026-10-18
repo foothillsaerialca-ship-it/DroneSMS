@@ -774,12 +774,12 @@ export function PersonnelPage() {
           </div>
         ) : null}
 
-        {!isLoading && sortedPersonnel.map((person) => {
+        {!isLoading && sortedPersonnel.map((person, index) => {
           const readiness = getReadinessState(person);
           const trainingStatus = getTrainingStatus(person);
 
           return (
-            <article key={person.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <article key={person.id} className={`rounded-xl border border-slate-200 p-4 shadow-sm ${index % 2 === 1 ? 'bg-[#F3F8FF]' : 'bg-white'}`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">

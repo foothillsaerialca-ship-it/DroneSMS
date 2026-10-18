@@ -895,12 +895,12 @@ export function EquipmentPage() {
           {!isLoading && filteredEquipment.length === 0 ? (
             <p className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">No equipment records match the current filters.</p>
           ) : null}
-          {filteredEquipment.map((item) => {
+          {filteredEquipment.map((item, index) => {
             const readiness = getReadinessState(item);
             const isDeleting = deletingEquipmentId === item.id;
 
             return (
-              <article key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <article key={item.id} className={`rounded-xl border border-slate-200 p-4 ${index % 2 === 1 ? 'bg-[#F3F8FF]' : 'bg-white'}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">

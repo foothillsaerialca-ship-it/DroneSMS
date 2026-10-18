@@ -11,7 +11,7 @@ const equipmentPage = readFileSync(new URL('./equipment-page.tsx', import.meta.u
 const mocRegisterPage = readFileSync(new URL('../../sms/pages/moc-register-page.tsx', import.meta.url), 'utf8');
 const safetyReviewArea = readFileSync(new URL('../../sms/components/safety-review-area.tsx', import.meta.url), 'utf8');
 const router = readFileSync(new URL('../../../../router.tsx', import.meta.url), 'utf8');
-const equipmentCards = equipmentPage.slice(equipmentPage.indexOf('filteredEquipment.map((item) =>'));
+const equipmentCards = equipmentPage.slice(equipmentPage.indexOf('filteredEquipment.map((item, index) =>'));
 
 test('equipment cards no longer render an unconditional change review shortcut', () => {
   assert.ok(equipmentCards.length < equipmentPage.length);
