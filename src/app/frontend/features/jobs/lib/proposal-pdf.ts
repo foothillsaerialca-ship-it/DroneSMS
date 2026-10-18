@@ -765,10 +765,17 @@ class ProposalPdfRenderer {
     const paragraphs = text.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
     if (paragraphs.length === 0) return;
 
+    const lineHeight = 12.8;
     paragraphs.forEach((paragraph, index) => {
       this.ensureSpace(80);
       const paragraphGap = index < paragraphs.length - 1 ? 7 : spacing;
-      this.y = this.pdf.drawWrappedText(this.currentPage, paragraph, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 9.6, color: NAVY, lineHeight: 12.8 }) - paragraphGap;
+      // Draw line by line so long operator-entered text continues on the next page instead of running past the footer.
+      for (const line of wrapText(paragraph, PAGE_WIDTH - MARGIN * 2, 9.6)) {
+        this.ensureSpace(lineHeight);
+        this.pdf.drawText(this.currentPage, line, MARGIN, this.y, { size: 9.6, color: NAVY });
+        this.y -= lineHeight;
+      }
+      this.y -= paragraphGap;
     });
   }
 
