@@ -3,7 +3,7 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@frontend/lib/supabase';
 import { getCurrentOrganizationId } from '@frontend/lib/organization';
 import { daysUntilDate, formatIsoDate } from '@frontend/lib/date-utils';
@@ -274,6 +274,9 @@ export function PersonnelPage() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [archivingPersonId, setArchivingPersonId] = useState<string | null>(null);
+  // Card that shows the last update confirmation, so inline saves report back where the user is looking.
+  const [updatedPersonId, setUpdatedPersonId] = useState<string | null>(null);
+  const editFormRef = useRef<HTMLFormElement>(null);
 
   /**
    * Performs load personnel for the surrounding workflow.
@@ -304,6 +307,14 @@ export function PersonnelPage() {
     void loadPersonnel();
   }, []);
 
+  // The edit form replaces its record card in place; nudge it into view only if it overflows the viewport.
+  useEffect(() => {
+    if (!editingPersonId) return;
+    const form = editFormRef.current;
+    form?.scrollIntoView?.({ block: 'nearest' });
+    form?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+  }, [editingPersonId]);
+
   const rosterPersonnel = useMemo(() => personnel.filter((person) => !person.archived_at), [personnel]);
   const archivedPersonnel = useMemo(() => personnel.filter((person) => Boolean(person.archived_at)), [personnel]);
 
@@ -325,12 +336,15 @@ export function PersonnelPage() {
   }, [rosterPersonnel]);
 
   const sortedPersonnel = useMemo(() => {
-    return [...(showArchived ? archivedPersonnel : rosterPersonnel)].sort((left, right) => {
+    const listed = showArchived ? archivedPersonnel : rosterPersonnel;
+    // The record being edited stays listed so its inline form (and Save/Cancel) never vanishes on a view change.
+    const editing = personnel.find((person) => person.id === editingPersonId);
+    return [...listed, ...(editing && !listed.includes(editing) ? [editing] : [])].sort((left, right) => {
       const readinessDifference = getReadinessState(left).sortOrder - getReadinessState(right).sortOrder;
       if (readinessDifference !== 0) return readinessDifference;
       return left.full_name.localeCompare(right.full_name);
     });
-  }, [showArchived, archivedPersonnel, rosterPersonnel]);
+  }, [showArchived, archivedPersonnel, rosterPersonnel, personnel, editingPersonId]);
 
   /**
    * Renders the update field interface and coordinates its user interactions.
@@ -351,6 +365,7 @@ export function PersonnelPage() {
     setIsFormOpen(false);
     setError(null);
     setSaveMessage(null);
+    setUpdatedPersonId(null);
   }
 
   /**
@@ -363,6 +378,7 @@ export function PersonnelPage() {
     setIsFormOpen(true);
     setError(null);
     setSaveMessage(null);
+    setUpdatedPersonId(null);
   }
 
   /**
@@ -423,6 +439,7 @@ export function PersonnelPage() {
       }
 
       resetForm();
+      setUpdatedPersonId(editingPersonId);
       setSaveMessage(successMessage);
       await loadPersonnel();
     } catch (saveError) {
@@ -442,7 +459,7 @@ export function PersonnelPage() {
     setFormData(toFormState(person));
     setError(null);
     setSaveMessage(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setUpdatedPersonId(null);
   }
 
   /**
@@ -475,6 +492,7 @@ export function PersonnelPage() {
       if (archiveError) throw archiveError;
 
       if (editingPersonId === person.id) resetForm();
+      setUpdatedPersonId(null);
       setSaveMessage(
         archive
           ? `${person.full_name} archived.`
@@ -488,51 +506,18 @@ export function PersonnelPage() {
     }
   }
 
-  return (
-    <section className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Repository</p>
-            <h1 className="mt-1 text-2xl font-semibold text-brand-900">Personnel</h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Maintain pilots, observers, crew contact details, emergency contacts, and certification readiness.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-center sm:min-w-80">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-lg font-semibold text-brand-900">{readinessCounts.active}</p>
-              <p className="text-xs text-slate-500">Active</p>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-lg font-semibold text-brand-900">{readinessCounts.pilots}</p>
-              <p className="text-xs text-slate-500">RPICs</p>
-            </div>
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              <p className="text-lg font-semibold text-amber-700">{readinessCounts.renewSoon}</p>
-              <p className="text-xs text-amber-700">Cert Renew Soon</p>
-            </div>
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-              <p className="text-lg font-semibold text-red-700">{readinessCounts.certBlocked}</p>
-              <p className="text-xs text-red-700">Cert Blocked</p>
-            </div>
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              <p className="text-lg font-semibold text-amber-700">{readinessCounts.trainingSoon}</p>
-              <p className="text-xs text-amber-700">Training Soon</p>
-            </div>
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-              <p className="text-lg font-semibold text-red-700">{readinessCounts.trainingExpired}</p>
-              <p className="text-xs text-red-700">Training Expired</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {isFormOpen ? (
-      <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" onSubmit={handleSubmit}>
+  // One form instance serves both modes: Add renders it above the list, Edit renders it in place of the record card.
+  const personnelForm = isFormOpen ? (
+      <form
+        ref={editingPersonId ? editFormRef : undefined}
+        className={editingPersonId ? 'rounded-xl border-2 border-brand-700 bg-white p-4 shadow-md ring-4 ring-brand-100 sm:p-6' : 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6'}
+        onSubmit={handleSubmit}
+        aria-label={editingPersonId ? `Edit ${formData.fullName || 'personnel'}` : 'Add personnel'}
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-brand-900">{editingPersonId ? 'Edit Personnel' : 'Add Personnel'}</h2>
+            {editingPersonId ? <span className="inline-flex rounded-full bg-brand-700 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">Editing</span> : null}
+            <h2 className="mt-1 text-lg font-semibold text-brand-900">{editingPersonId ? 'Edit Personnel' : 'Add Personnel'}</h2>
             <p className="mt-1 text-sm text-slate-600">Start with required identity fields, then add optional certification and emergency details.</p>
           </div>
           <button type="button" className="text-sm font-medium text-brand-700 hover:text-brand-900" onClick={resetForm} disabled={isSaving}>
@@ -717,15 +702,69 @@ export function PersonnelPage() {
           <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{saveMessage}</p>
         ) : null}
 
-        <button
-          type="submit"
-          className="mt-5 min-h-11 w-full rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:w-auto sm:py-2"
-          disabled={isSaving}
-        >
-          {isSaving ? 'Saving...' : editingPersonId ? 'Update Personnel' : 'Add Personnel'}
-        </button>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+          <button
+            type="submit"
+            className="min-h-11 w-full rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:w-auto sm:py-2"
+            disabled={isSaving}
+          >
+            {isSaving ? 'Saving...' : editingPersonId ? 'Save Changes' : 'Add Personnel'}
+          </button>
+          {editingPersonId ? (
+            <button
+              type="button"
+              className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 sm:w-auto sm:py-2"
+              onClick={resetForm}
+              disabled={isSaving}
+            >
+              Cancel
+            </button>
+          ) : null}
+        </div>
       </form>
-      ) : (
+  ) : null;
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-500">Repository</p>
+            <h1 className="mt-1 text-2xl font-semibold text-brand-900">Personnel</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              Maintain pilots, observers, crew contact details, emergency contacts, and certification readiness.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-center sm:min-w-80">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-lg font-semibold text-brand-900">{readinessCounts.active}</p>
+              <p className="text-xs text-slate-500">Active</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-lg font-semibold text-brand-900">{readinessCounts.pilots}</p>
+              <p className="text-xs text-slate-500">RPICs</p>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-lg font-semibold text-amber-700">{readinessCounts.renewSoon}</p>
+              <p className="text-xs text-amber-700">Cert Renew Soon</p>
+            </div>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+              <p className="text-lg font-semibold text-red-700">{readinessCounts.certBlocked}</p>
+              <p className="text-xs text-red-700">Cert Blocked</p>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-lg font-semibold text-amber-700">{readinessCounts.trainingSoon}</p>
+              <p className="text-xs text-amber-700">Training Soon</p>
+            </div>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+              <p className="text-lg font-semibold text-red-700">{readinessCounts.trainingExpired}</p>
+              <p className="text-xs text-red-700">Training Expired</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {isFormOpen && !editingPersonId ? personnelForm : (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 shadow-sm sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -750,8 +789,8 @@ export function PersonnelPage() {
               </button>
             </div>
           </div>
-          {error ? <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p> : null}
-          {saveMessage ? <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{saveMessage}</p> : null}
+          {error && !editingPersonId ? <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p> : null}
+          {saveMessage && !updatedPersonId ? <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{saveMessage}</p> : null}
         </div>
       )}
 
@@ -777,6 +816,8 @@ export function PersonnelPage() {
         {!isLoading && sortedPersonnel.map((person, index) => {
           const readiness = getReadinessState(person);
           const trainingStatus = getTrainingStatus(person);
+
+          if (editingPersonId === person.id) return <div key={person.id}>{personnelForm}</div>;
 
           return (
             <article key={person.id} className={`rounded-xl border border-slate-200 p-4 shadow-sm ${index % 2 === 1 ? 'bg-[#F3F8FF]' : 'bg-white'}`}>
@@ -809,6 +850,8 @@ export function PersonnelPage() {
                   </button>
                 </div>
               </div>
+
+              {saveMessage && updatedPersonId === person.id ? <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{saveMessage}</p> : null}
 
               <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-lg bg-slate-50 p-3">

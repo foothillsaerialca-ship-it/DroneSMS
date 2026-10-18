@@ -3,7 +3,7 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@frontend/lib/supabase';
 import { getCurrentOrganizationId } from '@frontend/lib/organization';
 import { daysUntilDate, formatIsoDate as formatDate } from '@frontend/lib/date-utils';
@@ -308,6 +308,9 @@ export function EquipmentPage() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [pendingDocuments, setPendingDocuments] = useState<PendingReferenceDocument[]>([]);
   const [createdMocId, setCreatedMocId] = useState<string | null>(null);
+  // Card that shows the last update confirmation, so inline saves report back where the user is looking.
+  const [updatedEquipmentId, setUpdatedEquipmentId] = useState<string | null>(null);
+  const editFormRef = useRef<HTMLFormElement>(null);
 
   /**
    * Performs load equipment for the surrounding workflow.
@@ -338,6 +341,14 @@ export function EquipmentPage() {
     void loadEquipment();
   }, []);
 
+  // The edit form replaces its record card in place; nudge it into view only if it overflows the viewport.
+  useEffect(() => {
+    if (!editingEquipmentId) return;
+    const form = editFormRef.current;
+    form?.scrollIntoView?.({ block: 'nearest' });
+    form?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true });
+  }, [editingEquipmentId]);
+
   const readinessCounts = useMemo(() => {
     return equipment.reduce(
       (counts, item) => {
@@ -355,21 +366,19 @@ export function EquipmentPage() {
   const filteredEquipment = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
 
-    let filtered = equipment
-      .filter((item) => statusFilter === 'All' || item.status === statusFilter)
-      .filter((item) => typeFilter === 'All' || item.equipment_type === typeFilter)
-      .filter((item) => {
-        if (maintenanceFilter === 'All') return true;
-        const maintenanceStatus = getMaintenanceStatus(item);
-        return maintenanceStatus === maintenanceFilter.toLowerCase().replace(' ', '-');
-      })
-      .filter((item) => {
-        if (!normalizedSearch) return true;
+    function matchesFilters(item: Equipment) {
+      if (statusFilter !== 'All' && item.status !== statusFilter) return false;
+      if (typeFilter !== 'All' && item.equipment_type !== typeFilter) return false;
+      if (maintenanceFilter !== 'All' && getMaintenanceStatus(item) !== maintenanceFilter.toLowerCase().replace(' ', '-')) return false;
+      if (!normalizedSearch) return true;
 
-        return [item.name, item.equipment_type, item.make, item.model, item.serial_number, item.faa_registration_number, item.assigned_location]
-          .filter(Boolean)
-          .some((value) => value?.toLowerCase().includes(normalizedSearch));
-      });
+      return [item.name, item.equipment_type, item.make, item.model, item.serial_number, item.faa_registration_number, item.assigned_location]
+        .filter(Boolean)
+        .some((value) => value?.toLowerCase().includes(normalizedSearch));
+    }
+
+    // The record being edited stays listed so its inline form (and Save/Cancel) never vanishes on a filter change.
+    let filtered = equipment.filter((item) => item.id === editingEquipmentId || matchesFilters(item));
 
     // Custom sorting when maintenance filter is active
     if (maintenanceFilter !== 'All') {
@@ -403,7 +412,7 @@ export function EquipmentPage() {
     }
 
     return filtered;
-  }, [equipment, searchQuery, statusFilter, typeFilter, maintenanceFilter]);
+  }, [equipment, searchQuery, statusFilter, typeFilter, maintenanceFilter, editingEquipmentId]);
 
   /**
    * Renders the update field interface and coordinates its user interactions.
@@ -427,6 +436,7 @@ export function EquipmentPage() {
     setError(null);
     setSaveMessage(null);
     setCreatedMocId(null);
+    setUpdatedEquipmentId(null);
   }
 
   /**
@@ -441,6 +451,7 @@ export function EquipmentPage() {
     setError(null);
     setSaveMessage(null);
     setCreatedMocId(null);
+    setUpdatedEquipmentId(null);
   }
 
   /**
@@ -552,6 +563,7 @@ export function EquipmentPage() {
       setEditingEquipmentId(null);
       setIsFormOpen(false);
       setPendingDocuments([]);
+      setUpdatedEquipmentId(editingEquipmentId);
       setSaveMessage(formData.introducesNewCapability === 'Yes' && !editingEquipmentId ? 'This equipment change introduces a new operational capability. A Management of Change review has been started.' : successMessage);
       await loadEquipment();
     } catch (saveError) {
@@ -572,6 +584,7 @@ export function EquipmentPage() {
     setDeletingEquipmentId(item.id);
     setError(null);
     setSaveMessage(null);
+    setUpdatedEquipmentId(null);
 
     try {
       const { error: deleteError } = await supabase.from('equipment').delete().eq('id', item.id);
@@ -598,48 +611,24 @@ export function EquipmentPage() {
     setPendingDocuments([]);
     setError(null);
     setSaveMessage(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setCreatedMocId(null);
+    setUpdatedEquipmentId(null);
   }
 
   const showChemicalFields = formData.equipmentType === chemicalMaterialType;
 
-  return (
-    <section className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Repository</p>
-            <h1 className="mt-1 text-2xl font-semibold text-brand-900">Equipment</h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Track aircraft, payloads, support gear, chemicals/materials, maintenance windows, and operational readiness.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-center sm:min-w-64">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-lg font-semibold text-brand-900">{readinessCounts.active}</p>
-              <p className="text-xs text-slate-500">Active Items</p>
-            </div>
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-              <p className="text-lg font-semibold text-emerald-700">{readinessCounts.ready}</p>
-              <p className="text-xs text-emerald-700">Ready</p>
-            </div>
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              <p className="text-lg font-semibold text-amber-700">{readinessCounts.dueSoon}</p>
-              <p className="text-xs text-amber-700">Due Soon</p>
-            </div>
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-              <p className="text-lg font-semibold text-red-700">{readinessCounts.blocked}</p>
-              <p className="text-xs text-red-700">Blocked</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {isFormOpen ? (
-      <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" onSubmit={handleSubmit}>
+  // One form instance serves both modes: Add renders it above the list, Edit renders it in place of the record card.
+  const equipmentForm = isFormOpen ? (
+      <form
+        ref={editingEquipmentId ? editFormRef : undefined}
+        className={editingEquipmentId ? 'rounded-xl border-2 border-brand-700 bg-white p-4 shadow-md ring-4 ring-brand-100 sm:p-6' : 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6'}
+        onSubmit={handleSubmit}
+        aria-label={editingEquipmentId ? `Edit ${formData.name || 'equipment'}` : 'Add equipment'}
+      >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-brand-900">{editingEquipmentId ? 'Edit Equipment' : 'Add Equipment'}</h2>
+            {editingEquipmentId ? <span className="inline-flex rounded-full bg-brand-700 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">Editing</span> : null}
+            <h2 className="mt-1 text-lg font-semibold text-brand-900">{editingEquipmentId ? 'Edit Equipment' : 'Add Equipment'}</h2>
             <p className="mt-1 text-sm text-slate-600">Capture required equipment details first, then add maintenance, tracking, and chemical/material reference fields when applicable.</p>
           </div>
           <button type="button" className="text-sm font-medium text-brand-700 hover:text-brand-900" onClick={resetForm} disabled={isSaving}>
@@ -798,15 +787,61 @@ export function EquipmentPage() {
         {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
         {saveMessage ? <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{saveMessage}</p> : null}
 
-        <button
-          type="submit"
-          className="mt-4 w-full rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto"
-          disabled={isSaving}
-        >
-          {isSaving ? 'Saving...' : editingEquipmentId ? 'Update Equipment' : 'Add Equipment'}
-        </button>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <button
+            type="submit"
+            className="w-full rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto"
+            disabled={isSaving}
+          >
+            {isSaving ? 'Saving...' : editingEquipmentId ? 'Save Changes' : 'Add Equipment'}
+          </button>
+          {editingEquipmentId ? (
+            <button
+              type="button"
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 sm:w-auto"
+              onClick={resetForm}
+              disabled={isSaving}
+            >
+              Cancel
+            </button>
+          ) : null}
+        </div>
       </form>
-      ) : (
+  ) : null;
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-500">Repository</p>
+            <h1 className="mt-1 text-2xl font-semibold text-brand-900">Equipment</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              Track aircraft, payloads, support gear, chemicals/materials, maintenance windows, and operational readiness.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-center sm:min-w-64">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-lg font-semibold text-brand-900">{readinessCounts.active}</p>
+              <p className="text-xs text-slate-500">Active Items</p>
+            </div>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <p className="text-lg font-semibold text-emerald-700">{readinessCounts.ready}</p>
+              <p className="text-xs text-emerald-700">Ready</p>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-lg font-semibold text-amber-700">{readinessCounts.dueSoon}</p>
+              <p className="text-xs text-amber-700">Due Soon</p>
+            </div>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+              <p className="text-lg font-semibold text-red-700">{readinessCounts.blocked}</p>
+              <p className="text-xs text-red-700">Blocked</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {isFormOpen && !editingEquipmentId ? equipmentForm : (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 shadow-sm sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -821,8 +856,8 @@ export function EquipmentPage() {
               + Add Equipment
             </button>
           </div>
-          {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
-          {saveMessage ? <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700"><p>{saveMessage}</p>{createdMocId?<div className="mt-2 flex gap-3"><Link className="font-semibold underline" to={`/sms/moc/${createdMocId}`}>Review now</Link><button type="button" className="font-semibold underline" onClick={()=>setCreatedMocId(null)}>Review later</button></div>:null}</div> : null}
+          {error && !editingEquipmentId ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+          {saveMessage && !updatedEquipmentId ? <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700"><p>{saveMessage}</p>{createdMocId?<div className="mt-2 flex gap-3"><Link className="font-semibold underline" to={`/sms/moc/${createdMocId}`}>Review now</Link><button type="button" className="font-semibold underline" onClick={()=>setCreatedMocId(null)}>Review later</button></div>:null}</div> : null}
         </div>
       )}
 
@@ -899,6 +934,8 @@ export function EquipmentPage() {
             const readiness = getReadinessState(item);
             const isDeleting = deletingEquipmentId === item.id;
 
+            if (editingEquipmentId === item.id) return <div key={item.id}>{equipmentForm}</div>;
+
             return (
               <article key={item.id} className={`rounded-xl border border-slate-200 p-4 ${index % 2 === 1 ? 'bg-[#F3F8FF]' : 'bg-white'}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -927,6 +964,8 @@ export function EquipmentPage() {
                     </button>
                   </div>
                 </div>
+
+                {saveMessage && updatedEquipmentId === item.id ? <p className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700" role="status">{saveMessage}</p> : null}
 
                 <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                   <div>
