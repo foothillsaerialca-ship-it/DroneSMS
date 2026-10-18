@@ -146,6 +146,20 @@ describe('Equipment inline editing', () => {
     expect(recordCard('Alpha Drone')).toBeInTheDocument();
   });
 
+  it('keeps the inline form visible when filters would hide the record', async () => {
+    renderWithRouter('/equipment');
+    const user = userEvent.setup();
+    await screen.findByText('Alpha Drone');
+    await user.click(within(recordCard('Alpha Drone')).getByRole('button', { name: 'Edit' }));
+    await user.type(within(screen.getByRole('form')).getByLabelText('Notes'), ' kept');
+    await user.type(screen.getByPlaceholderText('Search equipment'), 'Bravo');
+
+    const form = screen.getByRole('form', { name: 'Edit Alpha Drone' });
+    expect(within(form).getByLabelText('Notes')).toHaveValue('Original notes kept');
+    expect(within(form).getByRole('button', { name: 'Save Changes' })).toBeInTheDocument();
+    expect(recordCard('Bravo Controller')).toBeInTheDocument();
+  });
+
   it('leaves Add Equipment above the list', async () => {
     renderWithRouter('/equipment');
     const user = userEvent.setup();
@@ -219,6 +233,17 @@ describe('Personnel inline editing', () => {
 
     await user.click(within(recordCard('Avery Lane')).getByRole('button', { name: 'Edit' }));
     expect(within(screen.getByRole('form')).getByLabelText('Notes')).toHaveValue('');
+  });
+
+  it('keeps the inline form visible when switching to the archived view', async () => {
+    renderWithRouter('/personnel');
+    const user = userEvent.setup();
+    await screen.findByText('Avery Lane');
+    await user.click(within(recordCard('Avery Lane')).getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: /Show archived/ }));
+
+    expect(screen.getByRole('form', { name: 'Edit Avery Lane' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Blake Reed' })).not.toBeInTheDocument();
   });
 
   it('leaves Add Personnel above the list', async () => {

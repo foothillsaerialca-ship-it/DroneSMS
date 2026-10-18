@@ -366,21 +366,19 @@ export function EquipmentPage() {
   const filteredEquipment = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
 
-    let filtered = equipment
-      .filter((item) => statusFilter === 'All' || item.status === statusFilter)
-      .filter((item) => typeFilter === 'All' || item.equipment_type === typeFilter)
-      .filter((item) => {
-        if (maintenanceFilter === 'All') return true;
-        const maintenanceStatus = getMaintenanceStatus(item);
-        return maintenanceStatus === maintenanceFilter.toLowerCase().replace(' ', '-');
-      })
-      .filter((item) => {
-        if (!normalizedSearch) return true;
+    function matchesFilters(item: Equipment) {
+      if (statusFilter !== 'All' && item.status !== statusFilter) return false;
+      if (typeFilter !== 'All' && item.equipment_type !== typeFilter) return false;
+      if (maintenanceFilter !== 'All' && getMaintenanceStatus(item) !== maintenanceFilter.toLowerCase().replace(' ', '-')) return false;
+      if (!normalizedSearch) return true;
 
-        return [item.name, item.equipment_type, item.make, item.model, item.serial_number, item.faa_registration_number, item.assigned_location]
-          .filter(Boolean)
-          .some((value) => value?.toLowerCase().includes(normalizedSearch));
-      });
+      return [item.name, item.equipment_type, item.make, item.model, item.serial_number, item.faa_registration_number, item.assigned_location]
+        .filter(Boolean)
+        .some((value) => value?.toLowerCase().includes(normalizedSearch));
+    }
+
+    // The record being edited stays listed so its inline form (and Save/Cancel) never vanishes on a filter change.
+    let filtered = equipment.filter((item) => item.id === editingEquipmentId || matchesFilters(item));
 
     // Custom sorting when maintenance filter is active
     if (maintenanceFilter !== 'All') {
@@ -414,7 +412,7 @@ export function EquipmentPage() {
     }
 
     return filtered;
-  }, [equipment, searchQuery, statusFilter, typeFilter, maintenanceFilter]);
+  }, [equipment, searchQuery, statusFilter, typeFilter, maintenanceFilter, editingEquipmentId]);
 
   /**
    * Renders the update field interface and coordinates its user interactions.

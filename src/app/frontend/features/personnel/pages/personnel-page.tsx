@@ -336,12 +336,15 @@ export function PersonnelPage() {
   }, [rosterPersonnel]);
 
   const sortedPersonnel = useMemo(() => {
-    return [...(showArchived ? archivedPersonnel : rosterPersonnel)].sort((left, right) => {
+    const listed = showArchived ? archivedPersonnel : rosterPersonnel;
+    // The record being edited stays listed so its inline form (and Save/Cancel) never vanishes on a view change.
+    const editing = personnel.find((person) => person.id === editingPersonId);
+    return [...listed, ...(editing && !listed.includes(editing) ? [editing] : [])].sort((left, right) => {
       const readinessDifference = getReadinessState(left).sortOrder - getReadinessState(right).sortOrder;
       if (readinessDifference !== 0) return readinessDifference;
       return left.full_name.localeCompare(right.full_name);
     });
-  }, [showArchived, archivedPersonnel, rosterPersonnel]);
+  }, [showArchived, archivedPersonnel, rosterPersonnel, personnel, editingPersonId]);
 
   /**
    * Renders the update field interface and coordinates its user interactions.
