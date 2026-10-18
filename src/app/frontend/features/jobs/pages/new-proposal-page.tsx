@@ -798,7 +798,7 @@ export function NewProposalPage() {
         if (proposalError) throw proposalError;
       }
 
-      navigate('/jobs?tab=proposals', { replace: true });
+      navigate('/proposals', { replace: true });
     } catch (saveError) {
       setError(getErrorMessage(saveError));
     } finally {
