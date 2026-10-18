@@ -6,7 +6,8 @@
 import type { Config } from 'tailwindcss';
 
 export default {
-  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  // Component tests and their helpers are excluded so test text never adds utilities to the production CSS.
+  content: ['./index.html', './src/**/*.{ts,tsx}', '!./src/**/*.test.tsx', '!./src/test/**'],
   theme: {
     extend: {
       colors: {
