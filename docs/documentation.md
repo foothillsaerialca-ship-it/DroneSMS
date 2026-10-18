@@ -189,9 +189,9 @@ No browser/DOM test runner, Supabase emulator configuration, or isolated integra
 
 ## Known errors and limitations
 
-### KE-001: ESLint command is unusable
+### KE-001: ESLint command is unusable (resolved)
 
-`npm run lint` exits with code 1 because ESLint `9.39.4` requires a flat `eslint.config.*` file and the repository contains none. No source lint result is available. This audit documents the error and intentionally does not add configuration.
+`npm run lint` used to exit with code 1 because ESLint `9.39.4` requires a flat `eslint.config.*` file and the repository had none. `eslint.config.js` now exists, and the 30 findings that were already in the code are recorded as a suppression baseline. See [testing.md](testing.md).
 
 ### KE-002: Production JavaScript chunk exceeds Vite's warning threshold
 
@@ -199,7 +199,7 @@ No browser/DOM test runner, Supabase emulator configuration, or isolated integra
 
 ### KE-003: Full function-level runtime verification is unavailable
 
-Only 17 domain unit tests exist. There is no DOM/browser framework or isolated Supabase environment, so auth, RLS/RPC, Storage, React handlers, and PDF visual output cannot be automatically exercised function by function. Those paths passed compilation and static review only. No tests were fabricated and no production mutations were attempted.
+Only 17 domain unit tests exist. There is no DOM/browser framework or isolated Supabase environment, so auth, RLS/RPC, Storage, React handlers, and PDF visual output cannot be automatically exercised function by function. Those paths passed compilation and static review only. No tests were fabricated and no production mutations were attempted. Partly addressed: a Vitest and React Testing Library component suite with an in-memory Supabase stand-in now covers Jobs/Proposals navigation, protected-route auth and onboarding rules, and JHA hazard-card behavior (see [testing.md](testing.md)). RLS/RPC, Storage, and PDF output are still not exercised.
 
 ### KE-004: Database migrations were not integration-tested
 

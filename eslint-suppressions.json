@@ -1,0 +1,60 @@
+{
+  "src/app/backend/integrations/supabase/client.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    }
+  },
+  "src/app/frontend/features/equipment/pages/equipment-page.tsx": {
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "src/app/frontend/features/jobs/lib/proposal-pdf.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 11
+    },
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "src/app/frontend/features/jobs/pages/job-hazard-analysis-page.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "src/app/frontend/features/preflight/pages/preflight-checklist-page.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "src/app/frontend/features/sms/components/safety-assurance-area.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/frontend/features/sms/components/safety-review-area.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/frontend/features/sms/pages/moc-detail-page.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/app/frontend/lib/password-utils.ts": {
+    "no-useless-escape": {
+      "count": 2
+    }
+  },
+  "src/app/frontend/lib/xlsx-writer.ts": {
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "vite.config.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  }
+}
