@@ -12,6 +12,7 @@ const repairMigration = readFileSync('supabase/migrations/20260905010000_fix_cre
 const cryptoRepairMigration = readFileSync('supabase/migrations/20260905020000_fix_crew_invitation_crypto_schema.sql', 'utf8');
 const anonymousRevocationMigration = readFileSync('supabase/migrations/20260906090000_revoke_anonymous_crew_briefing_acknowledgment.sql', 'utf8');
 const anonymousLookupRevocationMigration = readFileSync('supabase/migrations/20260906100000_revoke_anonymous_crew_briefing_lookup.sql', 'utf8');
+const signedOutAccessMigration = readFileSync('supabase/migrations/20261018000000_restore_signed_out_crew_briefing_access.sql', 'utf8');
 const jobRenameMigration = readFileSync('supabase/migrations/20261015000000_job_rename_keeps_crew_briefing.sql', 'utf8');
 const sendFunction = readFileSync('supabase/functions/send-crew-acknowledgment/index.ts', 'utf8');
 
@@ -60,14 +61,21 @@ test('public token RPC repair retains no-login scope, expiry, and evidence inval
   assert.doesNotMatch(cryptoRepairMigration, /delete from public\.crew_briefing_acknowledgments/i);
 });
 
-test('crew briefing acknowledgment is no longer executable by anonymous callers', () => {
+test('September migrations temporarily revoked anonymous crew briefing acknowledgment', () => {
   assert.match(anonymousRevocationMigration, /revoke execute on function public\.acknowledge_public_crew_briefing\(text, text\) from anon;/i);
   assert.match(anonymousRevocationMigration, /grant execute on function public\.acknowledge_public_crew_briefing\(text, text\) to authenticated;/i);
 });
 
-test('crew briefing lookup is no longer executable by anonymous callers', () => {
+test('September migrations temporarily revoked anonymous crew briefing lookup', () => {
   assert.match(anonymousLookupRevocationMigration, /revoke execute on function public\.get_public_crew_briefing\(text\) from anon;/i);
   assert.match(anonymousLookupRevocationMigration, /grant execute on function public\.get_public_crew_briefing\(text\) to authenticated;/i);
+});
+
+test('signed-out crew members can open and acknowledge briefing links after the restore migration', () => {
+  assert.match(signedOutAccessMigration, /revoke all on function public\.get_public_crew_briefing\(text\) from public;/i);
+  assert.match(signedOutAccessMigration, /grant execute on function public\.get_public_crew_briefing\(text\) to anon, authenticated;/i);
+  assert.match(signedOutAccessMigration, /revoke all on function public\.acknowledge_public_crew_briefing\(text, text\) from public;/i);
+  assert.match(signedOutAccessMigration, /grant execute on function public\.acknowledge_public_crew_briefing\(text, text\) to anon, authenticated;/i);
 });
 
 test('crew invitation crypto repair does not broaden RPC execution permissions', () => {

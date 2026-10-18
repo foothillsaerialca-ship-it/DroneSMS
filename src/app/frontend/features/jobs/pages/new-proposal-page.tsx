@@ -3,7 +3,7 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { getCurrentOrganizationId } from '@frontend/lib/organization';
@@ -24,6 +24,7 @@ import {
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 import { getProposalScopeDefaults, hasCustomizedProposalScope } from '@frontend/features/jobs/lib/proposal-scope';
 import {
+  applyPrimaryServiceTypeDefault,
   normalizeProposalEquipment,
   normalizeProposalPersonnel,
   resolveProposalRpicBioSnapshot,
@@ -44,7 +45,7 @@ const airspaceClasses = ['Not reviewed', 'Class B', 'Class C', 'Class D', 'Class
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const blockedEquipmentStatuses = new Set(['Archived', 'Retired', 'Out-of-Service', 'Out of Service', 'Maintenance']);
+const blockedEquipmentStatuses = new Set(['Archived', 'Retired', 'Out-of-Service', 'Out of Service', 'Maintenance', 'Inactive']);
 
 /**
  * Purpose: Defines the pending service type change data contract used by the new proposal page module.
@@ -338,6 +339,7 @@ export function NewProposalPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingServiceTypeChange, setPendingServiceTypeChange] = useState<PendingServiceTypeChange | null>(null);
+  const serviceTypeTouched = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -364,6 +366,15 @@ export function NewProposalPage() {
           setOrganizationSettings(settings);
           if (!proposalId && settings?.defaultPaymentTerms) {
             setFormData((current) => current.paymentTerms.trim() ? current : { ...current, paymentTerms: settings.defaultPaymentTerms });
+          }
+          if (!proposalId) {
+            setFormData((current) => {
+              const serviceType = applyPrimaryServiceTypeDefault(current.serviceType, settings?.primaryServiceType, serviceTypeTouched.current);
+              // Only swap scope defaults the operator has not edited yet.
+              if (serviceType === current.serviceType || hasCustomizedProposalScope(current, current.serviceType)) return current;
+              const defaults = getProposalScopeDefaults(serviceType);
+              return { ...current, serviceType, deliverables: defaults.deliverables, exclusions: defaults.exclusions };
+            });
           }
         }
       } catch {
@@ -509,6 +520,7 @@ export function NewProposalPage() {
    * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
    */
   function updateField(field: keyof typeof initialFormState, value: string) {
+    if (field === 'serviceType') serviceTypeTouched.current = true;
     if (field !== 'serviceType') {
       setFormData((current) => ({ ...current, [field]: value }));
       return;
@@ -808,8 +820,8 @@ export function NewProposalPage() {
 
   return (
     <section className="space-y-4">
-      <Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to="/jobs">
-        Back to Jobs
+      <Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to="/proposals">
+        Back to Proposals
       </Link>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">

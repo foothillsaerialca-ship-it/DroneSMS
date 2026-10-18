@@ -12,7 +12,6 @@ import { saveGeneratedDocument } from '@frontend/features/jobs/lib/generated-doc
 import { buildReadinessPacketRows, resolveReadinessApproverIdentity, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
 import {
   getOrganizationLogoUrl,
-  DEFAULT_SERVICE_COMMITMENT,
   loadOrganizationSettingsById,
   type OrganizationSettings,
 } from '@frontend/features/settings/lib/organization-settings';
@@ -468,6 +467,11 @@ class ProposalPdfRenderer {
     if (options.sectionTitle) this.majorSection(options.sectionTitle);
     this.section('EXECUTIVE SUMMARY', undefined, 80);
     this.paragraph(buildExecutiveSummary(this.proposal, this.organization, personnelLanguage, displayedRpic.name), 12);
+    const companyStatement = clean(this.organization?.companyStatement);
+    if (includeProposalEnhancements && companyStatement) {
+      this.section(`ABOUT ${companyNameFor(this.organization).toUpperCase()}`, undefined, 40);
+      this.paragraph(companyStatement, 12);
+    }
     this.section('SCOPE OF WORK', undefined, 69);
     this.keyValueTable([
       ['Services', buildServiceDescription(this.proposal)],
@@ -761,10 +765,17 @@ class ProposalPdfRenderer {
     const paragraphs = text.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
     if (paragraphs.length === 0) return;
 
+    const lineHeight = 12.8;
     paragraphs.forEach((paragraph, index) => {
       this.ensureSpace(80);
       const paragraphGap = index < paragraphs.length - 1 ? 7 : spacing;
-      this.y = this.pdf.drawWrappedText(this.currentPage, paragraph, MARGIN, this.y, PAGE_WIDTH - MARGIN * 2, { size: 9.6, color: NAVY, lineHeight: 12.8 }) - paragraphGap;
+      // Draw line by line so long operator-entered text continues on the next page instead of running past the footer.
+      for (const line of wrapText(paragraph, PAGE_WIDTH - MARGIN * 2, 9.6)) {
+        this.ensureSpace(lineHeight);
+        this.pdf.drawText(this.currentPage, line, MARGIN, this.y, { size: 9.6, color: NAVY });
+        this.y -= lineHeight;
+      }
+      this.y -= paragraphGap;
     });
   }
 
@@ -1648,8 +1659,8 @@ function buildExclusions(proposal: ProposalPdfRecord) {
  * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
  */
 function proposalServiceCommitment(organization: OrganizationSettings | null) {
-  const value = clean(organization?.serviceCommitment);
-  return /warranty/i.test(value) ? DEFAULT_SERVICE_COMMITMENT : value;
+  // Print exactly what Settings shows; the operator owns this language.
+  return clean(organization?.serviceCommitment);
 }
 
 /**
