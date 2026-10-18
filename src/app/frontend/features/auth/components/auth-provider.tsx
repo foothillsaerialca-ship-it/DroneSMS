@@ -3,9 +3,10 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { type PropsWithChildren, createContext, useCallback, useEffect, useMemo, useState } from 'react';
+import { type PropsWithChildren, createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@frontend/lib/supabase';
-import type { AuthContextValue, AuthStatus, ProfileState } from '../types/auth-context';
+import { type ProfileResult, getSessionProfileState } from '../lib/profile-state';
+import type { AuthContextValue, AuthStatus } from '../types/auth-context';
 
 /**
  * Purpose: Stores the shared auth context structure used by the auth provider module.
@@ -23,81 +24,90 @@ function getErrorMessage(error: unknown) {
 }
 
 /**
+ * Looks up whether the user's company onboarding is complete, relinking an owned organization when the profile link is missing.
+ * Fallback/error behavior: Lookup failures are thrown so callers report an error state instead of treating the profile as missing.
+ */
+async function lookUpProfileState(userId: string): Promise<'complete' | 'incomplete'> {
+  const { data: profile, error: profileLookupError } = await supabase
+    .from('profiles')
+    .select('id, company_name, organization_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileLookupError) throw profileLookupError;
+
+  if (profile?.organization_id) {
+    const { data: linkedOrganization, error: linkedOrganizationError } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('id', profile.organization_id)
+      .maybeSingle();
+
+    if (linkedOrganizationError) throw linkedOrganizationError;
+
+    if (linkedOrganization) return 'complete';
+  }
+
+  const { data: ownedOrganizations, error: organizationLookupError } = await supabase
+    .from('organizations')
+    .select('id, name')
+    .eq('owner_user_id', userId)
+    .limit(1);
+
+  if (organizationLookupError) throw organizationLookupError;
+
+  const organization = ownedOrganizations?.[0];
+
+  if (!organization) return 'incomplete';
+
+  const { error: profileUpsertError } = await supabase.from('profiles').upsert(
+    {
+      id: userId,
+      organization_id: organization.id,
+      company_name: profile?.company_name || organization.name,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: 'id' }
+  );
+
+  if (profileUpsertError) throw profileUpsertError;
+
+  return 'complete';
+}
+
+/**
  * Renders the auth provider interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
 export function AuthProvider({ children }: PropsWithChildren) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [session, setSession] = useState<AuthContextValue['session']>(null);
-  const [profileState, setProfileState] = useState<ProfileState>('loading');
-  const [profileError, setProfileError] = useState<string | null>(null);
+  // The resolved onboarding state is tagged with the user it was resolved for, so a
+  // restored session is never judged by a result that belongs to no user or another user.
+  const [profileResult, setProfileResult] = useState<ProfileResult>({ userId: null, state: 'loading', error: null });
+  const profileRequestId = useRef(0);
 
   const refreshProfileState = useCallback(async () => {
-    if (!session?.user?.id) {
-      setProfileError(null);
-      setProfileState('missing');
+    const userId = session?.user?.id ?? null;
+    const requestId = ++profileRequestId.current;
+
+    if (!userId) {
+      setProfileResult({ userId: null, state: 'missing', error: null });
       return;
     }
 
-    setProfileError(null);
-    setProfileState('loading');
+    setProfileResult({ userId, state: 'loading', error: null });
 
+    let result: ProfileResult;
     try {
-      const { data: profile, error: profileLookupError } = await supabase
-        .from('profiles')
-        .select('id, company_name, organization_id')
-        .eq('id', session.user.id)
-        .maybeSingle();
-
-      if (profileLookupError) throw profileLookupError;
-
-      if (profile?.organization_id) {
-        const { data: linkedOrganization, error: linkedOrganizationError } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('id', profile.organization_id)
-          .maybeSingle();
-
-        if (linkedOrganizationError) throw linkedOrganizationError;
-
-        if (linkedOrganization) {
-          setProfileState('complete');
-          return;
-        }
-      }
-
-      const { data: ownedOrganizations, error: organizationLookupError } = await supabase
-        .from('organizations')
-        .select('id, name')
-        .eq('owner_user_id', session.user.id)
-        .limit(1);
-
-      if (organizationLookupError) throw organizationLookupError;
-
-      const organization = ownedOrganizations?.[0];
-
-      if (!organization) {
-        setProfileState('incomplete');
-        return;
-      }
-
-      const { error: profileUpsertError } = await supabase.from('profiles').upsert(
-        {
-          id: session.user.id,
-          organization_id: organization.id,
-          company_name: profile?.company_name || organization.name,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'id' }
-      );
-
-      if (profileUpsertError) throw profileUpsertError;
-
-      setProfileState('complete');
+      result = { userId, state: await lookUpProfileState(userId), error: null };
     } catch (error) {
-      setProfileError(getErrorMessage(error));
-      setProfileState('error');
+      result = { userId, state: 'error', error: getErrorMessage(error) };
     }
+
+    // A newer lookup, sign-out, or user change superseded this request.
+    if (requestId !== profileRequestId.current) return;
+    setProfileResult(result);
   }, [session?.user?.id]);
 
   useEffect(() => {
@@ -145,9 +155,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return;
     }
 
-    setProfileError(null);
-    setProfileState('missing');
+    profileRequestId.current += 1;
+    setProfileResult({ userId: null, state: 'missing', error: null });
   }, [status, refreshProfileState]);
+
+  const { profileState, profileError } = getSessionProfileState(status, session?.user?.id ?? null, profileResult);
 
   const value = useMemo<AuthContextValue>(
     () => ({ status, session, profileState, profileError, refreshProfileState }),
