@@ -181,3 +181,18 @@ describe('Hazard Assessment hazard cards', () => {
     expect(mitigationField(3)).toHaveValue(powerLineHazard.mitigation);
   });
 });
+
+describe('Hazard Assessment final step', () => {
+  it('offers Back to Job File only on the last step and returns to the Job File hub', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(`/jobs/${jhaJob.id}/templates/jha`);
+    await screen.findByRole('heading', { name: 'Job Hazard Analysis' });
+    expect(screen.queryByRole('button', { name: 'Back to Job File' })).not.toBeInTheDocument();
+
+    await user.click(within(screen.getByRole('navigation', { name: 'JHA progress' })).getByRole('button', { name: /Crew Briefing/ }));
+    await screen.findByRole('heading', { level: 2, name: 'Crew Briefing & Communications' });
+    await user.click(screen.getByRole('button', { name: 'Back to Job File' }));
+
+    await waitFor(() => expect(screen.getByTestId('current-location')).toHaveTextContent(`/jobs/${jhaJob.id}/hub`));
+  });
+});
