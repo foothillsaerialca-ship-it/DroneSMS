@@ -167,10 +167,10 @@ function getInitialTab(tab: string | null): JobsTab {
 export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<JobsTab>(() => {
-    if (mode === "proposals") return "proposals";
-    return getInitialTab(searchParams.get("tab"));
-  });
+  // /jobs and /proposals render this same component, so React Router keeps one instance across
+  // sidebar navigation. Deriving the tab from mode and the URL keeps it in step on every route change.
+  const activeTab: JobsTab =
+    mode === "proposals" ? "proposals" : getInitialTab(searchParams.get("tab"));
   const [jobs, setJobs] = useState<Job[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
@@ -286,7 +286,6 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     if (mode !== "proposals") {
       const tabParam = searchParams.get("tab");
       if (tabParam === "proposals") {
-        setActiveTab("active");
         setSearchParams({}, { replace: true });
       }
     }
@@ -372,7 +371,6 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
    */
   function selectTab(tab: JobsTab) {
     if (mode === "proposals") return;
-    setActiveTab(tab);
     setSearchParams(tab === "active" ? {} : { tab });
   }
 
