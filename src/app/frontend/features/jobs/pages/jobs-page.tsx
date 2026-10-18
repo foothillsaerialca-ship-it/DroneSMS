@@ -3,7 +3,7 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { todayIsoDate } from "@frontend/lib/date-utils";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@frontend/lib/supabase";
@@ -93,7 +93,10 @@ type JobsTab = "proposals" | "active" | "completed" | "archived";
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type JobsPageProps = { mode?: "jobs" | "proposals" };
+type JobsPageMode = "jobs" | "proposals";
+type JobsPageProps = { mode?: JobsPageMode };
+// Success and warning notices remember the section that raised them so they never show in the other one.
+type WorkspaceNotice = { mode: JobsPageMode; text: string };
 
 /**
  * Purpose: Stores the shared jobs tabs structure used by the jobs page module.
@@ -192,8 +195,8 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [archivingJobId, setArchivingJobId] = useState<string | null>(null);
   const [isArchivingAllCompleted, setIsArchivingAllCompleted] = useState(false);
-  const [workspaceMessage, setWorkspaceMessage] = useState<string | null>(null);
-  const [workspaceWarning, setWorkspaceWarning] = useState<string | null>(null);
+  const [workspaceMessage, setWorkspaceMessage] = useState<WorkspaceNotice | null>(null);
+  const [workspaceWarning, setWorkspaceWarning] = useState<WorkspaceNotice | null>(null);
   const [proposalDocuments, setProposalDocuments] = useState<
     GeneratedDocumentRecord[]
   >([]);
@@ -201,10 +204,20 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   const [organizationSettings, setOrganizationSettings] =
     useState<OrganizationSettings | null>(null);
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
+  // Each load takes a new id; only the latest one may write its list, so an older response that
+  // resolves late cannot overwrite newer records.
+  const jobsRequestIdRef = useRef(0);
+  const proposalsRequestIdRef = useRef(0);
+  const previousModeRef = useRef(mode);
 
-  const loadJobs = useCallback(async () => {
-    setIsLoadingJobs(true);
-    setJobsError(null);
+  // A background load refreshes records already on screen without swapping them for the loading state.
+  // It never clears or replaces an error already shown, so an earlier save failure stays visible.
+  const loadJobs = useCallback(async ({ background = false } = {}) => {
+    const requestId = ++jobsRequestIdRef.current;
+    if (!background) {
+      setIsLoadingJobs(true);
+      setJobsError(null);
+    }
 
     try {
       const { data, error: jobsLoadError } = await supabase
@@ -215,18 +228,24 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         .order("created_at", { ascending: false });
 
       if (jobsLoadError) throw jobsLoadError;
+      if (requestId !== jobsRequestIdRef.current) return;
 
       setJobs((data ?? []) as Job[]);
     } catch (loadError) {
-      setJobsError(getErrorMessage(loadError));
+      if (requestId === jobsRequestIdRef.current) {
+        setJobsError((current) => (background && current) || getErrorMessage(loadError));
+      }
     } finally {
-      setIsLoadingJobs(false);
+      if (requestId === jobsRequestIdRef.current) setIsLoadingJobs(false);
     }
   }, []);
 
-  const loadProposals = useCallback(async () => {
-    setIsLoadingProposals(true);
-    setProposalsError(null);
+  const loadProposals = useCallback(async ({ background = false } = {}) => {
+    const requestId = ++proposalsRequestIdRef.current;
+    if (!background) {
+      setIsLoadingProposals(true);
+      setProposalsError(null);
+    }
 
     try {
       const { data, error: proposalsLoadError } = await supabase
@@ -238,6 +257,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         .order("created_at", { ascending: false });
 
       if (proposalsLoadError) throw proposalsLoadError;
+      if (requestId !== proposalsRequestIdRef.current) return;
 
       setProposals(
         ((data ?? []) as Proposal[]).map((proposal) => ({
@@ -249,9 +269,11 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         })),
       );
     } catch (loadError) {
-      setProposalsError(getErrorMessage(loadError));
+      if (requestId === proposalsRequestIdRef.current) {
+        setProposalsError((current) => (background && current) || getErrorMessage(loadError));
+      }
     } finally {
-      setIsLoadingProposals(false);
+      if (requestId === proposalsRequestIdRef.current) setIsLoadingProposals(false);
     }
   }, []);
 
@@ -326,6 +348,21 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       isMounted = false;
     };
   }, [loadJobs, loadProposals]);
+
+  // /jobs and /proposals share this instance, so the mount load above does not run again when the
+  // sidebar switches sections. Refresh the section being entered and drop the other section's notices.
+  useEffect(() => {
+    if (previousModeRef.current === mode) return;
+    previousModeRef.current = mode;
+
+    setWorkspaceMessage(null);
+    setWorkspaceWarning(null);
+    if (mode === "proposals") {
+      void loadProposals({ background: true });
+    } else {
+      void loadJobs({ background: true });
+    }
+  }, [mode, loadJobs, loadProposals]);
 
   const activeJobs = useMemo(
     () => jobs.filter((job) => !job.archived_at && !isCompletedJob(job)),
@@ -530,6 +567,8 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     status: ProposalStatus,
   ) {
     const previousProposals = proposals;
+    // A refresh already in flight was read before this change and must not overwrite it.
+    proposalsRequestIdRef.current += 1;
     setUpdatingProposalId(proposalId);
     setProposals((current) =>
       current.map((proposal) =>
@@ -545,6 +584,14 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         .eq("id", proposalId);
 
       if (error) throw error;
+      // Re-apply in case a refresh that read the old status landed while this update was saving.
+      setProposals((current) =>
+        current.some((proposal) => proposal.id === proposalId && proposal.status !== status)
+          ? current.map((proposal) =>
+              proposal.id === proposalId ? { ...proposal, status } : proposal,
+            )
+          : current,
+      );
     } catch (statusError) {
       setProposals(previousProposals);
       setProposalsError(getErrorMessage(statusError));
@@ -567,16 +614,18 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     try {
       const result = await generateProposalPdf(proposalId);
       if (result.saved) {
-        setWorkspaceMessage(
-          "Proposal PDF downloaded and saved to DroneSMS records.",
-        );
+        setWorkspaceMessage({
+          mode,
+          text: "Proposal PDF downloaded and saved to DroneSMS records.",
+        });
         await loadDocumentsForProposals(
           proposals.map((proposal) => proposal.id),
         );
       } else {
-        setWorkspaceWarning(
-          "Proposal PDF downloaded successfully. Unable to save a copy to DroneSMS records.",
-        );
+        setWorkspaceWarning({
+          mode,
+          text: "Proposal PDF downloaded successfully. Unable to save a copy to DroneSMS records.",
+        });
       }
     } catch (pdfError) {
       setProposalsError(getErrorMessage(pdfError));
@@ -613,7 +662,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
 
       if (error) throw error;
 
-      setWorkspaceMessage("Proposal removed from your active workspace.");
+      setWorkspaceMessage({ mode, text: "Proposal removed from your active workspace." });
       await loadProposals();
     } catch (deleteError) {
       setProposalsError(getErrorMessage(deleteError));
@@ -650,7 +699,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
 
       if (error) throw error;
 
-      setWorkspaceMessage("Job removed from your active workspace.");
+      setWorkspaceMessage({ mode, text: "Job removed from your active workspace." });
       await loadJobs();
     } catch (deleteError) {
       setJobsError(getErrorMessage(deleteError));
@@ -679,11 +728,12 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
 
       if (error) throw error;
 
-      setWorkspaceMessage(
-        archive
+      setWorkspaceMessage({
+        mode,
+        text: archive
           ? "Job archived. Find it under the Archived tab."
           : "Job restored.",
-      );
+      });
       await loadJobs();
     } catch (archiveError) {
       setJobsError(getErrorMessage(archiveError));
@@ -721,9 +771,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
 
       if (error) throw error;
 
-      setWorkspaceMessage(
-        `${completedJobs.length} completed job${completedJobs.length === 1 ? "" : "s"} archived.`,
-      );
+      setWorkspaceMessage({
+        mode,
+        text: `${completedJobs.length} completed job${completedJobs.length === 1 ? "" : "s"} archived.`,
+      });
       await loadJobs();
     } catch (archiveError) {
       setJobsError(getErrorMessage(archiveError));
@@ -750,7 +801,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       setProposalDocuments((current) =>
         current.filter((document) => document.id !== documentId),
       );
-      setWorkspaceMessage("Document removed from proposal documents.");
+      setWorkspaceMessage({ mode, text: "Document removed from proposal documents." });
     } catch (archiveError) {
       setDocumentsError(
         getErrorMessage(
@@ -1122,25 +1173,25 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         </div>
       ) : null}
 
-      {workspaceMessage ? (
+      {workspaceMessage?.mode === mode ? (
         <div
           className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-800 shadow-sm"
           role="status"
         >
-          {workspaceMessage}
+          {workspaceMessage.text}
         </div>
       ) : null}
 
-      {workspaceWarning ? (
+      {workspaceWarning?.mode === mode ? (
         <div
           className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-800 shadow-sm"
           role="status"
         >
-          {workspaceWarning}
+          {workspaceWarning.text}
         </div>
       ) : null}
 
-      {documentsError ? (
+      {showProposalsView && documentsError ? (
         <div
           className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shadow-sm"
           role="status"
