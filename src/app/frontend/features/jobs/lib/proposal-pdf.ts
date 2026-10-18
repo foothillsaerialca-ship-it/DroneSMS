@@ -12,7 +12,6 @@ import { saveGeneratedDocument } from '@frontend/features/jobs/lib/generated-doc
 import { buildReadinessPacketRows, resolveReadinessApproverIdentity, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
 import {
   getOrganizationLogoUrl,
-  DEFAULT_SERVICE_COMMITMENT,
   loadOrganizationSettingsById,
   type OrganizationSettings,
 } from '@frontend/features/settings/lib/organization-settings';
@@ -468,6 +467,11 @@ class ProposalPdfRenderer {
     if (options.sectionTitle) this.majorSection(options.sectionTitle);
     this.section('EXECUTIVE SUMMARY', undefined, 80);
     this.paragraph(buildExecutiveSummary(this.proposal, this.organization, personnelLanguage, displayedRpic.name), 12);
+    const companyStatement = clean(this.organization?.companyStatement);
+    if (includeProposalEnhancements && companyStatement) {
+      this.section(`ABOUT ${companyNameFor(this.organization).toUpperCase()}`, undefined, 40);
+      this.paragraph(companyStatement, 12);
+    }
     this.section('SCOPE OF WORK', undefined, 69);
     this.keyValueTable([
       ['Services', buildServiceDescription(this.proposal)],
@@ -1648,8 +1652,8 @@ function buildExclusions(proposal: ProposalPdfRecord) {
  * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
  */
 function proposalServiceCommitment(organization: OrganizationSettings | null) {
-  const value = clean(organization?.serviceCommitment);
-  return /warranty/i.test(value) ? DEFAULT_SERVICE_COMMITMENT : value;
+  // Print exactly what Settings shows; the operator owns this language.
+  return clean(organization?.serviceCommitment);
 }
 
 /**

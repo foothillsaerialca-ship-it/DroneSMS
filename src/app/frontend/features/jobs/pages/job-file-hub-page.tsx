@@ -986,7 +986,21 @@ export function JobFileHubPage() {
       if (saveError) throw saveError;
 
       setOperationCloseout(data as OperationCloseout);
-      setCloseoutMessage('Operation closeout saved.');
+
+      // Closeout is the final operational step, so the job moves to Completed Jobs.
+      if (job.status !== 'Complete') {
+        const { error: statusError } = await supabase
+          .from('jobs')
+          .update({ status: 'Complete', updated_at: new Date().toISOString() })
+          .eq('id', job.id);
+        if (statusError) {
+          setCloseoutMessage('Operation closeout saved, but the job status could not be set to Complete. Update it from the job page.');
+          return;
+        }
+        setJob((current) => (current ? { ...current, status: 'Complete' } : current));
+      }
+
+      setCloseoutMessage('Operation closeout saved. Job marked Complete.');
     } catch (saveError) {
       setCloseoutError(getErrorMessage(saveError));
     } finally {
