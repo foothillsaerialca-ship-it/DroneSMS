@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { hazardMatchesSearch, isHazardExpanded, setHazardsExpanded, withoutHazardExpansion } from './hazard-card-view.ts';
+import { getMissingRequiredHazardFields, hazardMatchesSearch, isHazardExpanded, setHazardsExpanded, withoutHazardExpansion } from './hazard-card-view.ts';
 
 const battery = { description: 'Battery fire or thermal runaway', category: 'Aircraft / Systems', mitigation: 'Fire extinguisher on site, LiPo-safe transport.' };
 
@@ -44,4 +44,13 @@ test('removing a hazard drops only its expansion choice', () => {
   assert.deepEqual(withoutHazardExpansion(overrides, 'a'), { b: false });
   assert.equal(withoutHazardExpansion(overrides, 'missing'), overrides);
   assert.deepEqual(overrides, { a: true, b: false });
+});
+
+test('missing required fields follow the JHA completion check', () => {
+  assert.deepEqual(getMissingRequiredHazardFields(battery), []);
+  assert.deepEqual(getMissingRequiredHazardFields({ description: '', category: '', mitigation: '' }), [], 'blank hazards are skipped by the check');
+  assert.deepEqual(getMissingRequiredHazardFields({ description: '  ', category: 'Ground', mitigation: ' ' }), [], 'whitespace-only counts as blank');
+  assert.deepEqual(getMissingRequiredHazardFields({ description: 'Glare', category: '', mitigation: '' }), ['category', 'mitigation']);
+  assert.deepEqual(getMissingRequiredHazardFields({ description: '', category: 'Ground', mitigation: 'Cones placed' }), ['description']);
+  assert.deepEqual(getMissingRequiredHazardFields({ description: 'Glare', category: ' ', mitigation: 'Sunglasses' }), ['category']);
 });

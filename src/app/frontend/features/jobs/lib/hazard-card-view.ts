@@ -38,3 +38,16 @@ export function withoutHazardExpansion(overrides: HazardExpansionOverrides, id: 
   delete rest[id];
   return rest;
 }
+
+/**
+ * Lists the required fields the JHA completion check would reject for this hazard. Mirrors validateForm in
+ * job-hazard-analysis-page.tsx: hazards with neither a description nor a mitigation are skipped by that check,
+ * and every other hazard needs a description, category, and mitigation.
+ * Fallback/error behavior: returns an empty list when the hazard would pass or is skipped.
+ */
+export function getMissingRequiredHazardFields(entry: HazardSearchFields): string[] {
+  const description = (entry.description ?? '').trim();
+  const mitigation = (entry.mitigation ?? '').trim();
+  if (!description && !mitigation) return [];
+  return [!description ? 'description' : '', !(entry.category ?? '').trim() ? 'category' : '', !mitigation ? 'mitigation' : ''].filter(Boolean);
+}
