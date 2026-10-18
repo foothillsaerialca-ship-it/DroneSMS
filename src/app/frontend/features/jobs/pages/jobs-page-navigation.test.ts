@@ -66,3 +66,11 @@ test('saving a proposal returns to the Proposals page only after the write succe
   assert.doesNotMatch(newProposalPage, /\/jobs\?tab=proposals/);
   assert.match(submit, /if \(proposalError\) throw proposalError;\s*\}\s*navigate\('\/proposals', \{ replace: true \}\);\s*\} catch \(saveError\) \{/);
 });
+
+test('a successful load clears only the error a load raised, never a save failure', () => {
+  for (const [name, setter] of [['jobs', 'setJobsError'], ['proposals', 'setProposalsError']]) {
+    const ref = `${name}LoadErrorRef`;
+    assert.match(jobsPage, new RegExp(`const staleLoadError = ${ref}\\.current;\\s*${ref}\\.current = null;\\s*${setter}\\(\\(current\\) => \\(current === staleLoadError \\? null : current\\)\\);`));
+    assert.match(jobsPage, new RegExp(`${ref}\\.current = message;\\s*${setter}\\(\\(current\\) =>\\s*background && current && current !== staleLoadError \\? current : message,\\s*\\);`));
+  }
+});

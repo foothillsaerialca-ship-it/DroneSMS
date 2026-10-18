@@ -208,10 +208,14 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   // resolves late cannot overwrite newer records.
   const jobsRequestIdRef = useRef(0);
   const proposalsRequestIdRef = useRef(0);
+  // The last error message a load (not a save) showed, so a later successful load can clear it.
+  const jobsLoadErrorRef = useRef<string | null>(null);
+  const proposalsLoadErrorRef = useRef<string | null>(null);
   const previousModeRef = useRef(mode);
 
   // A background load refreshes records already on screen without swapping them for the loading state.
-  // It never clears or replaces an error already shown, so an earlier save failure stays visible.
+  // It never clears or replaces an error raised by a save, so an earlier save failure stays visible;
+  // its own load errors are cleared by the next successful load.
   const loadJobs = useCallback(async ({ background = false } = {}) => {
     const requestId = ++jobsRequestIdRef.current;
     if (!background) {
@@ -231,9 +235,17 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       if (requestId !== jobsRequestIdRef.current) return;
 
       setJobs((data ?? []) as Job[]);
+      const staleLoadError = jobsLoadErrorRef.current;
+      jobsLoadErrorRef.current = null;
+      setJobsError((current) => (current === staleLoadError ? null : current));
     } catch (loadError) {
       if (requestId === jobsRequestIdRef.current) {
-        setJobsError((current) => (background && current) || getErrorMessage(loadError));
+        const message = getErrorMessage(loadError);
+        const staleLoadError = jobsLoadErrorRef.current;
+        jobsLoadErrorRef.current = message;
+        setJobsError((current) =>
+          background && current && current !== staleLoadError ? current : message,
+        );
       }
     } finally {
       if (requestId === jobsRequestIdRef.current) setIsLoadingJobs(false);
@@ -268,9 +280,17 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
           proposal_personnel: normalizeProposalPersonnel(proposal.proposal_personnel),
         })),
       );
+      const staleLoadError = proposalsLoadErrorRef.current;
+      proposalsLoadErrorRef.current = null;
+      setProposalsError((current) => (current === staleLoadError ? null : current));
     } catch (loadError) {
       if (requestId === proposalsRequestIdRef.current) {
-        setProposalsError((current) => (background && current) || getErrorMessage(loadError));
+        const message = getErrorMessage(loadError);
+        const staleLoadError = proposalsLoadErrorRef.current;
+        proposalsLoadErrorRef.current = message;
+        setProposalsError((current) =>
+          background && current && current !== staleLoadError ? current : message,
+        );
       }
     } finally {
       if (requestId === proposalsRequestIdRef.current) setIsLoadingProposals(false);
