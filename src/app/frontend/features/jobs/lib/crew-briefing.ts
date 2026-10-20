@@ -65,3 +65,25 @@ export function manualFieldBriefingDisplayReason(evidence: CrewBriefingEvidence)
 export function crewAcknowledgmentSendErrorMessage() {
   return 'Crew acknowledgment could not be sent. Please check the crew member’s email address and try again.';
 }
+
+// The JHA stores its PPE checkboxes alongside other form state (keys prefixed with `__`) in ppe_requirements.
+function storedRecord(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+export function briefingPpeSummary(ppe: unknown) {
+  if (typeof ppe === 'string') return ppe.trim();
+  const record = storedRecord(ppe);
+  if (!record) return '';
+  return Object.entries(record).filter(([key, required]) => !key.startsWith('__') && required === true).map(([key]) => key).join(', ');
+}
+
+export function briefingCommunicationsSummary(ppe: unknown, fallback?: string) {
+  const record = storedRecord(ppe);
+  const methods = Array.isArray(record?.__communicationMethods) ? record.__communicationMethods.filter((method): method is string => typeof method === 'string') : [];
+  const other = typeof record?.__communicationMethodOther === 'string' ? record.__communicationMethodOther.trim() : '';
+  const radioChannel = typeof record?.__radioChannel === 'string' ? record.__radioChannel.trim() : '';
+  const methodList = methods.map((method) => method === 'Other' ? other : method).filter(Boolean).join(', ');
+  const lines = [methodList, radioChannel ? `Radio channel: ${radioChannel}` : ''].filter(Boolean);
+  return lines.length ? lines.join('\n') : fallback?.trim() ?? '';
+}
