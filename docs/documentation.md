@@ -165,11 +165,18 @@ Adds platform admin accounts (trusted DroneSMS staff) and admin-managed app sett
 **Adding the first admin (one time only).** Run this in the Supabase SQL editor after the migration is applied, using the email of an existing account:
 
 ```sql
-insert into public.platform_admins (user_id, note)
-select id, 'Initial admin' from auth.users where lower(email) = lower('you@example.com');
+with granted as (
+  insert into public.platform_admins (user_id, note)
+  select id, 'Initial admin' from auth.users where lower(email) = lower('you@example.com')
+  on conflict (user_id) do nothing
+  returning user_id
+)
+insert into public.platform_admin_audit (action, actor_email, target_user_id, target_email)
+select 'Granted admin', 'SQL editor (initial setup)', g.user_id, u.email
+from granted g join auth.users u on u.id = g.user_id;
 ```
 
-After that, admins add and remove other admins from the Admin page.
+This also records the grant in the admin activity log, like every later grant. After that, admins add and remove other admins from the Admin page.
 
 ## Dependencies
 

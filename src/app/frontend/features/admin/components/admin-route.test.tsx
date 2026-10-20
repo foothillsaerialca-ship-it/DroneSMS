@@ -3,10 +3,10 @@
  * Fallback/error behavior: Admin status and settings come from the in-memory Supabase stand-in; no credentials are used.
  * Known limitation: Database-side refusal of non-admins is covered by the migration test, not here.
  */
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { supabaseMock } from '../../../../../test/supabase-mock';
+import { createSession, supabaseMock } from '../../../../../test/supabase-mock';
 import { renderWithRouter, signInCompletedUser, testUserId } from '../../../../../test/render';
 
 function signInAdmin() {
@@ -54,6 +54,38 @@ describe('Platform admin access', () => {
     expect(view.currentLocation()).toBe('/admin');
     expect(within(desktopNav()).getByRole('link', { name: 'Admin' })).toBeInTheDocument();
     expect(await screen.findByText('nico@example.test')).toBeInTheDocument();
+  });
+
+  it('sends signed-out visitors to sign in', async () => {
+    const view = renderWithRouter('/admin');
+
+    await waitFor(() => expect(view.currentLocation()).toBe('/login'));
+    expect(screen.queryByRole('heading', { name: 'Platform Admin' })).not.toBeInTheDocument();
+  });
+
+  it('lets an admin without a company profile open the admin page', async () => {
+    supabaseMock.setSession(createSession(testUserId));
+    supabaseMock.setTable('profiles', [{ id: testUserId, organization_id: null, company_name: null }]);
+    supabaseMock.setTable('organizations', []);
+    supabaseMock.respondRpc('is_platform_admin', () => ({ data: true, error: null }));
+    const view = renderWithRouter('/admin');
+
+    expect(await screen.findByRole('heading', { name: 'Platform Admin' })).toBeInTheDocument();
+    expect(view.currentLocation()).toBe('/admin');
+  });
+
+  it('removes the admin page when admin access is revoked while it is open', async () => {
+    signInAdmin();
+    let isAdmin = true;
+    supabaseMock.respondRpc('is_platform_admin', () => ({ data: isAdmin, error: null }));
+    const view = renderWithRouter('/admin');
+    expect(await screen.findByRole('heading', { name: 'Platform Admin' })).toBeInTheDocument();
+
+    isAdmin = false;
+    fireEvent.focus(window);
+
+    await waitFor(() => expect(view.currentLocation()).toBe('/dashboard'));
+    expect(within(desktopNav()).queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
   });
 
   it('adds an admin by email through the database function', async () => {

@@ -80,16 +80,19 @@ export function AppRouter() {
           <Route path="/sms" element={<SmsPage />} />
           <Route path="/sms/moc" element={<MocRegisterPage />} />
           <Route path="/sms/moc/:mocId" element={<MocDetailPage />} />
-          <Route element={<AdminRoute />}>
-            <Route
-              path="/admin"
-              element={
-                <Suspense fallback={<p className="text-sm text-slate-600">Loading admin tools...</p>}>
-                  <AdminPage />
-                </Suspense>
-              }
-            />
-          </Route>
+        </Route>
+      </Route>
+
+      <Route element={<AdminRoute />}>
+        <Route element={<AppShell />}>
+          <Route
+            path="/admin"
+            element={
+              <Suspense fallback={<p className="text-sm text-slate-600">Loading admin tools...</p>}>
+                <AdminPage />
+              </Suspense>
+            }
+          />
         </Route>
       </Route>
 

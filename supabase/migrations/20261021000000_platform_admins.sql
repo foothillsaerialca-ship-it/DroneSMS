@@ -10,9 +10,17 @@
 --     set_app_setting() can change them. Never store secrets here.
 --   * platform_admin_audit records every admin change. Admins can read it.
 --
--- Bootstrap: the first admin must be added once with the SQL editor, e.g.
---   insert into public.platform_admins (user_id, note)
---   select id, 'Initial admin' from auth.users where lower(email) = lower('you@example.com');
+-- Bootstrap: the first admin must be added once with the SQL editor, recording the
+-- grant in the audit log like every later one, e.g.
+--   with granted as (
+--     insert into public.platform_admins (user_id, note)
+--     select id, 'Initial admin' from auth.users where lower(email) = lower('you@example.com')
+--     on conflict (user_id) do nothing
+--     returning user_id
+--   )
+--   insert into public.platform_admin_audit (action, actor_email, target_user_id, target_email)
+--   select 'Granted admin', 'SQL editor (initial setup)', g.user_id, u.email
+--   from granted g join auth.users u on u.id = g.user_id;
 -- After that, admins add and remove each other from the Admin page.
 
 create table if not exists public.platform_admins (
