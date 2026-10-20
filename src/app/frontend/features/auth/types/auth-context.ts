@@ -30,4 +30,7 @@ export type AuthContextValue = {
   profileState: ProfileState;
   profileError: string | null;
   refreshProfileState: () => Promise<void>;
+  /** True for platform admins; null while the check for the current user is still running. */
+  isPlatformAdmin: boolean | null;
+  refreshPlatformAdmin: () => Promise<void>;
 };

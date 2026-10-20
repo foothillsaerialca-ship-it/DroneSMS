@@ -22,6 +22,9 @@ export type QueryCall = {
 /** Returns a result for a request, or undefined to fall back to the table fixture. */
 export type QueryResponder = (call: QueryCall) => QueryResult | undefined | Promise<QueryResult | undefined>;
 
+/** Returns a result for an RPC call, or undefined to fall back to `{ data: null, error: null }`. */
+export type RpcResponder = (args: unknown) => QueryResult | undefined | Promise<QueryResult | undefined>;
+
 type AuthChangeCallback = (event: string, session: Session | null) => void;
 
 /** Builds a minimal signed-in session for a fixture user. */
@@ -68,6 +71,7 @@ function createSupabaseMock() {
   let responders: QueryResponder[] = [];
   let calls: QueryCall[] = [];
   let rpcCalls: { name: string; args: unknown }[] = [];
+  let rpcResponders: Record<string, RpcResponder> = {};
   let session: Session | null = null;
   let sessionLoader: (() => Promise<Session | null>) | null = null;
   let authListeners = new Set<AuthChangeCallback>();
@@ -215,7 +219,8 @@ function createSupabaseMock() {
     from: (table: string) => createQuery(table),
     rpc(name: string, args?: unknown) {
       rpcCalls.push({ name, args });
-      const result = Promise.resolve<QueryResult>({ data: null, error: null });
+      const responder = rpcResponders[name];
+      const result = Promise.resolve(responder?.(args)).then((response) => response ?? { data: null, error: null });
       return Object.assign(result, { single: () => result, maybeSingle: () => result });
     },
     auth,
@@ -230,6 +235,7 @@ function createSupabaseMock() {
       responders = [];
       calls = [];
       rpcCalls = [];
+      rpcResponders = {};
       session = null;
       sessionLoader = null;
       authListeners = new Set();
@@ -239,6 +245,10 @@ function createSupabaseMock() {
     },
     respond(responder: QueryResponder) {
       responders.push(responder);
+    },
+    /** Installs the result for every call to the named RPC. */
+    respondRpc(name: string, responder: RpcResponder) {
+      rpcResponders[name] = responder;
     },
     setSession(next: Session | null) {
       session = next;
