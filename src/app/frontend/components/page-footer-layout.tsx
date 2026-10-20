@@ -3,7 +3,7 @@ import { CopyrightFooter } from './copyright-footer';
 
 export function PageFooterLayout() {
   return (
-    <div className="flex min-h-full w-full flex-col">
+    <div className="flex h-full w-full flex-col overflow-y-auto">
       <div className="flex-1">
         <Outlet />
       </div>
