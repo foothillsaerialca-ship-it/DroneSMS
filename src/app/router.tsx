@@ -3,6 +3,7 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
+import { Suspense, lazy } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './frontend/shell';
 import { DashboardPage } from './frontend/features/dashboard/pages/dashboard-page';
@@ -32,6 +33,10 @@ import { ResetPasswordPage } from './frontend/features/auth/pages/reset-password
 import { AuthCallbackPage } from './frontend/features/auth/pages/auth-callback-page';
 import { CrewBriefingAcknowledgmentPage } from './frontend/features/jobs/pages/crew-briefing-acknowledgment-page';
 import { PageFooterLayout } from './frontend/components/page-footer-layout';
+import { AdminRoute } from './frontend/features/admin/components/admin-route';
+
+// Loaded on demand so the admin page is only downloaded when an admin opens it.
+const AdminPage = lazy(() => import('./frontend/features/admin/pages/admin-page'));
 
 /**
  * Implements app router for this module.
@@ -75,6 +80,16 @@ export function AppRouter() {
           <Route path="/sms" element={<SmsPage />} />
           <Route path="/sms/moc" element={<MocRegisterPage />} />
           <Route path="/sms/moc/:mocId" element={<MocDetailPage />} />
+          <Route element={<AdminRoute />}>
+            <Route
+              path="/admin"
+              element={
+                <Suspense fallback={<p className="text-sm text-slate-600">Loading admin tools...</p>}>
+                  <AdminPage />
+                </Suspense>
+              }
+            />
+          </Route>
         </Route>
       </Route>
 

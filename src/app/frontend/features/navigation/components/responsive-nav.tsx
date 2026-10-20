@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { BetaBadge } from '@frontend/components/beta-badge';
 import { supabase } from '@frontend/lib/supabase';
+import { useAuth } from '../../auth/components/use-auth';
 import { resetBetaAuthAttempt } from '../../auth/lib/beta-welcome';
 
 /**
@@ -25,6 +26,9 @@ const navItems = [
   { to: '/settings/organization', label: 'Settings' },
   { to: '/about', label: 'About', end: true }
 ];
+
+/** Shown only to platform admins; the /admin route and the database enforce access on their own. */
+const adminNavItem = { to: '/admin', label: 'Admin', end: true };
 
 /**
  * Determines is proposals active for the surrounding workflow.
@@ -59,6 +63,8 @@ type NavigationLinksProps = {
  */
 function NavigationLinks({ onNavigate, layout }: NavigationLinksProps) {
   const location = useLocation();
+  const { isPlatformAdmin } = useAuth();
+  const items = isPlatformAdmin ? [...navItems, adminNavItem] : navItems;
   const baseClass =
     'flex items-center rounded-xl px-3 py-2.5 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-brand-700 focus:ring-offset-2';
   const inactiveClass = layout === 'sidebar' ? 'text-slate-600 hover:bg-slate-100 hover:text-brand-900' : 'text-slate-700 hover:bg-slate-100 hover:text-brand-900';
@@ -66,7 +72,7 @@ function NavigationLinks({ onNavigate, layout }: NavigationLinksProps) {
 
   return (
     <ul className="space-y-1" aria-label="Primary navigation">
-      {navItems.map((item) => {
+      {items.map((item) => {
         const isProposals = item.label === 'Proposals';
         const isJobs = item.label === 'Jobs';
         const activeOverride = isProposals

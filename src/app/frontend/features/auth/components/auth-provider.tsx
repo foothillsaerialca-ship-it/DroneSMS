@@ -76,6 +76,19 @@ async function lookUpProfileState(userId: string): Promise<'complete' | 'incompl
 }
 
 /**
+ * Asks the database whether the signed-in user is a platform admin.
+ * Fallback/error behavior: Any lookup failure is treated as "not an admin"; the database enforces admin access regardless.
+ */
+async function lookUpPlatformAdmin(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('is_platform_admin');
+    return !error && data === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Renders the auth provider interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
@@ -86,6 +99,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // restored session is never judged by a result that belongs to no user or another user.
   const [profileResult, setProfileResult] = useState<ProfileResult>({ userId: null, state: 'loading', error: null });
   const profileRequestId = useRef(0);
+  const [adminResult, setAdminResult] = useState<{ userId: string | null; isAdmin: boolean }>({ userId: null, isAdmin: false });
+  const adminRequestId = useRef(0);
 
   const refreshProfileState = useCallback(async () => {
     const userId = session?.user?.id ?? null;
@@ -108,6 +123,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
     // A newer lookup, sign-out, or user change superseded this request.
     if (requestId !== profileRequestId.current) return;
     setProfileResult(result);
+  }, [session?.user?.id]);
+
+  const refreshPlatformAdmin = useCallback(async () => {
+    const userId = session?.user?.id ?? null;
+    const requestId = ++adminRequestId.current;
+    const isAdmin = userId ? await lookUpPlatformAdmin() : false;
+    // A newer check, sign-out, or user change superseded this request.
+    if (requestId !== adminRequestId.current) return;
+    setAdminResult({ userId, isAdmin });
   }, [session?.user?.id]);
 
   useEffect(() => {
@@ -159,11 +183,26 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setProfileResult({ userId: null, state: 'missing', error: null });
   }, [status, refreshProfileState]);
 
+  useEffect(() => {
+    if (status === 'authenticated') {
+      void refreshPlatformAdmin();
+      return;
+    }
+
+    adminRequestId.current += 1;
+    setAdminResult({ userId: null, isAdmin: false });
+  }, [status, refreshPlatformAdmin]);
+
   const { profileState, profileError } = getSessionProfileState(status, session?.user?.id ?? null, profileResult);
 
+  // Only a result resolved for the current user counts; until then the check is pending (null).
+  const currentUserId = session?.user?.id ?? null;
+  const isPlatformAdmin =
+    status !== 'authenticated' ? false : currentUserId && adminResult.userId === currentUserId ? adminResult.isAdmin : null;
+
   const value = useMemo<AuthContextValue>(
-    () => ({ status, session, profileState, profileError, refreshProfileState }),
-    [status, session, profileState, profileError, refreshProfileState]
+    () => ({ status, session, profileState, profileError, refreshProfileState, isPlatformAdmin, refreshPlatformAdmin }),
+    [status, session, profileState, profileError, refreshProfileState, isPlatformAdmin, refreshPlatformAdmin]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -7,6 +7,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { supabaseMock } from './supabase-mock';
+import { resetAppSettings } from '../app/frontend/features/admin/lib/app-settings';
 
 // Every import of the app's Supabase client, through either alias, receives the in-memory stand-in.
 vi.mock('@frontend/lib/supabase', async () => {
@@ -20,6 +21,7 @@ vi.mock('@backend/integrations/supabase/client', async () => {
 
 beforeEach(() => {
   supabaseMock.reset();
+  resetAppSettings();
   window.sessionStorage.clear();
   vi.stubGlobal('fetch', (input: unknown) => {
     throw new Error(`Network access is disabled in component tests (attempted fetch: ${String(input)}).`);

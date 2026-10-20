@@ -6,9 +6,10 @@
 import { BetaBadge } from '@frontend/components/beta-badge';
 import { CopyrightFooter } from '@frontend/components/copyright-footer';
 import { Outlet } from 'react-router-dom';
-import { isBetaWelcomeEnabled } from '../lib/beta-welcome';
+import { useBetaWelcomeEnabled } from '../../admin/lib/app-settings';
 
 export function PublicAuthLayout() {
+  const isBetaWelcomeEnabled = useBetaWelcomeEnabled();
   return (
     <div className="flex min-h-full w-full flex-col">
       <div className="flex-1">
