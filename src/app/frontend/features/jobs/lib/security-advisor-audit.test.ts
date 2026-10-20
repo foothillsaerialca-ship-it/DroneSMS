@@ -122,3 +122,10 @@ test('logo removal preserves unsaved organization fields and can be cancelled be
   assert.match(removal, /setDraft\(\(currentDraft\) => \(\{ \.\.\.currentDraft, logoPath: updatedSettings\.logoPath, logoUrl: updatedSettings\.logoUrl \}\)\)/);
   assert.doesNotMatch(removal, /setDraft\(updatedSettings\)/);
 });
+
+test('rls_auto_enable event-trigger helper is not executable by client roles', () => {
+  const sql = readFileSync('supabase/migrations/20261020000000_revoke_rls_auto_enable_client_execute.sql', 'utf8');
+  assert.match(sql, /to_regprocedure\('public\.rls_auto_enable\(\)'\) is not null/i);
+  assert.match(sql, /revoke all on function public\.rls_auto_enable\(\) from public, anon, authenticated;/i);
+  assert.doesNotMatch(laterSql, /grant\s+execute\s+on\s+function\s+public\.rls_auto_enable\(\)[^;]*to[^;]*(public|anon|authenticated)/i);
+});
