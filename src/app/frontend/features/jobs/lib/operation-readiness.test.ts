@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildReadinessPacketRows, closeoutRequiresReadiness, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, getResourceReadinessIssues, isApprovalCurrent, isApprovalForToday, resolveReadinessApproverIdentity, type ReadinessCrewMember, type ReadinessEquipmentItem, type ReadinessPrerequisites } from './operation-readiness.ts';
+import { buildReadinessPacketRows, closeoutRequiresReadiness, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, getResourceReadinessIssues, getCrewCredentialLabel, getCrewCredentialWarnings, getEquipmentMaintenanceLabel, isApprovalCurrent, isApprovalForToday, resolveReadinessApproverIdentity, type ReadinessCrewMember, type ReadinessEquipmentItem, type ReadinessPrerequisites } from './operation-readiness.ts';
 
 const ready: ReadinessPrerequisites = { jhaComplete: true, safetyManagerReviewCurrent: true, rpicAcceptanceCurrent: true, controlsInPlace: true, preflightComplete: true, assignedRpicId: 'rpic-1', fitnessForDutyConfirmed: true };
 
@@ -114,20 +114,28 @@ test('unavailable equipment and unregistered drones block readiness', () => {
   assert.deepEqual(getResourceReadinessIssues([], [camera], [], today).blocking, []);
 });
 
-test('overdue maintenance and expired training need an override that matches the current date', () => {
+test('overdue maintenance is a reminder, not a gate', () => {
   const overdue = { ...readyDrone, maintenanceDueDate: '2026-09-01' };
+  const issues = getResourceReadinessIssues([currentRpic], [overdue], [], today);
+  assert.deepEqual(issues.blocking, []);
+  assert.deepEqual(issues.overridable, []);
+  assert.deepEqual(issues.pendingOverrideReasons, []);
+  assert.match(issues.reminders[0], /Drone A is overdue for maintenance \(due 2026-09-01\)/);
+  assert.equal(getEquipmentMaintenanceLabel('2026-09-01', today), ' (maintenance overdue)');
+  assert.equal(getEquipmentMaintenanceLabel('2026-12-01', today), '');
+  assert.equal(getEquipmentMaintenanceLabel(null, today), '');
+});
+
+test('expired training needs an override that matches the current date', () => {
   const expired = { ...currentRpic, trainingExpirationDate: '2026-01-31' };
-  const pending = getResourceReadinessIssues([expired], [overdue], [], today);
+  const pending = getResourceReadinessIssues([expired], [], [], today);
   assert.equal(pending.blocking.length, 0);
-  assert.deepEqual(pending.overridable.map((issue) => issue.itemType), ['maintenance_overdue', 'training_expired']);
-  assert.equal(pending.pendingOverrideReasons.length, 2);
+  assert.deepEqual(pending.overridable.map((issue) => issue.itemType), ['training_expired']);
+  assert.equal(pending.pendingOverrideReasons.length, 1);
 
-  const record = (item_type: 'maintenance_overdue' | 'training_expired', item_id: string, item_date: string) => ({ item_type, item_id, item_date, item_name: 'x', reason: 'Accepted for this job', approved_by_name: 'SM', approved_at: '2026-10-22T10:00:00Z' });
-  const covered = getResourceReadinessIssues([expired], [overdue], [record('maintenance_overdue', 'e-drone', '2026-09-01'), record('training_expired', 'p-rpic', '2026-01-31')], today);
-  assert.deepEqual(covered.pendingOverrideReasons, []);
-
-  const staleOverride = getResourceReadinessIssues([], [{ ...overdue, maintenanceDueDate: '2026-10-01' }], [record('maintenance_overdue', 'e-drone', '2026-09-01')], today);
-  assert.equal(staleOverride.pendingOverrideReasons.length, 1, 'an override for an older due date no longer applies');
+  const record = (item_date: string) => ({ item_type: 'training_expired' as const, item_id: 'p-rpic', item_date, item_name: 'x', reason: 'Accepted for this job', approved_by_name: 'SM', approved_at: '2026-10-22T10:00:00Z' });
+  assert.deepEqual(getResourceReadinessIssues([expired], [], [record('2026-01-31')], today).pendingOverrideReasons, []);
+  assert.equal(getResourceReadinessIssues([{ ...expired, trainingExpirationDate: '2026-03-31' }], [], [record('2026-01-31')], today).pendingOverrideReasons.length, 1, 'an override for an older date no longer applies');
 });
 
 test('the same person assigned twice is listed once for expired training', () => {
@@ -146,4 +154,19 @@ test('a Ready to Operate approval only covers the day it was given', () => {
   assert.equal(isApprovalForToday(record, new Date(2026, 9, 23, 6, 0)), false);
   assert.equal(isApprovalForToday({ ...record, approved_at: null }, new Date(2026, 9, 22, 18, 0)), false);
   assert.equal(isApprovalForToday(null), false);
+});
+
+test('crew pickers label lapsed credentials and warn for an RPIC without a current Part 107', () => {
+  const today = '2026-10-22';
+  const expired = { part_107_certificate_number: '4000001', part_107_expiration_date: '2026-09-30', training_expiration_date: '2026-01-31' };
+  const current = { part_107_certificate_number: '4000002', part_107_expiration_date: '2027-06-01', training_expiration_date: '2027-06-01' };
+  assert.equal(getCrewCredentialLabel(expired, today), ' (Part 107 expired, training expired)');
+  assert.equal(getCrewCredentialLabel(current, today), '');
+  assert.deepEqual(getCrewCredentialWarnings(current, 'RPIC', today), []);
+  const rpicWarnings = getCrewCredentialWarnings(expired, 'RPIC', today);
+  assert.equal(rpicWarnings.length, 2);
+  assert.match(rpicWarnings[0], /Part 107 expired on 2026-09-30\. Ready to Operate will be blocked/);
+  assert.match(rpicWarnings[1], /Training expired on 2026-01-31/);
+  assert.deepEqual(getCrewCredentialWarnings(expired, 'Visual Observer', today).length, 1);
+  assert.match(getCrewCredentialWarnings({ ...current, part_107_certificate_number: '' }, 'RPIC', today)[0], /No Part 107 certificate number/);
 });
