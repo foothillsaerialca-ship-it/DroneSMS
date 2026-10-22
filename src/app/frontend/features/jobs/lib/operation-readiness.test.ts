@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildReadinessPacketRows, closeoutRequiresReadiness, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, getResourceReadinessIssues, isApprovalCurrent, resolveReadinessApproverIdentity, type ReadinessCrewMember, type ReadinessEquipmentItem, type ReadinessPrerequisites } from './operation-readiness.ts';
+import { buildReadinessPacketRows, closeoutRequiresReadiness, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, getResourceReadinessIssues, isApprovalCurrent, isApprovalForToday, resolveReadinessApproverIdentity, type ReadinessCrewMember, type ReadinessEquipmentItem, type ReadinessPrerequisites } from './operation-readiness.ts';
 
 const ready: ReadinessPrerequisites = { jhaComplete: true, safetyManagerReviewCurrent: true, rpicAcceptanceCurrent: true, controlsInPlace: true, preflightComplete: true, assignedRpicId: 'rpic-1', fitnessForDutyConfirmed: true };
 
@@ -138,4 +138,12 @@ test('the same person assigned twice is listed once for expired training', () =>
 test('closeout requires Ready to Operate unless the job was aborted or delayed', () => {
   for (const result of ['Completed as Planned', 'Completed with Changes', 'Incident Occurred']) assert.equal(closeoutRequiresReadiness(result), true, result);
   for (const result of ['Aborted', 'Delayed']) assert.equal(closeoutRequiresReadiness(result), false, result);
+});
+
+test('a Ready to Operate approval only covers the day it was given', () => {
+  const record = { approved_at: new Date(2026, 9, 22, 7, 30).toISOString(), approval_stale: false, fitness_for_duty_confirmed: true, rpic_personnel_id: 'rpic-1' };
+  assert.equal(isApprovalForToday(record, new Date(2026, 9, 22, 18, 0)), true);
+  assert.equal(isApprovalForToday(record, new Date(2026, 9, 23, 6, 0)), false);
+  assert.equal(isApprovalForToday({ ...record, approved_at: null }, new Date(2026, 9, 22, 18, 0)), false);
+  assert.equal(isApprovalForToday(null), false);
 });

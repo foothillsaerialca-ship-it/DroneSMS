@@ -10,7 +10,7 @@ import { daysUntilDate, formatIsoDate, formatIsoDate as formatPlannedDate, today
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
-import { closeoutRequiresReadiness, getOperationReadinessStatus, getReadinessBlockingReasons, getResourceReadinessIssues, isApprovalCurrent, type OperationReadinessRecord, type OverridableReadinessIssue, type ReadinessOverrideRecord } from '@frontend/features/jobs/lib/operation-readiness';
+import { closeoutRequiresReadiness, getOperationReadinessStatus, getReadinessBlockingReasons, getResourceReadinessIssues, isApprovalCurrent, isApprovalForToday, type OperationReadinessRecord, type OverridableReadinessIssue, type ReadinessOverrideRecord } from '@frontend/features/jobs/lib/operation-readiness';
 import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, currentCrewEvidence, manualFieldBriefingDisplayReason, manualFieldBriefingReasons, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
 import { followUpAreas, validateSafetyAssurance, type SafetyAssuranceInput } from '@frontend/features/sms/lib/safety-assurance';
 
@@ -674,6 +674,9 @@ export function JobFileHubPage() {
   );
   const readinessBlockingReasons = [...getReadinessBlockingReasons(readinessPrerequisites), ...resourceIssues.blocking, ...resourceIssues.pendingOverrideReasons];
   const readinessStatus = getOperationReadinessStatus(operationReadiness);
+  // Before closeout, an approval from an earlier day must be given again on the day of the operation.
+  const readinessExpired = readinessStatus === 'Ready to Operate' && !operationCloseout && !isApprovalForToday(operationReadiness);
+  const readinessBadge = readinessExpired ? 'Approval Expired' : readinessStatus;
   const readinessCurrent = isApprovalCurrent(operationReadiness, assignedRpic?.id ?? null);
   const closeoutBlockedByReadiness = closeoutRequiresReadiness(closeoutFormData.operationResult) && !readinessCurrent;
   const isSafetyManager = Boolean(safetyManager?.user_id && safetyManager.user_id === currentUserId);
@@ -1612,8 +1615,9 @@ export function JobFileHubPage() {
             <div>
               <h2 id="ready-to-operate-heading" className="text-lg font-semibold text-brand-900">Ready to Operate</h2>
               <p className="mt-1 text-sm text-slate-600">Final operation approval by the assigned RPIC after the safety workflow is current.</p>
-              <span className={`mt-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${readinessStatus === 'Ready to Operate' ? currentClassName : readinessStatus === 'Approval Stale' ? expiringClassName : missingClassName}`}>{readinessStatus}</span>
-              {operationReadiness?.approved_at ? <p className="mt-2 text-xs text-slate-500">{readinessStatus === 'Approval Stale' ? 'Previously approved' : 'Approved'} by {assignedRpic?.full_name ?? 'assigned RPIC'} on {new Date(operationReadiness.approved_at).toLocaleString()}.</p> : null}
+              <span className={`mt-3 inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${readinessBadge === 'Ready to Operate' ? currentClassName : readinessBadge === 'Not Ready' ? missingClassName : expiringClassName}`}>{readinessBadge}</span>
+              {operationReadiness?.approved_at ? <p className="mt-2 text-xs text-slate-500">{readinessStatus === 'Approval Stale' || readinessExpired ? 'Previously approved' : 'Approved'} by {assignedRpic?.full_name ?? 'assigned RPIC'} on {new Date(operationReadiness.approved_at).toLocaleString()}.</p> : null}
+              {readinessExpired ? <p className="mt-1 text-xs font-medium text-amber-800">Ready to Operate approval only counts on the day it was given. The assigned RPIC must approve again on the day of the operation.</p> : null}
             </div>
           </div>
         </div>

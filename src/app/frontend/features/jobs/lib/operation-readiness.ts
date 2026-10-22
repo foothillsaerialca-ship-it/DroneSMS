@@ -85,6 +85,12 @@ export function isApprovalCurrent(record: OperationReadinessRecord | null, assig
     && record?.rpic_personnel_id === assignedRpicId;
 }
 
+/** A Ready to Operate approval only covers the day it was given, in the viewer's local time. */
+export function isApprovalForToday(record: OperationReadinessRecord | null, now = new Date()) {
+  if (!record?.approved_at) return false;
+  return new Date(record.approved_at).toDateString() === now.toDateString();
+}
+
 export function buildReadinessPacketRows(record: (OperationReadinessRecord & { rpic_name?: string | null; approved_by_name?: string | null; approved_by_user_id?: string | null }) | null, formatTimestamp = (value: string) => value): Array<[string, string]> {
   if (!record) return [['Ready to Operate', 'Not recorded (legacy or not yet approved)'], ['Fitness for Duty', 'Not confirmed']];
   const status = getOperationReadinessStatus(record);
