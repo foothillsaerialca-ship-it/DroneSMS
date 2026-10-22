@@ -10,7 +10,7 @@ import { daysUntilDate, formatIsoDate, formatIsoDate as formatPlannedDate, today
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
-import { closeoutRequiresReadiness, getOperationReadinessStatus, getReadinessBlockingReasons, getResourceReadinessIssues, isApprovalCurrent, isApprovalForToday, type OperationReadinessRecord, type OverridableReadinessIssue, type ReadinessOverrideRecord } from '@frontend/features/jobs/lib/operation-readiness';
+import { closeoutRequiresReadiness, getOperationReadinessStatus, getReadinessBlockingReasons, getCrewCredentialLabel, getCrewCredentialWarnings, getResourceReadinessIssues, isApprovalCurrent, isApprovalForToday, type OperationReadinessRecord, type OverridableReadinessIssue, type ReadinessOverrideRecord } from '@frontend/features/jobs/lib/operation-readiness';
 import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, currentCrewEvidence, manualFieldBriefingDisplayReason, manualFieldBriefingReasons, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
 import { followUpAreas, validateSafetyAssurance, type SafetyAssuranceInput } from '@frontend/features/sms/lib/safety-assurance';
 
@@ -492,7 +492,7 @@ export function JobFileHubPage() {
           .maybeSingle();
         const personnelQuery = supabase
           .from('personnel')
-          .select('id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id, archived_at')
+          .select('id, full_name, role, email, part_107_certificate_number, part_107_expiration_date, training_expiration_date, status, user_id, archived_at')
           .order('full_name', { ascending: true });
         const assignmentsQuery = supabase
           .from('job_personnel')
@@ -673,6 +673,8 @@ export function JobFileHubPage() {
     todayIsoDate(),
   );
   const readinessBlockingReasons = [...getReadinessBlockingReasons(readinessPrerequisites), ...resourceIssues.blocking, ...resourceIssues.pendingOverrideReasons];
+  const selectedCrewPerson = personnel.find((person) => person.id === selectedPersonnelId);
+  const selectedCrewWarnings = selectedCrewPerson ? getCrewCredentialWarnings(selectedCrewPerson, selectedRole, todayIsoDate(), (date) => formatIsoDate(date)) : [];
   const readinessStatus = getOperationReadinessStatus(operationReadiness);
   // Before closeout, an approval from an earlier day must be given again on the day of the operation.
   const readinessExpired = readinessStatus === 'Ready to Operate' && !operationCloseout && !isApprovalForToday(operationReadiness);
@@ -1341,7 +1343,7 @@ export function JobFileHubPage() {
                 {assignablePersonnel.length === 0 ? <option value="">No personnel records available</option> : null}
                 {assignablePersonnel.map((person) => (
                   <option key={person.id} value={person.id}>
-                    {person.full_name} — {person.role}{assignedPersonnelIds.has(person.id) ? ' (already assigned)' : ''}
+                    {person.full_name} — {person.role}{getCrewCredentialLabel(person, todayIsoDate())}{assignedPersonnelIds.has(person.id) ? ' (already assigned)' : ''}
                   </option>
                 ))}
               </select>
@@ -1360,6 +1362,8 @@ export function JobFileHubPage() {
                 ))}
               </select>
             </label>
+
+            {selectedCrewWarnings.length ? <ul className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="note">{selectedCrewWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
 
             <button
               type="submit"

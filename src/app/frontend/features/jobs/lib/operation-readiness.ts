@@ -205,3 +205,38 @@ export function getResourceReadinessIssues(
     pendingOverrideReasons: overridable.filter((issue) => !issue.override).map((issue) => `${issue.label} A Safety Manager override is required.`),
   };
 }
+
+export type CrewCredentialRecord = {
+  part_107_certificate_number?: string | null;
+  part_107_expiration_date: string | null;
+  training_expiration_date: string | null;
+};
+
+/** Short picker suffix, such as " (Part 107 expired)", for a person whose credentials have lapsed. */
+export function getCrewCredentialLabel(person: CrewCredentialRecord, today: string) {
+  const lapsed = [
+    person.part_107_expiration_date && person.part_107_expiration_date < today ? 'Part 107 expired' : null,
+    person.training_expiration_date && person.training_expiration_date < today ? 'training expired' : null,
+  ].filter(Boolean);
+  return lapsed.length ? ` (${lapsed.join(', ')})` : '';
+}
+
+/**
+ * Planning-stage warnings that match the Ready to Operate rules: an RPIC without a current Part 107 is
+ * blocked, and expired training needs a Safety Manager override. These warn and never block selection.
+ */
+export function getCrewCredentialWarnings(person: CrewCredentialRecord, role: string, today: string, formatDate = (value: string) => value) {
+  const warnings: string[] = [];
+  if (role === 'RPIC') {
+    const expiration = person.part_107_expiration_date;
+    if (expiration && expiration < today) {
+      warnings.push(`Part 107 expired on ${formatDate(expiration)}. Ready to Operate will be blocked until it's renewed in Personnel.`);
+    } else if (!person.part_107_certificate_number?.trim() || !expiration) {
+      warnings.push('No Part 107 certificate number and expiration date on file. Ready to Operate will be blocked until they are added in Personnel.');
+    }
+  }
+  if (person.training_expiration_date && person.training_expiration_date < today) {
+    warnings.push(`Training expired on ${formatDate(person.training_expiration_date)}. The Safety Manager will need to record an override before Ready to Operate.`);
+  }
+  return warnings;
+}

@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildReadinessPacketRows, closeoutRequiresReadiness, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, getResourceReadinessIssues, isApprovalCurrent, isApprovalForToday, resolveReadinessApproverIdentity, type ReadinessCrewMember, type ReadinessEquipmentItem, type ReadinessPrerequisites } from './operation-readiness.ts';
+import { buildReadinessPacketRows, closeoutRequiresReadiness, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, getResourceReadinessIssues, getCrewCredentialLabel, getCrewCredentialWarnings, isApprovalCurrent, isApprovalForToday, resolveReadinessApproverIdentity, type ReadinessCrewMember, type ReadinessEquipmentItem, type ReadinessPrerequisites } from './operation-readiness.ts';
 
 const ready: ReadinessPrerequisites = { jhaComplete: true, safetyManagerReviewCurrent: true, rpicAcceptanceCurrent: true, controlsInPlace: true, preflightComplete: true, assignedRpicId: 'rpic-1', fitnessForDutyConfirmed: true };
 
@@ -146,4 +146,19 @@ test('a Ready to Operate approval only covers the day it was given', () => {
   assert.equal(isApprovalForToday(record, new Date(2026, 9, 23, 6, 0)), false);
   assert.equal(isApprovalForToday({ ...record, approved_at: null }, new Date(2026, 9, 22, 18, 0)), false);
   assert.equal(isApprovalForToday(null), false);
+});
+
+test('crew pickers label lapsed credentials and warn for an RPIC without a current Part 107', () => {
+  const today = '2026-10-22';
+  const expired = { part_107_certificate_number: '4000001', part_107_expiration_date: '2026-09-30', training_expiration_date: '2026-01-31' };
+  const current = { part_107_certificate_number: '4000002', part_107_expiration_date: '2027-06-01', training_expiration_date: '2027-06-01' };
+  assert.equal(getCrewCredentialLabel(expired, today), ' (Part 107 expired, training expired)');
+  assert.equal(getCrewCredentialLabel(current, today), '');
+  assert.deepEqual(getCrewCredentialWarnings(current, 'RPIC', today), []);
+  const rpicWarnings = getCrewCredentialWarnings(expired, 'RPIC', today);
+  assert.equal(rpicWarnings.length, 2);
+  assert.match(rpicWarnings[0], /Part 107 expired on 2026-09-30\. Ready to Operate will be blocked/);
+  assert.match(rpicWarnings[1], /Training expired on 2026-01-31/);
+  assert.deepEqual(getCrewCredentialWarnings(expired, 'Visual Observer', today).length, 1);
+  assert.match(getCrewCredentialWarnings({ ...current, part_107_certificate_number: '' }, 'RPIC', today)[0], /No Part 107 certificate number/);
 });

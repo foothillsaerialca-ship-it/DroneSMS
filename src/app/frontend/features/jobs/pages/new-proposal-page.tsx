@@ -23,6 +23,8 @@ import {
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 import { getProposalScopeDefaults, hasCustomizedProposalScope } from '@frontend/features/jobs/lib/proposal-scope';
+import { getCrewCredentialLabel, getCrewCredentialWarnings } from '@frontend/features/jobs/lib/operation-readiness';
+import { formatIsoDate, todayIsoDate } from '@frontend/lib/date-utils';
 import {
   applyPrimaryServiceTypeDefault,
   normalizeProposalEquipment,
@@ -1008,6 +1010,7 @@ function ProposedCrewSelection({ personnel, selected, disabled, isLoading, onAdd
   onRoleChange: (id: string, role: string) => void;
 }) {
   const selectedIds = new Set(selected.map((item) => item.personnel_id));
+  const today = todayIsoDate();
   return (
     <fieldset className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
       <legend className="px-1 text-base font-semibold text-brand-900">Proposed Crew</legend>
@@ -1016,17 +1019,22 @@ function ProposedCrewSelection({ personnel, selected, disabled, isLoading, onAdd
         Add from Personnel
         <select className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value="" disabled={disabled} onChange={(event) => onAdd(event.target.value)}>
           <option value="">{isLoading ? 'Loading personnel…' : 'Select a person'}</option>
-          {personnel.filter((person) => !selectedIds.has(person.id)).map((person) => <option key={person.id} value={person.id}>{person.full_name} — {person.role}</option>)}
+          {personnel.filter((person) => !selectedIds.has(person.id)).map((person) => <option key={person.id} value={person.id}>{person.full_name} — {person.role}{getCrewCredentialLabel(person, today)}</option>)}
         </select>
       </label>
       <div className="mt-4 space-y-3">
-        {selected.length === 0 ? <p className="text-sm text-slate-500">No proposed crew selected. This proposal will retain solo wording.</p> : selected.map((assignment) => (
+        {selected.length === 0 ? <p className="text-sm text-slate-500">No proposed crew selected. This proposal will retain solo wording.</p> : selected.map((assignment) => {
+          const person = personnel.find((item) => item.id === assignment.personnel_id);
+          const warnings = person ? getCrewCredentialWarnings(person, assignment.proposed_role, today, (date) => formatIsoDate(date)) : [];
+          return (
           <div key={assignment.personnel_id} className="rounded-lg border border-slate-200 p-3">
             <div className="flex items-start justify-between gap-3"><strong className="text-sm text-brand-900">{assignment.personnel_name}</strong><button type="button" className="text-sm font-medium text-red-700" disabled={disabled} onClick={() => onRemove(assignment.personnel_id)}>Remove</button></div>
             <label className="mt-2 block text-sm text-slate-700">Proposed role<select className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={assignment.proposed_role} disabled={disabled} onChange={(event) => onRoleChange(assignment.personnel_id, event.target.value)}>{proposalPersonnelRoles.map((role) => <option key={role}>{role}</option>)}</select></label>
             <p className="mt-2 text-xs text-slate-500"><span className="font-medium">Qualifications / certifications (read-only):</span> {assignment.qualifications_summary || 'None recorded in Personnel.'}</p>
+            {warnings.length ? <ul className="mt-2 space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900" role="note">{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
           </div>
-        ))}
+          );
+        })}
       </div>
     </fieldset>
   );
