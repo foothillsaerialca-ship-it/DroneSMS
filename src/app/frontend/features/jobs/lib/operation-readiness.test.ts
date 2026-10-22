@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildReadinessPacketRows, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, isApprovalCurrent, resolveReadinessApproverIdentity, type ReadinessPrerequisites } from './operation-readiness.ts';
+import { buildReadinessPacketRows, closeoutRequiresReadiness, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, getResourceReadinessIssues, isApprovalCurrent, resolveReadinessApproverIdentity, type ReadinessCrewMember, type ReadinessEquipmentItem, type ReadinessPrerequisites } from './operation-readiness.ts';
 
 const ready: ReadinessPrerequisites = { jhaComplete: true, safetyManagerReviewCurrent: true, rpicAcceptanceCurrent: true, controlsInPlace: true, preflightComplete: true, assignedRpicId: 'rpic-1', fitnessForDutyConfirmed: true };
 
@@ -84,4 +84,58 @@ test('packet approver uses the exact assigned RPIC when an account has multiple 
   assert.equal(personnelForAccount[0].full_name, 'Test Visual Observer');
   assert.equal(assignedRpic.full_name, 'Bryce Finger');
   assert.deepEqual(rows.find(([label]) => label === 'Approved By'), ['Approved By', 'Bryce Finger']);
+});
+
+const today = '2026-10-22';
+const currentRpic: ReadinessCrewMember = { personnelId: 'p-rpic', name: 'Pat', assignedRole: 'RPIC', part107CertificateNumber: '4000001', part107ExpirationDate: '2027-06-01', trainingExpirationDate: '2027-01-01' };
+const readyDrone: ReadinessEquipmentItem = { equipmentId: 'e-drone', name: 'Drone A', equipmentType: 'Drone', status: 'Available', faaRegistrationNumber: 'FA12345', maintenanceDueDate: '2026-12-01' };
+
+test('a current RPIC and a registered, available drone raise no readiness issues', () => {
+  const issues = getResourceReadinessIssues([currentRpic], [readyDrone], [], today);
+  assert.deepEqual(issues.blocking, []);
+  assert.deepEqual(issues.overridable, []);
+});
+
+test('an RPIC without a current Part 107 blocks readiness', () => {
+  for (const change of [{ part107CertificateNumber: null }, { part107CertificateNumber: '  ' }, { part107ExpirationDate: null }, { part107ExpirationDate: '2026-10-21' }]) {
+    const issues = getResourceReadinessIssues([{ ...currentRpic, ...change }], [readyDrone], [], today);
+    assert.ok(issues.blocking.some((reason) => reason.includes('Part 107')), JSON.stringify(change));
+  }
+  const visualObserver = { ...currentRpic, assignedRole: 'Visual Observer', part107CertificateNumber: null };
+  assert.deepEqual(getResourceReadinessIssues([visualObserver], [], [], today).blocking, []);
+});
+
+test('unavailable equipment and unregistered drones block readiness', () => {
+  for (const status of ['Maintenance', 'Inactive', 'Retired']) {
+    assert.ok(getResourceReadinessIssues([], [{ ...readyDrone, status }], [], today).blocking.some((reason) => reason.includes(status)));
+  }
+  assert.ok(getResourceReadinessIssues([], [{ ...readyDrone, faaRegistrationNumber: '' }], [], today).blocking.some((reason) => reason.includes('FAA registration')));
+  const camera = { ...readyDrone, equipmentType: 'Camera / Sensor', faaRegistrationNumber: null };
+  assert.deepEqual(getResourceReadinessIssues([], [camera], [], today).blocking, []);
+});
+
+test('overdue maintenance and expired training need an override that matches the current date', () => {
+  const overdue = { ...readyDrone, maintenanceDueDate: '2026-09-01' };
+  const expired = { ...currentRpic, trainingExpirationDate: '2026-01-31' };
+  const pending = getResourceReadinessIssues([expired], [overdue], [], today);
+  assert.equal(pending.blocking.length, 0);
+  assert.deepEqual(pending.overridable.map((issue) => issue.itemType), ['maintenance_overdue', 'training_expired']);
+  assert.equal(pending.pendingOverrideReasons.length, 2);
+
+  const record = (item_type: 'maintenance_overdue' | 'training_expired', item_id: string, item_date: string) => ({ item_type, item_id, item_date, item_name: 'x', reason: 'Accepted for this job', approved_by_name: 'SM', approved_at: '2026-10-22T10:00:00Z' });
+  const covered = getResourceReadinessIssues([expired], [overdue], [record('maintenance_overdue', 'e-drone', '2026-09-01'), record('training_expired', 'p-rpic', '2026-01-31')], today);
+  assert.deepEqual(covered.pendingOverrideReasons, []);
+
+  const staleOverride = getResourceReadinessIssues([], [{ ...overdue, maintenanceDueDate: '2026-10-01' }], [record('maintenance_overdue', 'e-drone', '2026-09-01')], today);
+  assert.equal(staleOverride.pendingOverrideReasons.length, 1, 'an override for an older due date no longer applies');
+});
+
+test('the same person assigned twice is listed once for expired training', () => {
+  const expired = { ...currentRpic, trainingExpirationDate: '2026-01-31' };
+  assert.equal(getResourceReadinessIssues([expired, { ...expired, assignedRole: 'Visual Observer' }], [], [], today).overridable.length, 1);
+});
+
+test('closeout requires Ready to Operate unless the job was aborted or delayed', () => {
+  for (const result of ['Completed as Planned', 'Completed with Changes', 'Incident Occurred']) assert.equal(closeoutRequiresReadiness(result), true, result);
+  for (const result of ['Aborted', 'Delayed']) assert.equal(closeoutRequiresReadiness(result), false, result);
 });

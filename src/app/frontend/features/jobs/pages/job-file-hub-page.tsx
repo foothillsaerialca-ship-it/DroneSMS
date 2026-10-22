@@ -6,11 +6,11 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
-import { daysUntilDate, formatIsoDate, formatIsoDate as formatPlannedDate } from '@frontend/lib/date-utils';
+import { daysUntilDate, formatIsoDate, formatIsoDate as formatPlannedDate, todayIsoDate } from '@frontend/lib/date-utils';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
-import { getOperationReadinessStatus, getReadinessBlockingReasons, type OperationReadinessRecord } from '@frontend/features/jobs/lib/operation-readiness';
+import { closeoutRequiresReadiness, getOperationReadinessStatus, getReadinessBlockingReasons, getResourceReadinessIssues, isApprovalCurrent, type OperationReadinessRecord, type OverridableReadinessIssue, type ReadinessOverrideRecord } from '@frontend/features/jobs/lib/operation-readiness';
 import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, currentCrewEvidence, manualFieldBriefingDisplayReason, manualFieldBriefingReasons, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
 import { followUpAreas, validateSafetyAssurance, type SafetyAssuranceInput } from '@frontend/features/sms/lib/safety-assurance';
 
@@ -86,6 +86,7 @@ type PersonnelOption = {
   id: string;
   full_name: string;
   role: string;
+  part_107_certificate_number?: string | null;
   part_107_expiration_date: string | null;
   training_expiration_date: string | null;
   status: string;
@@ -115,6 +116,8 @@ type EquipmentOption = {
   name: string;
   equipment_type: string;
   status: string;
+  faa_registration_number?: string | null;
+  maintenance_due_date?: string | null;
 };
 
 /**
@@ -122,6 +125,8 @@ type EquipmentOption = {
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
+type SafetyManagerPerson = { id: string; full_name: string; user_id: string | null; status: string };
+
 type JobEquipmentAssignment = {
   id: string;
   equipment: EquipmentOption | null;
@@ -340,6 +345,10 @@ export function JobFileHubPage() {
   const [operationCloseout, setOperationCloseout] = useState<OperationCloseout | null>(null);
   const [operationReadiness, setOperationReadiness] = useState<OperationReadinessRecord | null>(null);
   const [crewEvidence, setCrewEvidence] = useState<CrewBriefingEvidence[]>([]);
+  const [readinessOverrides, setReadinessOverrides] = useState<ReadinessOverrideRecord[]>([]);
+  const [safetyManager, setSafetyManager] = useState<SafetyManagerPerson | null>(null);
+  const [overrideReasons, setOverrideReasons] = useState<Record<string, string>>({});
+  const [overrideSavingKey, setOverrideSavingKey] = useState<string | null>(null);
   const [briefingActionId, setBriefingActionId] = useState<string | null>(null);
   const [briefingError, setBriefingError] = useState<string | null>(null);
   const [briefingMessage, setBriefingMessage] = useState<string | null>(null);
@@ -388,7 +397,7 @@ export function JobFileHubPage() {
   async function loadAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
       .from('job_personnel')
-      .select('id, assigned_role, personnel:personnel_id(id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id)')
+      .select('id, assigned_role, personnel:personnel_id(id, full_name, role, email, part_107_certificate_number, part_107_expiration_date, training_expiration_date, status, user_id)')
       .eq('job_id', currentJobId)
       .order('created_at', { ascending: true });
 
@@ -404,7 +413,7 @@ export function JobFileHubPage() {
   async function loadEquipmentAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
       .from('job_equipment')
-      .select('id, equipment:equipment_id(id, name, equipment_type, status)')
+      .select('id, equipment:equipment_id(id, name, equipment_type, status, faa_registration_number, maintenance_due_date)')
       .eq('job_id', currentJobId)
       .order('created_at', { ascending: true });
 
@@ -487,17 +496,18 @@ export function JobFileHubPage() {
           .order('full_name', { ascending: true });
         const assignmentsQuery = supabase
           .from('job_personnel')
-          .select('id, assigned_role, personnel:personnel_id(id, full_name, role, email, part_107_expiration_date, training_expiration_date, status, user_id)')
+          .select('id, assigned_role, personnel:personnel_id(id, full_name, role, email, part_107_certificate_number, part_107_expiration_date, training_expiration_date, status, user_id)')
           .eq('job_id', jobId)
           .order('created_at', { ascending: true });
         const equipmentQuery = supabase
           .from('equipment')
-          .select('id, name, equipment_type, status')
-          .neq('status', 'Retired')
+          .select('id, name, equipment_type, status, faa_registration_number, maintenance_due_date')
+          // Equipment that is not available to fly cannot be newly assigned; Ready to Operate also blocks it.
+          .not('status', 'in', '(Retired,Maintenance,Inactive)')
           .order('name', { ascending: true });
         const equipmentAssignmentsQuery = supabase
           .from('job_equipment')
-          .select('id, equipment:equipment_id(id, name, equipment_type, status)')
+          .select('id, equipment:equipment_id(id, name, equipment_type, status, faa_registration_number, maintenance_due_date)')
           .eq('job_id', jobId)
           .order('created_at', { ascending: true });
         const safetyEventsQuery = supabase
@@ -522,9 +532,11 @@ export function JobFileHubPage() {
           .maybeSingle();
         const readinessQuery = supabase.from('job_operation_readiness').select('approved_at, approval_stale, fitness_for_duty_confirmed, rpic_personnel_id').eq('job_id', jobId).maybeSingle();
         const userQuery = supabase.auth.getUser();
+        const overridesQuery = supabase.from('job_readiness_overrides').select('item_type, item_id, item_date, item_name, reason, approved_by_name, approved_at').eq('job_id', jobId);
+        const safetyManagerQuery = supabase.from('organization_safety_designations').select('personnel:personnel_id(id, full_name, user_id, status)').maybeSingle();
         const crewEvidenceQuery = supabase.from('crew_briefing_acknowledgments').select('assignment_id, assigned_role, briefing_version, status, acknowledged_at, field_briefed_at, manual_reason, manual_reason_detail, attested_by_rpic_personnel_id').eq('job_id', jobId).order('created_at', { ascending: false });
 
-        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult, jhaSummaryResult, preflightSummaryResult, closeoutResult, readinessResult, userResult, crewEvidenceResult] = await Promise.all([
+        const [jobResult, personnelResult, assignmentsResult, equipmentResult, equipmentAssignmentsResult, safetyEventsResult, jhaSummaryResult, preflightSummaryResult, closeoutResult, readinessResult, userResult, crewEvidenceResult, overridesResult, safetyManagerResult] = await Promise.all([
           jobQuery,
           personnelQuery,
           assignmentsQuery,
@@ -535,7 +547,7 @@ export function JobFileHubPage() {
           preflightSummaryQuery,
           closeoutQuery,
           readinessQuery,
-          userQuery, crewEvidenceQuery
+          userQuery, crewEvidenceQuery, overridesQuery, safetyManagerQuery
         ]);
 
         if (jobResult.error) throw jobResult.error;
@@ -549,6 +561,8 @@ export function JobFileHubPage() {
         if (closeoutResult.error) throw closeoutResult.error;
         if (readinessResult.error) throw readinessResult.error;
         if (crewEvidenceResult.error) throw crewEvidenceResult.error;
+        if (overridesResult.error) throw overridesResult.error;
+        if (safetyManagerResult.error) throw safetyManagerResult.error;
         if (!isMounted) return;
 
         if (!jobResult.data) {
@@ -581,6 +595,10 @@ export function JobFileHubPage() {
         setPreflightSummary(preflightSummaryResult.data as PreflightSummary | null);
         setOperationReadiness(readinessResult.data as OperationReadinessRecord | null);
         setCrewEvidence((crewEvidenceResult.data ?? []) as CrewBriefingEvidence[]);
+        setReadinessOverrides((overridesResult.data ?? []) as ReadinessOverrideRecord[]);
+        const designated = (safetyManagerResult.data as { personnel: SafetyManagerPerson | SafetyManagerPerson[] | null } | null)?.personnel;
+        const designatedPerson = Array.isArray(designated) ? designated[0] ?? null : designated ?? null;
+        setSafetyManager(designatedPerson?.status === 'Active' ? designatedPerson : null);
         setFitnessConfirmed(Boolean(readinessResult.data?.fitness_for_duty_confirmed && !readinessResult.data?.approval_stale));
         setCurrentUserId(userResult.data.user?.id ?? null);
         const loadedCloseout = closeoutResult.data as OperationCloseout | null;
@@ -640,8 +658,45 @@ export function JobFileHubPage() {
     permitAuthorizationStatus: jhaSummary?.permit_authorization_status,
     crewAcknowledgmentsCurrent: job?.crew_acknowledgment_required_at ? crewEvidenceCurrent : undefined,
   };
-  const readinessBlockingReasons = getReadinessBlockingReasons(readinessPrerequisites);
+  const resourceIssues = getResourceReadinessIssues(
+    assignments.flatMap((assignment) => assignment.personnel ? [{
+      personnelId: assignment.personnel.id, name: assignment.personnel.full_name, assignedRole: assignment.assigned_role,
+      part107CertificateNumber: assignment.personnel.part_107_certificate_number ?? null,
+      part107ExpirationDate: assignment.personnel.part_107_expiration_date, trainingExpirationDate: assignment.personnel.training_expiration_date,
+    }] : []),
+    equipmentAssignments.flatMap((assignment) => assignment.equipment ? [{
+      equipmentId: assignment.equipment.id, name: assignment.equipment.name, equipmentType: assignment.equipment.equipment_type,
+      status: assignment.equipment.status, faaRegistrationNumber: assignment.equipment.faa_registration_number ?? null,
+      maintenanceDueDate: assignment.equipment.maintenance_due_date ?? null,
+    }] : []),
+    readinessOverrides,
+    todayIsoDate(),
+  );
+  const readinessBlockingReasons = [...getReadinessBlockingReasons(readinessPrerequisites), ...resourceIssues.blocking, ...resourceIssues.pendingOverrideReasons];
   const readinessStatus = getOperationReadinessStatus(operationReadiness);
+  const readinessCurrent = isApprovalCurrent(operationReadiness, assignedRpic?.id ?? null);
+  const closeoutBlockedByReadiness = closeoutRequiresReadiness(closeoutFormData.operationResult) && !readinessCurrent;
+  const isSafetyManager = Boolean(safetyManager?.user_id && safetyManager.user_id === currentUserId);
+
+  async function recordReadinessOverride(issue: OverridableReadinessIssue) {
+    if (!job) return;
+    const key = `${issue.itemType}:${issue.itemId}`;
+    const reason = (overrideReasons[key] ?? '').trim();
+    if (reason.length < 10) { setReadinessError('Explain why the operation can proceed (at least 10 characters).'); return; }
+    setOverrideSavingKey(key); setReadinessError(null); setReadinessMessage(null);
+    try {
+      const { data, error: overrideError } = await supabase.rpc('record_job_readiness_override', { p_job_id: job.id, p_item_type: issue.itemType, p_item_id: issue.itemId, p_reason: reason });
+      if (overrideError) throw overrideError;
+      const saved = data as ReadinessOverrideRecord;
+      setReadinessOverrides((current) => [...current.filter((record) => !(record.item_type === saved.item_type && record.item_id === saved.item_id)), saved]);
+      setOverrideReasons((current) => ({ ...current, [key]: '' }));
+      setReadinessMessage(`Override recorded for ${issue.itemName}.`);
+    } catch (overrideError) {
+      setReadinessError(getErrorMessage(overrideError));
+    } finally {
+      setOverrideSavingKey(null);
+    }
+  }
 
   async function reloadCrewEvidence() {
     if (!job) return;
@@ -954,6 +1009,10 @@ export function JobFileHubPage() {
 
     if (!job) return;
 
+    if (closeoutBlockedByReadiness) {
+      setCloseoutError('Approve Ready to Operate before closing out a job that operated. A job that was aborted or delayed can be closed out without it.');
+      return;
+    }
     if (resultsRequiringNarrative.has(closeoutFormData.operationResult) && !closeoutFormData.deviationNarrative.trim()) {
       setCloseoutError('Describe changes, delays, deviations, operational issues, or reasons for aborting the mission.');
       return;
@@ -987,7 +1046,12 @@ export function JobFileHubPage() {
 
       setOperationCloseout(data as OperationCloseout);
 
-      // Closeout is the final operational step, so the job moves to Completed Jobs.
+      // Closeout is the final operational step, so the job moves to Completed Jobs. A delayed job
+      // will be rescheduled, so it stays active.
+      if (closeoutFormData.operationResult === 'Delayed') {
+        setCloseoutMessage('Operation closeout saved. The job stays active because it was delayed.');
+        return;
+      }
       if (job.status !== 'Complete') {
         const { error: statusError } = await supabase
           .from('jobs')
@@ -1559,6 +1623,35 @@ export function JobFileHubPage() {
           <p className="mt-2 text-xs text-slate-500">Only the confirmation is recorded. Do not enter medical details.</p>
         </div>
         {readinessBlockingReasons.length ? <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-semibold">Before approval:</p><ul className="mt-1 list-disc pl-5">{readinessBlockingReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null}
+        {resourceIssues.overridable.length ? (
+          <div className="mt-4 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Safety Manager overrides</p>
+              <p className="mt-1 text-xs text-slate-600">Overdue maintenance and expired training can only proceed with a written override from the Safety Manager. Overrides are kept with this job and printed in the closeout packet.</p>
+            </div>
+            {resourceIssues.overridable.map((issue) => {
+              const key = `${issue.itemType}:${issue.itemId}`;
+              return (
+                <div key={key} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                  <p className="font-medium text-slate-800">{issue.label}</p>
+                  {issue.override ? (
+                    <p className="mt-1 text-xs text-slate-600">Overridden by {issue.override.approved_by_name} on {new Date(issue.override.approved_at).toLocaleString()}: {issue.override.reason}</p>
+                  ) : isSafetyManager ? (
+                    <div className="mt-2 space-y-2">
+                      <label className="block text-xs font-medium text-slate-700">
+                        Why can the operation proceed?
+                        <textarea className="mt-1 min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={overrideReasons[key] ?? ''} onChange={(event) => setOverrideReasons((current) => ({ ...current, [key]: event.target.value }))} disabled={overrideSavingKey !== null} />
+                      </label>
+                      <button type="button" className="min-h-11 rounded-lg border border-brand-700 bg-white px-4 py-2 text-sm font-semibold text-brand-700 disabled:border-slate-300 disabled:text-slate-400" disabled={overrideSavingKey !== null || (overrideReasons[key] ?? '').trim().length < 10} onClick={() => void recordReadinessOverride(issue)}>{overrideSavingKey === key ? 'Recording...' : 'Record Override'}</button>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-slate-600">{safetyManager ? `Only the designated Safety Manager (${safetyManager.full_name}) can record this override while signed in.` : 'Designate a Safety Manager in SMS to record overrides.'}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
         {assignedRpic && currentUserId !== assignedRpic.user_id ? <p className="mt-3 text-sm text-slate-600">Only assigned RPIC {assignedRpic.full_name} can complete this confirmation while signed in.</p> : null}
         {readinessError ? <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{readinessError}</p> : null}
         {readinessMessage ? <p className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700" role="status">{readinessMessage}</p> : null}
@@ -1824,10 +1917,13 @@ export function JobFileHubPage() {
             <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700" role="status">{closeoutMessage}</p>
           ) : null}
 
+          {closeoutBlockedByReadiness ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">Approve Ready to Operate before closing out a job that operated. If the job was aborted or delayed, choose that result to close it out without approval.</p>
+          ) : null}
           <button
             type="submit"
             className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-            disabled={isSavingCloseout}
+            disabled={isSavingCloseout || closeoutBlockedByReadiness}
           >
             {isSavingCloseout ? 'Saving...' : 'Save Operation Closeout'}
           </button>

@@ -1042,6 +1042,7 @@ type JobPacketJha = { status: string | null; safety_manager_name: string | null;
 type JobPacketPreflight = Record<string, unknown> & { status: string | null; notes?: string | null; checklist_states?: unknown; final_rpic_approval?: boolean | null };
 type JobPacketReadiness = OperationReadinessRecord & { rpic_name: string | null; approved_by_name: string | null; approved_by_user_id: string | null };
 type JobPacketCloseout = { operation_result: string | null; deviation_narrative: string | null; updated_at: string | null };
+type JobPacketOverride = { item_type: string; item_name: string | null; item_date: string | null; reason: string | null; approved_by_name: string | null; approved_at: string };
 /**
  * Purpose: Represents job packet photo data read, written, or rendered by the proposal pdf workflow.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
@@ -1108,6 +1109,10 @@ export async function generateJobPacketPdf(jobId: string) {
   renderer.table([['Checklist Item', 'State'], ...buildPreflightRows(packet.preflight)], [300, 187]);
   renderer.section('READY TO OPERATE');
   renderer.keyValueTable(buildReadinessPacketRows(packet.readiness, formatAttestationDateTime));
+  if (packet.overrides.length) {
+    renderer.section('SAFETY MANAGER OVERRIDES', 'Items accepted in writing by the Safety Manager before Ready to Operate.');
+    renderer.table([['Item', 'Accepted By', 'Reason'], ...packet.overrides.map((o) => [`${clean(o.item_name)}: ${o.item_type === 'maintenance_overdue' ? `maintenance due ${formatDate(o.item_date)}` : `training expired ${formatDate(o.item_date)}`}`, `${clean(o.approved_by_name)}, ${formatAttestationDateTime(o.approved_at)}`, clean(o.reason)])], [150, 120, 217]);
+  }
   renderer.section('SAFETY EVENTS');
   renderer.table([['Category', 'Outcome', 'Details'], ...(packet.safetyEvents.length ? packet.safetyEvents.map((e) => [clean(e.category) || 'Safety Event', clean(e.outcome) || 'Recorded', `${clean(e.description) || 'No description.'}${e.immediate_actions_taken ? ` Immediate actions: ${e.immediate_actions_taken}` : ''}`]) : [['None', 'None', 'No safety events recorded.']])], [95, 105, 287]);
   const documentationPhotos = packetPhotos.filter((photo) => !photo.hazardId);
@@ -1132,7 +1137,7 @@ export async function generateJobPacketPdf(jobId: string) {
  * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
  */
 async function loadJobPacketForPdf(jobId: string) {
-  const [jobResult, assignmentsResult, equipmentResult, safetyResult, jhaResult, preflightResult, readinessResult, closeoutResult, documentsResult, photosResult] = await Promise.all([
+  const [jobResult, assignmentsResult, equipmentResult, safetyResult, jhaResult, preflightResult, readinessResult, closeoutResult, documentsResult, photosResult, overridesResult] = await Promise.all([
     supabase.from('jobs').select('id, organization_id, user_id, name, service_type, location, planned_date, status, source_proposal_id, source_proposal_number, client_name, site_address').eq('id', jobId).single(),
     supabase.from('job_personnel').select('assigned_role, personnel:personnel_id(id, full_name, role, part_107_expiration_date, training_expiration_date, status)').eq('job_id', jobId).order('created_at', { ascending: true }),
     supabase.from('job_equipment').select('equipment:equipment_id(name, equipment_type, status, make, product_category, typical_mix_ratio, application_notes, equipment_reference_documents(document_type, file_name, display_file_name, storage_path, mime_type, created_at))').eq('job_id', jobId).order('created_at', { ascending: true }),
@@ -1143,8 +1148,9 @@ async function loadJobPacketForPdf(jobId: string) {
     supabase.from('job_operation_closeouts').select('operation_result, deviation_narrative, updated_at').eq('job_id', jobId).maybeSingle(),
     supabase.from('generated_documents').select('document_type, file_name, display_file_name').eq('record_type', 'job').eq('record_id', jobId).is('archived_at', null).neq('document_type', 'job_packet_pdf').order('generated_at', { ascending: false }),
     supabase.from('job_hazard_photos').select('id, hazard_id, hazard_name, photo_url, caption, include_in_packet, created_at').eq('job_id', jobId).eq('include_in_packet', true).is('deleted_at', null).order('created_at', { ascending: true }),
+    supabase.from('job_readiness_overrides').select('item_type, item_name, item_date, reason, approved_by_name, approved_at').eq('job_id', jobId).order('approved_at', { ascending: true }),
   ]);
-  if (jobResult.error) throw jobResult.error; if (assignmentsResult.error) throw assignmentsResult.error; if (equipmentResult.error) throw equipmentResult.error; if (safetyResult.error) throw safetyResult.error; if (jhaResult.error) throw jhaResult.error; if (preflightResult.error) throw preflightResult.error; if (readinessResult.error) throw readinessResult.error; if (closeoutResult.error) throw closeoutResult.error; if (documentsResult.error) throw documentsResult.error; if (photosResult.error) throw photosResult.error;
+  if (jobResult.error) throw jobResult.error; if (assignmentsResult.error) throw assignmentsResult.error; if (equipmentResult.error) throw equipmentResult.error; if (safetyResult.error) throw safetyResult.error; if (jhaResult.error) throw jhaResult.error; if (preflightResult.error) throw preflightResult.error; if (readinessResult.error) throw readinessResult.error; if (closeoutResult.error) throw closeoutResult.error; if (documentsResult.error) throw documentsResult.error; if (photosResult.error) throw photosResult.error; if (overridesResult.error) throw overridesResult.error;
   const job = jobResult.data as JobPacketRecord;
   const proposal = job.source_proposal_id ? await loadProposalForPdf(job.source_proposal_id).catch(() => null) : null;
   const rawReadiness = readinessResult.data as (OperationReadinessRecord & { approved_by_user_id: string | null; rpic: { full_name: string | null; email: string | null; user_id: string | null } | Array<{ full_name: string | null; email: string | null; user_id: string | null }> | null }) | null;
@@ -1155,7 +1161,7 @@ async function loadJobPacketForPdf(jobId: string) {
     approvedByName = resolveReadinessApproverIdentity(rpic ?? null, rawReadiness.approved_by_user_id, userResult.data.user);
   }
   const readiness = rawReadiness ? { ...rawReadiness, rpic_name: rpic?.full_name ?? null, approved_by_name: approvedByName } as JobPacketReadiness : null;
-  return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, readiness, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}>, photos: (photosResult.data ?? []) as JobPacketPhoto[] };
+  return { job, proposal, assignments: (assignmentsResult.data ?? []) as unknown as JobPacketPersonnelAssignment[], equipmentAssignments: (equipmentResult.data ?? []) as unknown as JobPacketEquipmentAssignment[], safetyEvents: (safetyResult.data ?? []) as JobPacketSafetyEvent[], jha: jhaResult.data as JobPacketJha | null, preflight: preflightResult.data as JobPacketPreflight | null, readiness, closeout: closeoutResult.data as JobPacketCloseout | null, documents: (documentsResult.data ?? []) as Array<{document_type: string; file_name: string | null; display_file_name: string | null}>, photos: (photosResult.data ?? []) as JobPacketPhoto[], overrides: (overridesResult.data ?? []) as JobPacketOverride[] };
 }
 
 
@@ -1356,7 +1362,7 @@ function buildCloseoutTableOfContents(packet: Awaited<ReturnType<typeof loadJobP
   return [
     { title: 'PROPOSAL', items: ['Executive Summary', 'Scope of Work', 'Personnel', 'Equipment', 'Preliminary Hazard Assessment', 'Airspace Review', 'Pricing', 'Acceptance'] },
     { title: 'COMPLETED JOB RECORD', items: ['Job Information', 'Crew Assignment', 'Equipment Assignment', ...(getJobHazardEntries(packet.jha).length ? ['JHA Summary'] : []), 'Emergency Planning / Crew Briefing', ...(photos.some((photo) => photo.hazardId) ? ['Hazard Mitigation Verification Photos'] : [])] },
-    { title: 'CLOSEOUT & SUPPORTING DOCUMENTATION', items: [...(environmentalRows.length ? ['Environmental Controls'] : []), 'Airspace Review', 'Preflight Checklist', 'Safety Events', ...(photos.some((photo) => !photo.hazardId) ? ['Photo Documentation'] : []), 'Closeout Summary', ...(packet.documents.length ? ['Generated Documents / Attachments Summary'] : []), ...(packet.equipmentAssignments.some((assignment) => assignment.equipment?.equipment_type === 'Chemical / Material' && assignment.equipment.equipment_reference_documents?.some((document) => document.document_type === 'Safety Data Sheet (SDS)')) ? ['Chemical Documentation'] : [])] },
+    { title: 'CLOSEOUT & SUPPORTING DOCUMENTATION', items: [...(environmentalRows.length ? ['Environmental Controls'] : []), 'Airspace Review', 'Preflight Checklist', 'Ready to Operate', ...(packet.overrides.length ? ['Safety Manager Overrides'] : []), 'Safety Events', ...(photos.some((photo) => !photo.hazardId) ? ['Photo Documentation'] : []), 'Closeout Summary', ...(packet.documents.length ? ['Generated Documents / Attachments Summary'] : []), ...(packet.equipmentAssignments.some((assignment) => assignment.equipment?.equipment_type === 'Chemical / Material' && assignment.equipment.equipment_reference_documents?.some((document) => document.document_type === 'Safety Data Sheet (SDS)')) ? ['Chemical Documentation'] : [])] },
   ];
 }
 
