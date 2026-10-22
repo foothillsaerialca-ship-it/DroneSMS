@@ -23,7 +23,6 @@ test('Ready to Operate checks the RPIC, equipment status, drone registration, an
   assert.match(migration, /assigned_rpic\.part_107_expiration_date < current_date/);
   assert.match(migration, /e\.status in \('Maintenance','Inactive','Retired'\)/);
   assert.match(migration, /e\.equipment_type='Drone' and nullif\(btrim\(coalesce\(e\.faa_registration_number,''\)\),''\) is null/);
-  assert.match(migration, /o\.item_type='maintenance_overdue' and o\.item_id=e\.id and o\.item_date=e\.maintenance_due_date/);
   assert.match(migration, /o\.item_type='training_expired' and o\.item_id=p\.id and o\.item_date=p\.training_expiration_date/);
 });
 
@@ -42,4 +41,14 @@ test('direct closeout table writes are held to the same Ready to Operate rule', 
   assert.match(migration, /create trigger z_enforce_closeout_readiness\s+before insert or update on public\.job_operation_closeouts/i);
   assert.match(migration, /new\.operation_result not in \('Aborted','Delayed'\)\s+and \(tg_op = 'INSERT' or new\.operation_result is distinct from old\.operation_result/);
   assert.match(migration, /revoke all on function public\.z_enforce_closeout_readiness\(\) from public, anon, authenticated;/i);
+});
+
+const reminderMigration = readFileSync('supabase/migrations/20261023000000_overdue_maintenance_reminder_only.sql', 'utf8');
+
+test('overdue maintenance no longer blocks Ready to Operate, while the other gates stay', () => {
+  assert.doesNotMatch(reminderMigration, /maintenance_due_date/);
+  assert.match(reminderMigration, /assigned_rpic\.part_107_expiration_date < current_date/);
+  assert.match(reminderMigration, /e\.status in \('Maintenance','Inactive','Retired'\)/);
+  assert.match(reminderMigration, /o\.item_type='training_expired' and o\.item_id=p\.id and o\.item_date=p\.training_expiration_date/);
+  assert.match(reminderMigration, /revoke all on function public\.confirm_job_ready_to_operate\(uuid, boolean\) from public, anon;/);
 });

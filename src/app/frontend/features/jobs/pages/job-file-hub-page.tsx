@@ -10,7 +10,7 @@ import { daysUntilDate, formatIsoDate, formatIsoDate as formatPlannedDate, today
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
-import { closeoutRequiresReadiness, getOperationReadinessStatus, getReadinessBlockingReasons, getCrewCredentialLabel, getCrewCredentialWarnings, getResourceReadinessIssues, isApprovalCurrent, isApprovalForToday, type OperationReadinessRecord, type OverridableReadinessIssue, type ReadinessOverrideRecord } from '@frontend/features/jobs/lib/operation-readiness';
+import { closeoutRequiresReadiness, getOperationReadinessStatus, getReadinessBlockingReasons, getCrewCredentialLabel, getCrewCredentialWarnings, getEquipmentMaintenanceLabel, getResourceReadinessIssues, isApprovalCurrent, isApprovalForToday, type OperationReadinessRecord, type OverridableReadinessIssue, type ReadinessOverrideRecord } from '@frontend/features/jobs/lib/operation-readiness';
 import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, currentCrewEvidence, manualFieldBriefingDisplayReason, manualFieldBriefingReasons, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
 import { followUpAreas, validateSafetyAssurance, type SafetyAssuranceInput } from '@frontend/features/sms/lib/safety-assurance';
 
@@ -1477,7 +1477,7 @@ export function JobFileHubPage() {
                 {equipmentKits.length === 0 ? <option value="">No active equipment kits available</option> : null}
                 {equipmentKits.map((equipment) => (
                   <option key={equipment.id} value={equipment.id}>
-                    {equipment.name} — {equipment.equipment_type}{assignedEquipmentIds.has(equipment.id) ? ' (already assigned)' : ''}
+                    {equipment.name} — {equipment.equipment_type}{getEquipmentMaintenanceLabel(equipment.maintenance_due_date, todayIsoDate())}{assignedEquipmentIds.has(equipment.id) ? ' (already assigned)' : ''}
                   </option>
                 ))}
               </select>
@@ -1631,11 +1631,12 @@ export function JobFileHubPage() {
           <p className="mt-2 text-xs text-slate-500">Only the confirmation is recorded. Do not enter medical details.</p>
         </div>
         {readinessBlockingReasons.length ? <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-semibold">Before approval:</p><ul className="mt-1 list-disc pl-5">{readinessBlockingReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null}
+        {resourceIssues.reminders.length ? <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="note"><p className="font-semibold">Reminders (these do not block approval):</p><ul className="mt-1 list-disc pl-5">{resourceIssues.reminders.map((reminder) => <li key={reminder}>{reminder}</li>)}</ul></div> : null}
         {resourceIssues.overridable.length ? (
           <div className="mt-4 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
             <div>
               <p className="text-sm font-semibold text-slate-800">Safety Manager overrides</p>
-              <p className="mt-1 text-xs text-slate-600">Overdue maintenance and expired training can only proceed with a written override from the Safety Manager. Overrides are kept with this job and printed in the closeout packet.</p>
+              <p className="mt-1 text-xs text-slate-600">Expired training can only proceed with a written override from the Safety Manager. Overrides are kept with this job and printed in the closeout packet.</p>
             </div>
             {resourceIssues.overridable.map((issue) => {
               const key = `${issue.itemType}:${issue.itemId}`;

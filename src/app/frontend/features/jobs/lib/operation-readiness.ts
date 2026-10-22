@@ -183,12 +183,10 @@ export function getResourceReadinessIssues(
     }
   }
 
-  for (const item of equipment) {
-    if (item.maintenanceDueDate && item.maintenanceDueDate < today) {
-      overridable.push({ itemType: 'maintenance_overdue', itemId: item.equipmentId, itemName: item.name, itemDate: item.maintenanceDueDate,
-        label: `${item.name} is overdue for maintenance (due ${item.maintenanceDueDate}).`, override: findOverride('maintenance_overdue', item.equipmentId, item.maintenanceDueDate) });
-    }
-  }
+  // Overdue maintenance is a reminder for the crew, not a gate.
+  const reminders = equipment
+    .filter((item) => item.maintenanceDueDate && item.maintenanceDueDate < today)
+    .map((item) => `${item.name} is overdue for maintenance (due ${item.maintenanceDueDate}). Confirm it is airworthy before flight.`);
   const seenPeople = new Set<string>();
   for (const member of crew) {
     if (seenPeople.has(member.personnelId)) continue;
@@ -201,6 +199,7 @@ export function getResourceReadinessIssues(
 
   return {
     blocking,
+    reminders,
     overridable,
     pendingOverrideReasons: overridable.filter((issue) => !issue.override).map((issue) => `${issue.label} A Safety Manager override is required.`),
   };
@@ -211,6 +210,11 @@ export type CrewCredentialRecord = {
   part_107_expiration_date: string | null;
   training_expiration_date: string | null;
 };
+
+/** Picker suffix for equipment past its maintenance due date. */
+export function getEquipmentMaintenanceLabel(maintenanceDueDate: string | null | undefined, today: string) {
+  return maintenanceDueDate && maintenanceDueDate < today ? ' (maintenance overdue)' : '';
+}
 
 /** Short picker suffix, such as " (Part 107 expired)", for a person whose credentials have lapsed. */
 export function getCrewCredentialLabel(person: CrewCredentialRecord, today: string) {

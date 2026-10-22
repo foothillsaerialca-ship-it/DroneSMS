@@ -23,7 +23,7 @@ import {
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 import { getProposalScopeDefaults, hasCustomizedProposalScope } from '@frontend/features/jobs/lib/proposal-scope';
-import { getCrewCredentialLabel, getCrewCredentialWarnings } from '@frontend/features/jobs/lib/operation-readiness';
+import { getCrewCredentialLabel, getCrewCredentialWarnings, getEquipmentMaintenanceLabel } from '@frontend/features/jobs/lib/operation-readiness';
 import { formatIsoDate, todayIsoDate } from '@frontend/lib/date-utils';
 import {
   applyPrimaryServiceTypeDefault,
@@ -171,6 +171,7 @@ type RepositoryEquipment = {
   model: string | null;
   status: string;
   purpose: string | null;
+  maintenance_due_date?: string | null;
 };
 
 /**
@@ -419,7 +420,7 @@ export function NewProposalPage() {
       try {
         const { data, error: equipmentError } = await supabase
           .from('equipment')
-          .select('id, name, equipment_type, make, model, status, purpose')
+          .select('id, name, equipment_type, make, model, status, purpose, maintenance_due_date')
           .not('status', 'in', '(Archived,Retired,Out-of-Service,"Out of Service")')
           .order('name', { ascending: true });
 
@@ -1091,6 +1092,7 @@ function EquipmentSelection({
                     <h3 className="font-semibold text-brand-900">{item.name}</h3>
                     <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{item.equipment_type} {item.make || item.model ? `• ${[item.make, item.model].filter(Boolean).join(' ')}` : ''}</p>
                     <p className="mt-2 text-xs font-semibold text-slate-700">Status: <span className={item.status === 'Available' ? 'text-emerald-700' : 'text-slate-700'}>{item.status}</span></p>
+                    {getEquipmentMaintenanceLabel(item.maintenance_due_date, todayIsoDate()) ? <p className="mt-1 text-xs font-medium text-amber-800">Maintenance overdue (due {formatIsoDate(item.maintenance_due_date)}). This is a reminder only and does not appear on the proposal.</p> : null}
                   </div>
                   <button type="button" className="min-h-11 rounded-lg border border-brand-700 bg-white px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400" onClick={() => onAddEquipment(item.id)} disabled={disabled || isSelected || !isEquipmentSelectable(item)}>{isSelected ? 'Added' : 'Add'}</button>
                 </div>
