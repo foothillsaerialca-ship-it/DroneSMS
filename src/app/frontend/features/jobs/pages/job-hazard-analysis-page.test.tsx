@@ -196,3 +196,37 @@ describe('Hazard Assessment final step', () => {
     await waitFor(() => expect(screen.getByTestId('current-location')).toHaveTextContent(`/jobs/${jhaJob.id}/hub`));
   });
 });
+
+describe('Hazard Assessment completion', () => {
+  it('saves as Draft instead of Complete when Save Progress is used before the sign-offs are recorded', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(`/jobs/${jhaJob.id}/templates/jha`);
+    await screen.findByRole('heading', { name: 'Job Hazard Analysis' });
+    await user.click(within(screen.getByRole('navigation', { name: 'JHA progress' })).getByRole('button', { name: /Crew Briefing/ }));
+    await screen.findByRole('heading', { level: 2, name: 'Crew Briefing & Communications' });
+
+    await user.click(screen.getByLabelText('Hard Hat'));
+    await user.selectOptions(screen.getByLabelText('Status'), 'Complete');
+    await user.click(screen.getByRole('button', { name: 'Save Progress' }));
+
+    await screen.findByText(/^Saved as Draft\. Before marking the JHA Complete:/);
+    const save = supabaseMock.writes().find((call) => call.table === 'jha_assessments' && call.operation === 'upsert');
+    expect(save?.payload).toMatchObject({ status: 'Draft', certified_at: null });
+    expect(screen.getByLabelText('Status')).toHaveValue('Draft');
+  });
+
+  it('explains why Complete did not stick when nothing else changed', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(`/jobs/${jhaJob.id}/templates/jha`);
+    await screen.findByRole('heading', { name: 'Job Hazard Analysis' });
+    await user.click(within(screen.getByRole('navigation', { name: 'JHA progress' })).getByRole('button', { name: /Crew Briefing/ }));
+    await screen.findByRole('heading', { level: 2, name: 'Crew Briefing & Communications' });
+
+    await user.selectOptions(screen.getByLabelText('Status'), 'Complete');
+    await user.click(screen.getByRole('button', { name: 'Save Progress' }));
+
+    await screen.findByText(/^Still a Draft\. Before marking the JHA Complete:/);
+    expect(supabaseMock.writes().some((call) => call.table === 'jha_assessments' && (call.payload as { status?: string })?.status === 'Complete')).toBe(false);
+    expect(screen.getByLabelText('Status')).toHaveValue('Draft');
+  });
+});
