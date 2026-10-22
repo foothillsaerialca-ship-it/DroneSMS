@@ -37,3 +37,9 @@ test('only the designated Safety Manager can record an override, and the table i
 test('closeout requires a current Ready to Operate approval unless the job was aborted or delayed', () => {
   assert.match(migration, /operation_result_value not in \('Aborted','Delayed'\) and not exists \(\s+select 1 from public\.job_operation_readiness r\s+where r\.job_id=target_job\.id and r\.approved_at is not null and not r\.approval_stale and r\.fitness_for_duty_confirmed/);
 });
+
+test('direct closeout table writes are held to the same Ready to Operate rule', () => {
+  assert.match(migration, /create trigger z_enforce_closeout_readiness\s+before insert or update on public\.job_operation_closeouts/i);
+  assert.match(migration, /new\.operation_result not in \('Aborted','Delayed'\)\s+and \(tg_op = 'INSERT' or new\.operation_result is distinct from old\.operation_result/);
+  assert.match(migration, /revoke all on function public\.z_enforce_closeout_readiness\(\) from public, anon, authenticated;/i);
+});

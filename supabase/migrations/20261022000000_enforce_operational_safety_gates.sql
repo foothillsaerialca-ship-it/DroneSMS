@@ -199,3 +199,26 @@ end $$;
 
 revoke all on function public.save_operation_closeout_with_assurance(uuid,text,text,text,text,text,boolean,text,boolean,text[],text[],text[],uuid[]) from public, anon;
 grant execute on function public.save_operation_closeout_with_assurance(uuid,text,text,text,text,text,boolean,text,boolean,text[],text[],text[],uuid[]) to authenticated;
+
+-- Direct table writes are still granted to members, so the same rule is enforced on the table itself.
+-- Edits that keep an existing result are left alone so closeouts saved before this migration stay editable.
+create or replace function public.z_enforce_closeout_readiness()
+returns trigger language plpgsql security definer set search_path = pg_catalog, public as $$
+begin
+  if new.operation_result not in ('Aborted','Delayed')
+    and (tg_op = 'INSERT' or new.operation_result is distinct from old.operation_result or new.job_id is distinct from old.job_id)
+    and not exists (
+      select 1 from public.job_operation_readiness r
+      where r.job_id=new.job_id and r.approved_at is not null and not r.approval_stale and r.fitness_for_duty_confirmed
+    ) then
+    raise exception 'Approve Ready to Operate before closing out a job that operated. A job that was aborted or delayed can be closed out without it.';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists z_enforce_closeout_readiness on public.job_operation_closeouts;
+create trigger z_enforce_closeout_readiness
+  before insert or update on public.job_operation_closeouts
+  for each row execute function public.z_enforce_closeout_readiness();
+
+revoke all on function public.z_enforce_closeout_readiness() from public, anon, authenticated;
