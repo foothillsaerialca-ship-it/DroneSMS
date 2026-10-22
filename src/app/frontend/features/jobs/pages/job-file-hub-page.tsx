@@ -1340,7 +1340,7 @@ export function JobFileHubPage() {
                 onChange={(event) => setSelectedPersonnelId(event.target.value)}
                 disabled={isSavingAssignment || assignablePersonnel.length === 0}
               >
-                {assignablePersonnel.length === 0 ? <option value="">No personnel records available</option> : null}
+                {assignablePersonnel.length === 0 ? <option value="">No personnel records available</option> : <option value="">Select a person</option>}
                 {assignablePersonnel.map((person) => (
                   <option key={person.id} value={person.id}>
                     {person.full_name} — {person.role}{getCrewCredentialLabel(person, todayIsoDate())}{assignedPersonnelIds.has(person.id) ? ' (already assigned)' : ''}
