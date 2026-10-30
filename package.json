@@ -6,25 +6,29 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "typecheck": "tsc --noEmit --incremental false",
-    "preview": "vite preview",
-    "lint": "eslint . --max-warnings=0",
-    "test:e2e": "playwright test",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"supabase/functions/**/*.ts\" \"*.{js,json,ts}\"",
     "audit:production": "npm audit --omit=dev --audit-level=high",
-    "purge:generated-pdfs": "node scripts/purge-generated-pdfs.mjs",
-    "test": "node --test --experimental-strip-types src/app/frontend/features/settings/lib/catalog-consistency.test.ts src/app/frontend/features/jobs/lib/generated-documents.test.ts src/app/frontend/features/jobs/lib/organization-logo-layout.test.ts src/app/frontend/features/jobs/lib/primary-service-type.test.ts src/app/frontend/features/jobs/lib/proposal-staffing.test.ts src/app/frontend/features/jobs/lib/crew-briefing.test.ts src/app/frontend/features/jobs/lib/crew-briefing-migration.test.ts src/app/frontend/features/jobs/lib/readiness-security-migration.test.ts src/app/frontend/features/jobs/lib/security-advisor-audit.test.ts src/app/frontend/features/jobs/lib/full-hardening-migration.test.ts src/app/frontend/features/jobs/lib/proposal-language.test.ts src/app/frontend/features/safety/lib/preliminary-hazard-library.test.ts src/app/frontend/features/safety/lib/hazard-library.test.ts src/app/frontend/features/jobs/lib/operational-environment.test.ts src/app/frontend/features/jobs/lib/jha-attestations.test.ts src/app/frontend/features/jobs/lib/operation-readiness.test.ts src/app/frontend/features/jobs/lib/legacy-risk-cleanup.test.ts src/app/frontend/features/preflight/lib/preflight-checklist.test.ts src/app/frontend/features/sms/lib/management-of-change.test.ts src/app/frontend/features/sms/lib/moc-export.test.ts src/app/frontend/features/sms/lib/safety-assurance.test.ts src/app/frontend/features/sms/lib/safety-assurance-persistence.test.ts src/app/frontend/features/equipment/pages/equipment-page.test.ts"
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --experimental-strip-types \"src/**/*.test.ts\"",
+    "test:components": "vitest run",
+    "test:all": "npm test && npm run test:components"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",
+    "bcryptjs": "^2.4.3",
     "clean": "^4.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.5",
-    "@playwright/test": "^1.63.0",
+    "@eslint/js": "^9.39.4",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
@@ -32,15 +36,15 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^9.15.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.7",
-    "globals": "^17.12.0",
+    "globals": "^16.5.0",
+    "jsdom": "^26.1.0",
     "postcss": "^8.4.49",
-    "prettier": "^3.9.8",
     "rollup-plugin-license": "^3.7.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.5.4",
-    "typescript-eslint": "^8.70.0",
-    "vite": "^7.0.0"
+    "typescript-eslint": "^8.71.2",
+    "vite": "^7.0.0",
+    "vitest": "^4.1.12"
   },
   "overrides": {
     "esbuild": "^0.25.0",

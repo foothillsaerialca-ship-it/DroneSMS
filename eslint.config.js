@@ -1,37 +1,53 @@
+/**
+ * File purpose: ESLint flat configuration for the TypeScript/React source, tests, and build configuration files.
+ * Fallback/error behavior: ESLint reports invalid configuration or missing plugins on startup; there is no runtime fallback.
+ * Known issues: pre-existing findings and the enforcement plan are recorded in docs/testing.md.
+ */
 import js from '@eslint/js';
+import { defineConfig, globalIgnores } from 'eslint/config';
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
-import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
-export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'supabase/.temp/**', 'tsconfig.tsbuildinfo'] },
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
+export default defineConfig([
+  globalIgnores(['dist/', 'coverage/', 'node_modules/']),
   {
+    files: ['**/*.{js,ts,tsx}'],
+    extends: [js.configs.recommended, tseslint.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.browser }
+    },
+    linterOptions: {
+      reportUnusedDisableDirectives: 'warn'
+    },
+    plugins: {
+      'react-hooks': reactHooks
+    },
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      'no-control-regex': 'off'
-    }
-  },
-  {
-    files: ['src/**/*.{ts,tsx}'],
-    languageOptions: { globals: { ...globals.browser } },
-    plugins: { 'react-hooks': reactHooks, 'react-refresh': reactRefresh },
-    rules: {
+      // The classic Rules of Hooks checks. The React Compiler rules bundled in newer plugin presets
+      // are not enabled because the app does not use the React Compiler.
       'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'off',
-      'react-refresh/only-export-components': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }]
+      'react-hooks/exhaustive-deps': 'error',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }
+      ]
     }
   },
   {
-    files: ['vite.config.ts', 'scripts/**/*.{js,mjs,ts}'],
-    languageOptions: { globals: { ...globals.node } }
+    // Build tooling, Node-based tests, and test setup run under Node.
+    files: ['*.config.{js,ts}', '**/*.test.ts', 'src/test/**'],
+    languageOptions: {
+      globals: { ...globals.node }
+    }
   },
   {
+    // Supabase Edge Functions run under Deno.
     files: ['supabase/functions/**/*.ts'],
-    languageOptions: { globals: { ...globals.browser, Deno: 'readonly' } }
+    languageOptions: {
+      globals: { Deno: 'readonly' }
+    }
   }
-);
+]);

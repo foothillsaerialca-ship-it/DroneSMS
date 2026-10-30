@@ -126,3 +126,19 @@ Supabase Dashboard, open **Authentication → Configuration → Security and
 Protection**, enable **Leaked Password Protection**, and save. Then rerun Security
 Advisor. This repository intentionally does not attempt to emulate that dashboard/
 Auth-service configuration in a migration.
+
+## Follow-up — 2026-10-20 Advisor run
+
+The 2026-10-20 run reported the same expected warnings above, plus one new one:
+`public.rls_auto_enable()` was executable by `anon` and `authenticated`. That
+function is not created by these migrations; it is Supabase's dashboard-created
+helper behind the `ensure_rls` event trigger (`ddl_command_end` on `CREATE TABLE`,
+`CREATE TABLE AS`, `SELECT INTO`), which turns on RLS for new `public` tables. It
+returns `event_trigger`, so PostgREST cannot usefully invoke it, but the grant is
+still unnecessary. `20261020000000_revoke_rls_auto_enable_client_execute.sql`
+revokes `PUBLIC`, `anon`, and `authenticated` (guarded so a fresh deploy without
+the function is a no-op). Event triggers do not check `EXECUTE`, so automatic RLS
+enablement is unchanged.
+
+All other function warnings in that run match the "Warnings expected to remain"
+list, and Leaked Password Protection still requires the manual dashboard step.

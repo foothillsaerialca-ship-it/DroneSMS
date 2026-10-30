@@ -6,11 +6,8 @@
 import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/use-auth';
-import {
-  hasStartedBetaAuthAttempt,
-  isBetaWelcomeEnabled,
-  startBetaAuthAttempt
-} from '../lib/beta-welcome';
+import { useBetaWelcomeEnabled } from '../../admin/lib/app-settings';
+import { hasStartedBetaAuthAttempt, startBetaAuthAttempt } from '../lib/beta-welcome';
 import { LoginPage } from './login-page';
 
 export function BetaWelcomePage() {
@@ -18,6 +15,7 @@ export function BetaWelcomePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [hasStartedSignIn, setHasStartedSignIn] = useState(hasStartedBetaAuthAttempt);
+  const isBetaWelcomeEnabled = useBetaWelcomeEnabled();
 
   if (status === 'loading') {
     return (

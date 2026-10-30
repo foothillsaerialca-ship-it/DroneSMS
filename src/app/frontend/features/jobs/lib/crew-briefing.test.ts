@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, manualFieldBriefingDisplayReason, requiredCrewAssignments, validateManualFieldBriefing } from './crew-briefing.ts';
+import { briefingCommunicationsSummary, briefingPpeSummary, crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, manualFieldBriefingDisplayReason, requiredCrewAssignments, validateManualFieldBriefing } from './crew-briefing.ts';
 
 const assignments = [
   { id: 'rpic', assigned_role: 'RPIC', personnel: { id: 'p1', full_name: 'Pilot', email: null, status: 'Active' } },
@@ -67,4 +67,18 @@ test('a repeated material change keeps old evidence stale until the new version 
 test('removing a crew assignment stops its preserved evidence from blocking the current crew', () => {
   const historicalEvidence = [{ assignment_id: 'vo', assigned_role: 'Visual Observer', briefing_version: 2, status: 'Acknowledged' as const }];
   assert.equal(crewAcknowledgmentsCurrent(assignments.slice(0, 1), historicalEvidence, 3), true);
+});
+
+test('crew briefing PPE summary lists required items and hides stored JHA form state', () => {
+  const ppe = { 'Hard Hat': true, 'High-Vis Vest': true, 'Hearing Protection': false, __siteAccessNotes: 'Public sidewalk nearby', __chemicalSdsReviewed: true };
+  assert.equal(briefingPpeSummary(ppe), 'Hard Hat, High-Vis Vest');
+  assert.equal(briefingPpeSummary({ 'Hard Hat': false }), '');
+  assert.equal(briefingPpeSummary(null), '');
+  assert.equal(briefingPpeSummary(' Hard hat '), 'Hard hat');
+});
+
+test('crew briefing communications summary uses JHA communication methods before the fallback', () => {
+  assert.equal(briefingCommunicationsSummary({ __communicationMethods: ['Headsets', 'Other'], __communicationMethodOther: 'Air horn', __radioChannel: 'Ch 4' }, 'Crew A'), 'Headsets, Air horn\nRadio channel: Ch 4');
+  assert.equal(briefingCommunicationsSummary({ __communicationMethods: [], __radioChannel: '' }, 'Crew A'), 'Crew A');
+  assert.equal(briefingCommunicationsSummary(null), '');
 });

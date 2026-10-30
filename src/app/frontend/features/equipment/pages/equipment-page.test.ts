@@ -11,7 +11,7 @@ const equipmentPage = readFileSync(new URL('./equipment-page.tsx', import.meta.u
 const mocRegisterPage = readFileSync(new URL('../../sms/pages/moc-register-page.tsx', import.meta.url), 'utf8');
 const safetyReviewArea = readFileSync(new URL('../../sms/components/safety-review-area.tsx', import.meta.url), 'utf8');
 const router = readFileSync(new URL('../../../../router.tsx', import.meta.url), 'utf8');
-const equipmentCards = equipmentPage.slice(equipmentPage.indexOf('filteredEquipment.map((item) =>'));
+const equipmentCards = equipmentPage.slice(equipmentPage.indexOf('filteredEquipment.map((item, index) =>'));
 
 test('equipment cards no longer render an unconditional change review shortcut', () => {
   assert.ok(equipmentCards.length < equipmentPage.length);
@@ -32,7 +32,7 @@ test('equipment creation still offers the new operational capability review', ()
   assert.ok(/change_source: ["']Equipment["'],\s*requested_change_type: ["']New operational capability["'],\s*linked_equipment_id: inserted\.id,/.test(equipmentPage));
   assert.match(equipmentPage, /capability_name: formData\.capabilityName\.trim\(\),/);
   assert.ok(/to=\{`\/sms\/moc\/\$\{createdMocId\}`\}[\s\S]*?>\s*Review now/.test(equipmentPage));
-  assert.ok(/onClick=\{\(\) => setCreatedMocId\(null\)\}[\s\S]*?>\s*Review later/.test(equipmentPage));
+  assert.ok(/onClick=\{\(\)\s*=>\s*setCreatedMocId\(null\)\}[\s\S]*?>\s*Review later/.test(equipmentPage));
 });
 
 test('manual MOC creation remains available from the register and SMS area', () => {

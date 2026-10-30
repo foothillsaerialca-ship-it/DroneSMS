@@ -3,7 +3,7 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@frontend/lib/supabase";
 import { OrganizationIdentityCard } from "@frontend/features/settings/components/organization-identity-card";
@@ -45,6 +45,7 @@ type Job = {
   location: string;
   planned_date: string;
   status: string;
+  archived_at: string | null;
 };
 
 /**
@@ -66,9 +67,7 @@ type Proposal = {
   status: ProposalStatus;
   created_at: string;
   hazard_assessment: SelectedPreliminaryHazard[] | null;
-  proposal_equipment: Array<
-    Pick<ProposalEquipmentAssignment, "equipment_id">
-  > | null;
+  proposal_equipment: Array<Pick<ProposalEquipmentAssignment, "equipment_id">> | null;
   proposal_personnel: ProposalPersonnelAssignment[] | null;
   proposed_rpic_id: string | null;
   proposed_rpic_name: string | null;
@@ -84,14 +83,16 @@ type Proposal = {
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type JobsTab = "proposals" | "active" | "completed";
-const LIST_PAGE_SIZE = 100;
+type JobsTab = "proposals" | "active" | "completed" | "archived";
 /**
  * Purpose: Defines the input contract accepted by the jobs page component.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type JobsPageProps = { mode?: "jobs" | "proposals" };
+type JobsPageMode = "jobs" | "proposals";
+type JobsPageProps = { mode?: JobsPageMode };
+// Success and warning notices remember the section that raised them so they never show in the other one.
+type WorkspaceNotice = { mode: JobsPageMode; text: string };
 
 /**
  * Purpose: Stores the shared jobs tabs structure used by the jobs page module.
@@ -101,6 +102,7 @@ type JobsPageProps = { mode?: "jobs" | "proposals" };
 const jobsTabs: { id: Exclude<JobsTab, "proposals">; label: string }[] = [
   { id: "active", label: "Active Jobs" },
   { id: "completed", label: "Completed Jobs" },
+  { id: "archived", label: "Archived" },
 ];
 
 /**
@@ -153,7 +155,7 @@ function isCompletedJob(job: Job) {
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
 function getInitialTab(tab: string | null): JobsTab {
-  if (tab === "completed") return "completed";
+  if (tab === "completed" || tab === "archived") return tab;
   return "active";
 }
 
@@ -164,16 +166,14 @@ function getInitialTab(tab: string | null): JobsTab {
 export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<JobsTab>(() => {
-    if (mode === "proposals") return "proposals";
-    return getInitialTab(searchParams.get("tab"));
-  });
+  // /jobs and /proposals render this same component, so React Router keeps one instance across
+  // sidebar navigation. Deriving the tab from mode and the URL keeps it in step on every route change.
+  const activeTab: JobsTab =
+    mode === "proposals" ? "proposals" : getInitialTab(searchParams.get("tab"));
   const [jobs, setJobs] = useState<Job[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(true);
   const [isLoadingProposals, setIsLoadingProposals] = useState(true);
-  const [hasMoreJobs, setHasMoreJobs] = useState(false);
-  const [hasMoreProposals, setHasMoreProposals] = useState(false);
   const [jobsError, setJobsError] = useState<string | null>(null);
   const [proposalsError, setProposalsError] = useState<string | null>(null);
   const [updatingProposalId, setUpdatingProposalId] = useState<string | null>(
@@ -189,8 +189,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     string | null
   >(null);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
-  const [workspaceMessage, setWorkspaceMessage] = useState<string | null>(null);
-  const [workspaceWarning, setWorkspaceWarning] = useState<string | null>(null);
+  const [archivingJobId, setArchivingJobId] = useState<string | null>(null);
+  const [isArchivingAllCompleted, setIsArchivingAllCompleted] = useState(false);
+  const [workspaceMessage, setWorkspaceMessage] = useState<WorkspaceNotice | null>(null);
+  const [workspaceWarning, setWorkspaceWarning] = useState<WorkspaceNotice | null>(null);
   const [proposalDocuments, setProposalDocuments] = useState<
     GeneratedDocumentRecord[]
   >([]);
@@ -198,36 +200,60 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   const [organizationSettings, setOrganizationSettings] =
     useState<OrganizationSettings | null>(null);
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
+  // Each load takes a new id; only the latest one may write its list, so an older response that
+  // resolves late cannot overwrite newer records.
+  const jobsRequestIdRef = useRef(0);
+  const proposalsRequestIdRef = useRef(0);
+  // The last error message a load (not a save) showed, so a later successful load can clear it.
+  const jobsLoadErrorRef = useRef<string | null>(null);
+  const proposalsLoadErrorRef = useRef<string | null>(null);
+  const previousModeRef = useRef(mode);
 
-  const loadJobs = useCallback(async (offset = 0, signal: AbortSignal = new AbortController().signal) => {
-    setIsLoadingJobs(true);
-    setJobsError(null);
+  // A background load refreshes records already on screen without swapping them for the loading state.
+  // It never clears or replaces an error raised by a save, so an earlier save failure stays visible;
+  // its own load errors are cleared by the next successful load.
+  const loadJobs = useCallback(async ({ background = false } = {}) => {
+    const requestId = ++jobsRequestIdRef.current;
+    if (!background) {
+      setIsLoadingJobs(true);
+      setJobsError(null);
+    }
 
     try {
       const { data, error: jobsLoadError } = await supabase
         .from("jobs")
-        .select("id, name, service_type, location, planned_date, status")
+        .select("id, name, service_type, location, planned_date, status, archived_at")
         .is("deleted_at", null)
         .order("planned_date", { ascending: true })
-        .order("created_at", { ascending: false })
-        .range(offset, offset + LIST_PAGE_SIZE - 1)
-        .abortSignal(signal);
+        .order("created_at", { ascending: false });
 
       if (jobsLoadError) throw jobsLoadError;
+      if (requestId !== jobsRequestIdRef.current) return;
 
-      const page = (data ?? []) as Job[];
-      setJobs((current) => (offset === 0 ? page : [...current, ...page]));
-      setHasMoreJobs(page.length === LIST_PAGE_SIZE);
+      setJobs((data ?? []) as Job[]);
+      const staleLoadError = jobsLoadErrorRef.current;
+      jobsLoadErrorRef.current = null;
+      setJobsError((current) => (current === staleLoadError ? null : current));
     } catch (loadError) {
-      if (!signal.aborted) setJobsError(getErrorMessage(loadError));
+      if (requestId === jobsRequestIdRef.current) {
+        const message = getErrorMessage(loadError);
+        const staleLoadError = jobsLoadErrorRef.current;
+        jobsLoadErrorRef.current = message;
+        setJobsError((current) =>
+          background && current && current !== staleLoadError ? current : message,
+        );
+      }
     } finally {
-      setIsLoadingJobs(false);
+      if (requestId === jobsRequestIdRef.current) setIsLoadingJobs(false);
     }
   }, []);
 
-  const loadProposals = useCallback(async (offset = 0, signal: AbortSignal = new AbortController().signal) => {
-    setIsLoadingProposals(true);
-    setProposalsError(null);
+  const loadProposals = useCallback(async ({ background = false } = {}) => {
+    const requestId = ++proposalsRequestIdRef.current;
+    if (!background) {
+      setIsLoadingProposals(true);
+      setProposalsError(null);
+    }
 
     try {
       const { data, error: proposalsLoadError } = await supabase
@@ -236,25 +262,34 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
           "id, organization_id, proposal_number, proposal_name, client_name, contact_name, phone, email, service_type, site_address, status, created_at, hazard_assessment, proposal_equipment, proposal_personnel, proposed_rpic_id, proposed_rpic_name, proposed_rpic_credentials, proposed_rpic_bio, converted_to_job, converted_job_id, converted_at",
         )
         .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .range(offset, offset + LIST_PAGE_SIZE - 1)
-        .abortSignal(signal);
+        .order("created_at", { ascending: false });
 
       if (proposalsLoadError) throw proposalsLoadError;
+      if (requestId !== proposalsRequestIdRef.current) return;
 
-      const page = ((data ?? []) as Proposal[]).map((proposal) => ({
-        ...proposal,
-        hazard_assessment: normalizeSelectedHazards(proposal.hazard_assessment),
-        proposal_personnel: normalizeProposalPersonnel(
-          proposal.proposal_personnel,
-        ),
-      }));
-      setProposals((current) => (offset === 0 ? page : [...current, ...page]));
-      setHasMoreProposals(page.length === LIST_PAGE_SIZE);
+      setProposals(
+        ((data ?? []) as Proposal[]).map((proposal) => ({
+          ...proposal,
+          hazard_assessment: normalizeSelectedHazards(
+            proposal.hazard_assessment,
+          ),
+          proposal_personnel: normalizeProposalPersonnel(proposal.proposal_personnel),
+        })),
+      );
+      const staleLoadError = proposalsLoadErrorRef.current;
+      proposalsLoadErrorRef.current = null;
+      setProposalsError((current) => (current === staleLoadError ? null : current));
     } catch (loadError) {
-      if (!signal.aborted) setProposalsError(getErrorMessage(loadError));
+      if (requestId === proposalsRequestIdRef.current) {
+        const message = getErrorMessage(loadError);
+        const staleLoadError = proposalsLoadErrorRef.current;
+        proposalsLoadErrorRef.current = message;
+        setProposalsError((current) =>
+          background && current && current !== staleLoadError ? current : message,
+        );
+      }
     } finally {
-      setIsLoadingProposals(false);
+      if (requestId === proposalsRequestIdRef.current) setIsLoadingProposals(false);
     }
   }, []);
 
@@ -264,9 +299,9 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       try {
         setProposalDocuments(
           await loadGeneratedDocuments({
-            recordType: "proposal",
+            recordType: 'proposal',
             recordIds: proposalIds,
-            documentType: "proposal_pdf",
+            documentType: 'proposal_pdf',
           }),
         );
       } catch (documentsLoadError) {
@@ -289,7 +324,6 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     if (mode !== "proposals") {
       const tabParam = searchParams.get("tab");
       if (tabParam === "proposals") {
-        setActiveTab("active");
         setSearchParams({}, { replace: true });
       }
     }
@@ -297,7 +331,6 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
 
   useEffect(() => {
     let isMounted = true;
-    const controller = new AbortController();
 
     /**
      * Performs load company identity for the surrounding workflow.
@@ -324,21 +357,53 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     }
 
     void loadCompanyIdentity();
-    void loadJobs(0, controller.signal);
-    void loadProposals(0, controller.signal);
+    void loadJobs();
+    void loadProposals();
 
     return () => {
       isMounted = false;
-      controller.abort();
     };
   }, [loadJobs, loadProposals]);
 
+  // /jobs and /proposals share this instance, so the mount load above does not run again when the
+  // sidebar switches sections. Refresh the section being entered and drop the other section's notices.
+  useEffect(() => {
+    if (previousModeRef.current === mode) return;
+    previousModeRef.current = mode;
+
+    setWorkspaceMessage(null);
+    setWorkspaceWarning(null);
+    if (mode === "proposals") {
+      void loadProposals({ background: true });
+    } else {
+      void loadJobs({ background: true });
+    }
+  }, [mode, loadJobs, loadProposals]);
+
   const activeJobs = useMemo(
-    () => jobs.filter((job) => !isCompletedJob(job)),
+    () => jobs.filter((job) => !job.archived_at && !isCompletedJob(job)),
     [jobs],
   );
-  const completedJobs = useMemo(() => jobs.filter(isCompletedJob), [jobs]);
-  const visibleJobs = activeTab === "completed" ? completedJobs : activeJobs;
+  const completedJobs = useMemo(
+    () => jobs.filter((job) => !job.archived_at && isCompletedJob(job)),
+    [jobs],
+  );
+  // Most recently archived first, so a just-archived job is easy to find and restore.
+  const archivedJobs = useMemo(
+    () =>
+      jobs
+        .filter((job) => Boolean(job.archived_at))
+        .sort((left, right) =>
+          (right.archived_at ?? "").localeCompare(left.archived_at ?? ""),
+        ),
+    [jobs],
+  );
+  const visibleJobs =
+    activeTab === "completed"
+      ? completedJobs
+      : activeTab === "archived"
+        ? archivedJobs
+        : activeJobs;
   const activeProposals = useMemo(
     () => proposals.filter((proposal) => !proposal.converted_to_job),
     [proposals],
@@ -349,14 +414,9 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   );
   const showProposalsView = mode === "proposals" || activeTab === "proposals";
   const showJobsView = mode !== "proposals" && activeTab !== "proposals";
-  const isLoadingCurrentTab = showProposalsView
-    ? isLoadingProposals
-    : isLoadingJobs;
+  const isLoadingCurrentTab = showProposalsView ? isLoadingProposals : isLoadingJobs;
   const currentError = showProposalsView ? proposalsError : jobsError;
-  const tabs =
-    mode === "proposals"
-      ? [{ id: "proposals" as JobsTab, label: "Proposals" }]
-      : jobsTabs;
+  const tabs = mode === "proposals" ? [{ id: "proposals" as JobsTab, label: "Proposals" }] : jobsTabs;
 
   /**
    * Computes select tab for the surrounding workflow.
@@ -364,7 +424,6 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
    */
   function selectTab(tab: JobsTab) {
     if (mode === "proposals") return;
-    setActiveTab(tab);
     setSearchParams(tab === "active" ? {} : { tab });
   }
 
@@ -382,24 +441,18 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     setProposalsError(null);
 
     try {
-      const { data: userData, error: userError } =
-        await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!userData.user)
-        throw new Error("You must be signed in to create a job.");
-
       const { data, error } = await supabase.rpc("convert_proposal_to_job", {
         target_proposal_id: proposal.id,
       });
       if (error) throw error;
+      if (!data) throw new Error("The proposal conversion returned no job.");
 
-      if (!data || typeof data !== "object" || !("id" in data)) {
-        throw new Error("Proposal conversion did not return the operational job.");
-      }
       const createdJob = data as Job;
-      const convertedAt = new Date().toISOString();
-
-      setJobs((current) => [createdJob, ...current]);
+      setJobs((current) =>
+        current.some((job) => job.id === createdJob.id)
+          ? current
+          : [createdJob, ...current],
+      );
       setProposals((current) =>
         current.map((currentProposal) =>
           currentProposal.id === proposal.id
@@ -408,11 +461,11 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
                 status: "Accepted",
                 converted_to_job: true,
                 converted_job_id: createdJob.id,
-                converted_at: convertedAt,
               }
             : currentProposal,
         ),
       );
+      void loadProposals({ background: true });
       navigate(`/jobs/${createdJob.id}`);
     } catch (createError) {
       setProposalsError(getErrorMessage(createError));
@@ -430,6 +483,8 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     status: ProposalStatus,
   ) {
     const previousProposals = proposals;
+    // A refresh already in flight was read before this change and must not overwrite it.
+    proposalsRequestIdRef.current += 1;
     setUpdatingProposalId(proposalId);
     setProposals((current) =>
       current.map((proposal) =>
@@ -445,6 +500,14 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         .eq("id", proposalId);
 
       if (error) throw error;
+      // Re-apply in case a refresh that read the old status landed while this update was saving.
+      setProposals((current) =>
+        current.some((proposal) => proposal.id === proposalId && proposal.status !== status)
+          ? current.map((proposal) =>
+              proposal.id === proposalId ? { ...proposal, status } : proposal,
+            )
+          : current,
+      );
     } catch (statusError) {
       setProposals(previousProposals);
       setProposalsError(getErrorMessage(statusError));
@@ -452,6 +515,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       setUpdatingProposalId(null);
     }
   }
+
 
   /**
    * Handles generate proposal pdf while keeping the feature state consistent.
@@ -466,16 +530,18 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
     try {
       const result = await generateProposalPdf(proposalId);
       if (result.saved) {
-        setWorkspaceMessage(
-          "Proposal PDF downloaded. Form metadata saved to DroneSMS records.",
-        );
+        setWorkspaceMessage({
+          mode,
+          text: "Proposal PDF downloaded and saved to DroneSMS records.",
+        });
         await loadDocumentsForProposals(
           proposals.map((proposal) => proposal.id),
         );
       } else {
-        setWorkspaceWarning(
-          "Proposal PDF downloaded successfully. Unable to save form metadata to DroneSMS records.",
-        );
+        setWorkspaceWarning({
+          mode,
+          text: "Proposal PDF downloaded successfully. Unable to save a copy to DroneSMS records.",
+        });
       }
     } catch (pdfError) {
       setProposalsError(getErrorMessage(pdfError));
@@ -512,7 +578,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
 
       if (error) throw error;
 
-      setWorkspaceMessage("Proposal removed from your active workspace.");
+      setWorkspaceMessage({ mode, text: "Proposal removed from your active workspace." });
       await loadProposals();
     } catch (deleteError) {
       setProposalsError(getErrorMessage(deleteError));
@@ -549,7 +615,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
 
       if (error) throw error;
 
-      setWorkspaceMessage("Job removed from your active workspace.");
+      setWorkspaceMessage({ mode, text: "Job removed from your active workspace." });
       await loadJobs();
     } catch (deleteError) {
       setJobsError(getErrorMessage(deleteError));
@@ -559,13 +625,86 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
   }
 
   /**
+   * Archives or restores a job. Archived jobs leave the Active and Completed lists but keep
+   * every record and stay available under the Archived tab.
+   * Fallback/error behavior: Service errors are shown in the jobs error state; the list is reloaded on success.
+   */
+  async function setJobArchived(jobId: string, archive: boolean) {
+    setArchivingJobId(jobId);
+    setJobsError(null);
+    setWorkspaceMessage(null);
+
+    try {
+      // updated_at is left alone: the dashboard uses it as the job's close time, and archiving
+      // is filing, not a change to the operation.
+      const { error } = await supabase
+        .from("jobs")
+        .update({ archived_at: archive ? new Date().toISOString() : null })
+        .eq("id", jobId);
+
+      if (error) throw error;
+
+      setWorkspaceMessage({
+        mode,
+        text: archive
+          ? "Job archived. Find it under the Archived tab."
+          : "Job restored.",
+      });
+      await loadJobs();
+    } catch (archiveError) {
+      setJobsError(getErrorMessage(archiveError));
+    } finally {
+      setArchivingJobId(null);
+    }
+  }
+
+  /**
+   * Archives every completed job in one update to clear the Completed list.
+   * Fallback/error behavior: Service errors are shown in the jobs error state; the list is reloaded on success.
+   */
+  async function archiveAllCompletedJobs() {
+    if (completedJobs.length === 0) return;
+    if (
+      !window.confirm(
+        `Archive ${completedJobs.length} completed job${completedJobs.length === 1 ? "" : "s"}? They stay available under the Archived tab.`,
+      )
+    )
+      return;
+
+    setIsArchivingAllCompleted(true);
+    setJobsError(null);
+    setWorkspaceMessage(null);
+
+    try {
+      // updated_at is left alone for the same reason as setJobArchived.
+      const { error } = await supabase
+        .from("jobs")
+        .update({ archived_at: new Date().toISOString() })
+        .in(
+          "id",
+          completedJobs.map((job) => job.id),
+        );
+
+      if (error) throw error;
+
+      setWorkspaceMessage({
+        mode,
+        text: `${completedJobs.length} completed job${completedJobs.length === 1 ? "" : "s"} archived.`,
+      });
+      await loadJobs();
+    } catch (archiveError) {
+      setJobsError(getErrorMessage(archiveError));
+    } finally {
+      setIsArchivingAllCompleted(false);
+    }
+  }
+
+  /**
    * Handles remove generated document while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
   async function removeGeneratedDocument(documentId: string) {
-    if (
-      !window.confirm("Remove this document from the proposal documents list?")
-    ) {
+    if (!window.confirm("Remove this document from the proposal documents list?")) {
       return;
     }
 
@@ -578,7 +717,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       setProposalDocuments((current) =>
         current.filter((document) => document.id !== documentId),
       );
-      setWorkspaceMessage("Document removed from proposal documents.");
+      setWorkspaceMessage({ mode, text: "Document removed from proposal documents." });
     } catch (archiveError) {
       setDocumentsError(
         getErrorMessage(
@@ -774,6 +913,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
           </div>
         ) : null}
 
+
         <section
           className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3"
           aria-label="Proposal documents"
@@ -784,8 +924,8 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
                 Documents
               </h3>
               <p className="text-xs text-slate-500">
-                Proposal form snapshots are listed newest first. PDFs download
-                locally and are not retained.
+                Generated PDFs are downloaded locally. This list retains only
+                generation history and form metadata.
               </p>
             </div>
           </div>
@@ -807,9 +947,6 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
                     </p>
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
-                    <span className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-500">
-                      PDF not retained
-                    </span>
                     <button
                       type="button"
                       className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
@@ -823,8 +960,8 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
             </div>
           ) : (
             <p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-500">
-              No proposal document metadata has been saved yet. Generate a
-              Proposal PDF to save its form snapshot in DroneSMS records.
+              No document-generation history is available yet. Generate a
+              Proposal PDF to download it and record its metadata here.
             </p>
           )}
         </section>
@@ -896,7 +1033,7 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       {mode === "jobs" ? (
         <div className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
           <div
-            className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+            className="grid grid-cols-1 gap-2 sm:grid-cols-3"
             role="tablist"
             aria-label="Jobs sections"
           >
@@ -939,25 +1076,25 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         </div>
       ) : null}
 
-      {workspaceMessage ? (
+      {workspaceMessage?.mode === mode ? (
         <div
           className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-800 shadow-sm"
           role="status"
         >
-          {workspaceMessage}
+          {workspaceMessage.text}
         </div>
       ) : null}
 
-      {workspaceWarning ? (
+      {workspaceWarning?.mode === mode ? (
         <div
           className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-800 shadow-sm"
           role="status"
         >
-          {workspaceWarning}
+          {workspaceWarning.text}
         </div>
       ) : null}
 
-      {documentsError ? (
+      {showProposalsView && documentsError ? (
         <div
           className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shadow-sm"
           role="status"
@@ -1039,15 +1176,26 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         </div>
       ) : null}
 
-      {showProposalsView && hasMoreProposals ? (
-        <button
-          className="mx-auto block rounded-lg border border-brand-700 px-4 py-2 text-sm font-semibold text-brand-700 disabled:border-slate-300"
-          disabled={isLoadingProposals}
-          onClick={() => void loadProposals(proposals.length)}
-          type="button"
-        >
-          {isLoadingProposals ? "Loading..." : "Load more proposals"}
-        </button>
+      {showJobsView &&
+      activeTab === "completed" &&
+      !isLoadingJobs &&
+      completedJobs.length > 0 ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-600">
+            Archive finished work to keep this list short. Archived jobs keep
+            all their records and can be restored.
+          </p>
+          <button
+            type="button"
+            className="min-h-11 shrink-0 rounded-lg border border-brand-700 bg-white px-3 py-3 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 sm:min-h-0 sm:py-2"
+            onClick={() => void archiveAllCompletedJobs()}
+            disabled={isArchivingAllCompleted}
+          >
+            {isArchivingAllCompleted
+              ? "Archiving..."
+              : `Archive all completed (${completedJobs.length})`}
+          </button>
+        </div>
       ) : null}
 
       {showJobsView &&
@@ -1055,10 +1203,12 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       !jobsError &&
       visibleJobs.length > 0 ? (
         <div className="space-y-3">
-          {visibleJobs.map((job) => (
+          {visibleJobs.map((job, index) => (
             <article
               key={job.id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className={`rounded-xl border border-slate-200 p-4 shadow-sm ${
+                index % 2 === 1 ? "bg-[#F3F8FF]" : "bg-white"
+              }`}
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <Link
@@ -1074,16 +1224,34 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
                 </Link>
                 <div className="flex flex-col gap-2 sm:items-end">
                   <span className="inline-flex w-fit rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-brand-700">
-                    {job.status}
+                    {job.archived_at ? `${job.status} • Archived` : job.status}
                   </span>
-                  <button
-                    type="button"
-                    className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0 sm:py-2"
-                    onClick={() => void deleteJob(job.id)}
-                    disabled={deletingJobId === job.id}
-                  >
-                    {deletingJobId === job.id ? "Removing..." : "Delete Job"}
-                  </button>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-brand-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0 sm:py-2"
+                      onClick={() =>
+                        void setJobArchived(job.id, !job.archived_at)
+                      }
+                      disabled={archivingJobId === job.id}
+                    >
+                      {archivingJobId === job.id
+                        ? "Saving..."
+                        : job.archived_at
+                          ? "Restore"
+                          : "Archive"}
+                    </button>
+                    {job.archived_at ? null : (
+                      <button
+                        type="button"
+                        className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:min-h-0 sm:py-2"
+                        onClick={() => void deleteJob(job.id)}
+                        disabled={deletingJobId === job.id}
+                      >
+                        {deletingJobId === job.id ? "Removing..." : "Delete Job"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1107,17 +1275,6 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
             </article>
           ))}
         </div>
-      ) : null}
-
-      {showJobsView && hasMoreJobs ? (
-        <button
-          className="mx-auto block rounded-lg border border-brand-700 px-4 py-2 text-sm font-semibold text-brand-700 disabled:border-slate-300"
-          disabled={isLoadingJobs}
-          onClick={() => void loadJobs(jobs.length)}
-          type="button"
-        >
-          {isLoadingJobs ? "Loading..." : "Load more jobs"}
-        </button>
       ) : null}
 
       {showProposalsView &&
@@ -1146,13 +1303,16 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
       visibleJobs.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center shadow-sm">
           <h2 className="text-base font-semibold text-brand-900">
-            No {activeTab === "completed" ? "completed jobs" : "active jobs"}{" "}
-            yet
+            {activeTab === "archived"
+              ? "No archived jobs"
+              : `No ${activeTab === "completed" ? "completed jobs" : "active jobs"} yet`}
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            {activeTab === "completed"
-              ? "Completed operations will appear here when a job status is complete."
-              : "Create your first job to start building an operations list."}
+            {activeTab === "archived"
+              ? "Jobs you archive appear here and can be restored at any time."
+              : activeTab === "completed"
+                ? "Completed operations will appear here when a job status is complete."
+                : "Create your first job to start building an operations list."}
           </p>
           {activeTab === "active" ? (
             <Link

@@ -40,6 +40,7 @@ DroneSMS is a multi-tenant operational safety system for commercial drone operat
 - `VITE_SUPABASE_URL`: required hosted project URL
 - `VITE_SUPABASE_ANON_KEY`: required browser-safe publishable key
 - `VITE_APP_URL`: optional redirect origin; browser origin and then `/` are fallbacks
+- `VITE_BETA_WELCOME_ENABLED=false`: optional build-time override that hides the beta welcome and BETA badges regardless of the admin setting
 - Vite aliases: `@backend`, `@frontend`, and `@app`
 
 ## Application routes
@@ -65,8 +66,9 @@ DroneSMS is a multi-tenant operational safety system for commercial drone operat
 | `/settings/organization` | Authenticated | Organization settings |
 | `/reports` | Authenticated | Placeholder report page |
 | `/about` | Authenticated | Team/about information |
+| `/admin` | Platform admins | App-wide settings, admin list, and admin activity log |
 
-Unknown routes redirect to `/`. `/settings` redirects to `/settings/organization`.
+Unknown routes redirect to `/`. `/settings` redirects to `/settings/organization`. Non-admins who open `/admin` are redirected to `/dashboard`, and only admins see the Admin navigation link.
 
 ## Implementation history
 
@@ -151,6 +153,31 @@ Adds an organization-scoped Safety Manager designation, membership trigger, inde
 
 Adds independent Safety Manager review and RPIC acceptance identities/timestamps. Security-definer RPCs validate the current user against the organization designation or assigned RPIC. Designations are tightened to require an active, user-linked personnel record.
 
+### `20261021000000_platform_admins.sql`
+
+Adds platform admin accounts (trusted DroneSMS staff) and admin-managed app settings.
+
+- `platform_admins` lists admin accounts. Browsers have no direct access; `is_platform_admin()` answers for the signed-in user.
+- `list_platform_admins`, `grant_platform_admin(email, note)`, `revoke_platform_admin(user_id)`, and `set_app_setting(key, value)` refuse non-admins before doing anything. The last admin cannot be removed.
+- `app_settings` holds non-sensitive app-wide switches and is readable by everyone, including signed-out pages. It is seeded with `beta_welcome_enabled = true`. Never store secrets in it.
+- `platform_admin_audit` records every admin grant, revoke, and setting change; only admins can read it.
+
+**Adding the first admin (one time only).** Run this in the Supabase SQL editor after the migration is applied, using the email of an existing account:
+
+```sql
+with granted as (
+  insert into public.platform_admins (user_id, note)
+  select id, 'Initial admin' from auth.users where lower(email) = lower('you@example.com')
+  on conflict (user_id) do nothing
+  returning user_id
+)
+insert into public.platform_admin_audit (action, actor_email, target_user_id, target_email)
+select 'Granted admin', 'SQL editor (initial setup)', g.user_id, u.email
+from granted g join auth.users u on u.id = g.user_id;
+```
+
+This also records the grant in the admin activity log, like every later grant. After that, admins add and remove other admins from the Admin page.
+
 ## Dependencies
 
 Declared ranges are in `package.json`; exact versions are locked in `package-lock.json`. At audit time the installed direct tree included React `18.3.1`, React Router `6.30.4`, Supabase JS `2.106.2`, Vite `7.3.5`, TypeScript `5.9.3`, Tailwind `3.4.19`, and ESLint `9.39.4`. Python is not part of the toolchain.
@@ -189,9 +216,9 @@ No browser/DOM test runner, Supabase emulator configuration, or isolated integra
 
 ## Known errors and limitations
 
-### KE-001: ESLint command is unusable
+### KE-001: ESLint command is unusable (resolved)
 
-`npm run lint` exits with code 1 because ESLint `9.39.4` requires a flat `eslint.config.*` file and the repository contains none. No source lint result is available. This audit documents the error and intentionally does not add configuration.
+`npm run lint` used to exit with code 1 because ESLint `9.39.4` requires a flat `eslint.config.*` file and the repository had none. `eslint.config.js` now exists, and the 30 findings that were already in the code are recorded as a suppression baseline. See [testing.md](testing.md).
 
 ### KE-002: Production JavaScript chunk exceeds Vite's warning threshold
 
@@ -199,7 +226,7 @@ No browser/DOM test runner, Supabase emulator configuration, or isolated integra
 
 ### KE-003: Full function-level runtime verification is unavailable
 
-Only 17 domain unit tests exist. There is no DOM/browser framework or isolated Supabase environment, so auth, RLS/RPC, Storage, React handlers, and PDF visual output cannot be automatically exercised function by function. Those paths passed compilation and static review only. No tests were fabricated and no production mutations were attempted.
+Only 17 domain unit tests exist. There is no DOM/browser framework or isolated Supabase environment, so auth, RLS/RPC, Storage, React handlers, and PDF visual output cannot be automatically exercised function by function. Those paths passed compilation and static review only. No tests were fabricated and no production mutations were attempted. Partly addressed: a Vitest and React Testing Library component suite with an in-memory Supabase stand-in now covers Jobs/Proposals navigation, protected-route auth and onboarding rules, and JHA hazard-card behavior (see [testing.md](testing.md)). RLS/RPC, Storage, and PDF output are still not exercised.
 
 ### KE-004: Database migrations were not integration-tested
 

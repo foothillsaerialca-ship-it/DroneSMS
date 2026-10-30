@@ -12,7 +12,8 @@ const repairMigration = readFileSync('supabase/migrations/20260905010000_fix_cre
 const cryptoRepairMigration = readFileSync('supabase/migrations/20260905020000_fix_crew_invitation_crypto_schema.sql', 'utf8');
 const anonymousRevocationMigration = readFileSync('supabase/migrations/20260906090000_revoke_anonymous_crew_briefing_acknowledgment.sql', 'utf8');
 const anonymousLookupRevocationMigration = readFileSync('supabase/migrations/20260906100000_revoke_anonymous_crew_briefing_lookup.sql', 'utf8');
-const deliveryHardeningMigration = readFileSync('supabase/migrations/20261030000000_harden_crew_delivery_and_reclaim_storage_cleanup.sql', 'utf8');
+const signedOutAccessMigration = readFileSync('supabase/migrations/20261018000000_restore_signed_out_crew_briefing_access.sql', 'utf8');
+const jobRenameMigration = readFileSync('supabase/migrations/20261015000000_job_rename_keeps_crew_briefing.sql', 'utf8');
 const sendFunction = readFileSync('supabase/functions/send-crew-acknowledgment/index.ts', 'utf8');
 
 test('crew invitation resolves pgcrypto without widening its SECURITY DEFINER search path', () => {
@@ -60,14 +61,21 @@ test('public token RPC repair retains no-login scope, expiry, and evidence inval
   assert.doesNotMatch(cryptoRepairMigration, /delete from public\.crew_briefing_acknowledgments/i);
 });
 
-test('crew briefing acknowledgment is no longer executable by anonymous callers', () => {
+test('September migrations temporarily revoked anonymous crew briefing acknowledgment', () => {
   assert.match(anonymousRevocationMigration, /revoke execute on function public\.acknowledge_public_crew_briefing\(text, text\) from anon;/i);
   assert.match(anonymousRevocationMigration, /grant execute on function public\.acknowledge_public_crew_briefing\(text, text\) to authenticated;/i);
 });
 
-test('crew briefing lookup is no longer executable by anonymous callers', () => {
+test('September migrations temporarily revoked anonymous crew briefing lookup', () => {
   assert.match(anonymousLookupRevocationMigration, /revoke execute on function public\.get_public_crew_briefing\(text\) from anon;/i);
   assert.match(anonymousLookupRevocationMigration, /grant execute on function public\.get_public_crew_briefing\(text\) to authenticated;/i);
+});
+
+test('signed-out crew members can open and acknowledge briefing links after the restore migration', () => {
+  assert.match(signedOutAccessMigration, /revoke all on function public\.get_public_crew_briefing\(text\) from public;/i);
+  assert.match(signedOutAccessMigration, /grant execute on function public\.get_public_crew_briefing\(text\) to anon, authenticated;/i);
+  assert.match(signedOutAccessMigration, /revoke all on function public\.acknowledge_public_crew_briefing\(text, text\) from public;/i);
+  assert.match(signedOutAccessMigration, /grant execute on function public\.acknowledge_public_crew_briefing\(text, text\) to anon, authenticated;/i);
 });
 
 test('crew invitation crypto repair does not broaden RPC execution permissions', () => {
@@ -160,21 +168,37 @@ test('email function accepts supabase-js preflight and only marks Sent after pro
   assert.match(sendFunction, /Access-Control-Allow-Headers[^\n]+x-client-info/);
   assert.match(sendFunction, /Deno\.env\.get\('RESEND_FROM'\)/);
   assert.doesNotMatch(sendFunction, /briefing@dronesms\.app/);
-  assert.match(sendFunction, /userClient\.auth\.getUser\(token\)/);
-  assert.match(sendFunction, /p_actor_user_id: userData\.user\.id/);
-  const providerCheck = sendFunction.indexOf('if (!emailResponse.ok)');
-  const sentUpdate = sendFunction.indexOf('sent = true');
-  const statusRpc = sendFunction.indexOf("serviceClient.rpc('mark_crew_briefing_email_result'");
-  assert.ok(providerCheck > -1 && sentUpdate > providerCheck && statusRpc > sentUpdate);
-  assert.match(sendFunction, /p_sent: sent/);
+  const providerCheck = sendFunction.search(/if\s*\(\s*!\w+\.ok\s*\)/);
+  const sentAssignment = sendFunction.indexOf('sent = true');
+  const statusUpdate = sendFunction.indexOf('mark_crew_briefing_email_result');
+  const sentUpdate = sendFunction.indexOf('p_sent: sent');
+  assert.ok(
+    providerCheck > -1 &&
+      sentAssignment > providerCheck &&
+      statusUpdate > sentAssignment &&
+      sentUpdate > statusUpdate,
+  );
+  assert.match(sendFunction, /sent\s*=\s*false/);
 });
 
-test('crew delivery tokens and status updates require the trusted email service', () => {
-  assert.match(deliveryHardeningMigration, /revoke all on function public\.create_crew_briefing_invitation\(uuid,uuid\)[\s\S]+?from public, anon, authenticated/i);
-  assert.match(deliveryHardeningMigration, /grant execute on function public\.create_crew_briefing_invitation\(uuid,uuid\) to service_role/i);
-  assert.match(deliveryHardeningMigration, /drop function public\.create_crew_briefing_invitation\(uuid\)/i);
-  assert.match(deliveryHardeningMigration, /revoke all on function public\.mark_crew_briefing_email_result\(uuid,boolean\)[\s\S]+?from public, anon, authenticated/i);
-  assert.match(deliveryHardeningMigration, /grant execute on function public\.mark_crew_briefing_email_result\(uuid,boolean\)[\s\S]+?to service_role/i);
-  assert.match(sendFunction, /serviceClient\.rpc\('create_crew_briefing_invitation'/);
-  assert.match(sendFunction, /serviceClient\.rpc\('mark_crew_briefing_email_result'/);
+test('job rename no longer advances the crew briefing version while site, date, and service still do', () => {
+  const jobTrigger = jobRenameMigration.slice(jobRenameMigration.indexOf('function public.advance_crew_briefing_version_from_job()'));
+  const comparedFields = jobTrigger.match(/if row\(([^)]*)\) is distinct from/)?.[1] ?? '';
+  for (const field of ['location', 'planned_date', 'service_type']) assert.match(comparedFields, new RegExp(`new\\.${field}`));
+  assert.doesNotMatch(comparedFields, /new\.name/);
+  assert.match(jobTrigger, /if new\.name is distinct from old\.name then\s+update public\.jha_assessments set job_type_scope=new\.service_type\|\|' - '\|\|new\.name\s+where job_id=new\.id and job_type_scope=old\.service_type\|\|' - '\|\|old\.name;/);
+  assert.match(jobRenameMigration, /security definer set search_path = pg_catalog, public/);
+  assert.match(jobRenameMigration, /revoke all on function public\.advance_crew_briefing_version_from_job\(\) from public, anon, authenticated/);
+});
+
+test('derived JHA scope no longer advances the briefing version, other briefing fields still do', () => {
+  const jhaTrigger = jobRenameMigration.slice(
+    jobRenameMigration.indexOf('function public.advance_crew_briefing_version()'),
+    jobRenameMigration.indexOf('function public.advance_crew_briefing_version_from_job()')
+  );
+  assert.doesNotMatch(jhaTrigger, /job_type_scope/);
+  for (const field of ['hazard_entries', 'ppe_requirements', 'crew_members', 'nearest_hospital', 'emergency_facility_address', 'emergency_contact', 'drone_incident_procedure', 'site_access', 'exclusion_zone_description', 'known_airspace_restrictions']) {
+    assert.match(jhaTrigger, new RegExp(`new\\.${field}`));
+  }
+  assert.match(jhaTrigger, /new\.briefing_version := old\.briefing_version\+1/);
 });

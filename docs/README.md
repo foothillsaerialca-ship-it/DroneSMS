@@ -1,6 +1,7 @@
 # DroneSMS
 
 DroneSMS is a React and Supabase safety-management application for commercial drone operations. The current `0.1.0` application supports organization onboarding, proposals, jobs, personnel and equipment readiness, job hazard analyses (JHAs), pre-flight checklists, safety events, closeout records, and browser-generated PDF records.
+
 ## Document status
 
 The runnable application and ordered migrations under `supabase/migrations/` are the source
@@ -21,8 +22,8 @@ Production deployment: `https://7067bf63.dronesms-app.pages.dev/`
 ## Current release
 
 - Application version: `0.1.0`
-- Documentation audit date: 2026-08-25
-- Runtime: React 18, React Router 6, Supabase JS 2, TypeScript, Vite 7, and Tailwind CSS 3
+- Documentation audit date: 2026-10-30
+- Runtime: React 18, React Router 7, Supabase JS 2, TypeScript, Vite 7, and Tailwind CSS 3
 - Backend: hosted Supabase Authentication, Postgres, Storage, row-level security, and RPC functions
 - Package source of truth: `package.json`; exact resolved dependency tree: `package-lock.json`
 
@@ -39,7 +40,7 @@ The August 2026 schema history added expanded JHA site-planning fields, proposal
 - Multi-step operational JHA with airspace, environmental, hazard, PPE, photo evidence, and role-attestation workflows
 - Pre-flight checklist persistence and completion validation
 
-Reports and several future account-management controls are currently placeholder interfaces. Billing, subscriptions, administrative tooling, external smart-site intelligence, and offline synchronization are planned rather than implemented.
+Reports and several future account-management controls are currently placeholder interfaces. Billing, subscriptions, broader account administration, external smart-site intelligence, and offline synchronization are planned rather than implemented.
 
 ## Repository map
 
@@ -66,12 +67,13 @@ See [install.md](install.md) for database and authentication setup.
 ## Verification commands
 
 ```bash
-npm test
+npm run test:all
 npm run build
 npm run lint
+npm run audit:production
 ```
 
-At the 2026-08-25 audit, all 17 unit tests passed and the production build completed. Linting is a known broken verification path because the repository has no ESLint 9 flat configuration. The build also reports a non-fatal bundle-size warning. Both are documented, not fixed, in [documentation.md](documentation.md#known-errors-and-limitations).
+At the 2026-10-30 verification, all 209 Node tests and 59 component tests passed, the build and lint completed, and the dependency audit found no vulnerabilities. The build still reports a non-fatal bundle-size warning.
 
 ## Documentation
 
@@ -82,7 +84,4 @@ At the 2026-08-25 audit, all 17 unit tests passed and the production build compl
 - [Technical implementation plan](implementation-plan.md)
 
 `docs/requirements.txt` intentionally contains no Python packages; this application uses Node.js and npm.
-- The app uses Supabase as the backend service for data persistence and auth.
-- Frontend source files live under `src/` with app routing, features, and integration code.
-- Environment and runtime configuration is managed through `package.json`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.js`, and `vite.config.ts`.
- - A `lodash` override is applied in `package.json` to ensure the dependency tree uses a patched `4.17.30` release.
+Runtime and build configuration lives in `package.json`, `tsconfig.json`, `tailwind.config.ts`, `postcss.config.js`, `vite.config.ts`, and `vitest.config.ts`.

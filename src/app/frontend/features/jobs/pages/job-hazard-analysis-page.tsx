@@ -3,237 +3,130 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import {
-  type ChangeEvent,
-  type FormEvent,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import { getGenericErrorMessage as getErrorMessage } from "@frontend/lib/error-utils";
-import { Link, useParams } from "react-router-dom";
-import { loadOrganizationSettingsById } from "@frontend/features/settings/lib/organization-settings";
-import { supabase } from "@frontend/lib/supabase";
-import {
-  fallbackHazardLibrary,
-  getVisibleHazards,
-  restoreSystemHazardMappings,
-  searchHazards,
-  type HazardLibraryEntry,
-} from "@frontend/features/safety/lib/preliminary-hazard-library";
-import {
-  environmentalConcernCategories,
-  serviceUsesAppliedMaterials,
-} from "@frontend/features/jobs/lib/operational-environment";
-import {
-  getOperationalCompletionMessages,
-  operationalAttestationStatus,
-  operationalRoleLabel,
-} from "@frontend/features/jobs/lib/jha-attestations";
-import { getPermitPlanningValidationMessage } from "@frontend/features/jobs/lib/operation-readiness";
-import { validateImageUpload } from "@frontend/lib/file-validation";
+import { type ChangeEvent, type FormEvent, useEffect, useMemo, useState } from 'react';
+import { getGenericErrorMessage as getErrorMessage } from '@frontend/lib/error-utils';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { loadOrganizationSettingsById } from '@frontend/features/settings/lib/organization-settings';
+import { supabase } from '@frontend/lib/supabase';
+import { fallbackHazardLibrary, getVisibleHazards, restoreSystemHazardMappings, searchHazards, type HazardLibraryEntry } from '@frontend/features/safety/lib/preliminary-hazard-library';
+import { environmentalConcernCategories, serviceUsesAppliedMaterials } from '@frontend/features/jobs/lib/operational-environment';
+import { getOperationalCompletionMessages, operationalAttestationStatus, operationalRoleLabel } from '@frontend/features/jobs/lib/jha-attestations';
+import { getPermitPlanningValidationMessage } from '@frontend/features/jobs/lib/operation-readiness';
+import { assessmentRecordMatchesStored } from '@frontend/features/jobs/lib/jha-persistence';
+import { getMissingRequiredHazardFields, hazardMatchesSearch, isHazardExpanded, setHazardsExpanded, withoutHazardExpansion, type HazardExpansionOverrides } from '@frontend/features/jobs/lib/hazard-card-view';
 
 /**
  * Purpose: Defines the ordered steps used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const steps = [
-  "Mission Basics",
-  "Site Conditions",
-  "Airspace",
-  "Environmental",
-  "Hazards",
-  "Crew Briefing & Communications",
-];
+const steps = ['Mission Basics', 'Site Conditions', 'Airspace', 'Environmental', 'Hazards', 'Crew Briefing & Communications'];
 /**
  * Purpose: Defines the ordered ground surface options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const groundSurfaceOptions = [
-  "Asphalt",
-  "Concrete",
-  "Gravel",
-  "Grass",
-  "Dirt",
-  "Rooftop",
-  "Muddy/Wet",
-  "Mixed Surface",
-  "Other",
-];
+const groundSurfaceOptions = ['Asphalt', 'Concrete', 'Gravel', 'Grass', 'Dirt', 'Rooftop', 'Muddy/Wet', 'Mixed Surface', 'Other'];
 /**
  * Purpose: Defines the ordered work surface options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const workSurfaceOptions = [
-  "Solar Panels",
-  "Building Facade",
-  "Windows / Glass",
-  "Roof",
-  "Agricultural Field",
-  "Tower / Structure",
-  "Parking Structure",
-  "Industrial Equipment",
-  "Other",
-];
+const workSurfaceOptions = ['Solar Panels', 'Building Facade', 'Windows / Glass', 'Roof', 'Agricultural Field', 'Tower / Structure', 'Parking Structure', 'Industrial Equipment', 'Other'];
 /**
  * Purpose: Defines the ordered site constraint options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const siteConstraintOptions = [
-  "Public sidewalk nearby",
-  "Active vehicle traffic",
-  "Limited staging area",
-  "Roof access required",
-  "Gated property",
-  "Uneven terrain",
-  "Narrow access point",
-  "Alley/rear access only",
-  "Other",
-];
+const siteConstraintOptions = ['Public sidewalk nearby', 'Active vehicle traffic', 'Limited staging area', 'Roof access required', 'Gated property', 'Uneven terrain', 'Narrow access point', 'Alley/rear access only', 'Other'];
 /**
  * Purpose: Defines the ordered runoff contaminant options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const runoffContaminantOptions = [
-  "Dirt / sediment",
-  "Bird droppings / biological material",
-  "Cleaning residue",
-  "Oils / vehicle contaminants",
-  "Agricultural residue",
-  "Chemical product used",
-  "Other",
-];
+const runoffContaminantOptions = ['Dirt / sediment', 'Bird droppings / biological material', 'Cleaning residue', 'Oils / vehicle contaminants', 'Agricultural residue', 'Chemical product used', 'Other'];
 /**
  * Purpose: Defines the ordered communication options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const communicationOptions = [
-  "Headsets",
-  "Radios",
-  "Cell Phones",
-  "Hand Signals",
-  "Other",
-];
+const communicationOptions = ['Headsets', 'Radios', 'Cell Phones', 'Hand Signals', 'Other'];
 /**
  * Purpose: Defines the ordered weather options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const weatherOptions = ["Clear", "Partly Cloudy", "Overcast", "Light Rain"];
+const weatherOptions = ['Clear', 'Partly Cloudy', 'Overcast', 'Light Rain'];
 /**
  * Purpose: Defines the ordered visibility options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const visibilityOptions = ["Excellent", "Good", "Fair", "Poor"];
+const visibilityOptions = ['Excellent', 'Good', 'Fair', 'Poor'];
 /**
  * Purpose: Defines the ordered airspace options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const airspaceOptions = ["B", "C", "D", "E", "G"];
+const airspaceOptions = ['B', 'C', 'D', 'E', 'G'];
 /**
  * Purpose: Defines the ordered laanc options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const laancOptions = ["Yes", "No", "Not Applicable"];
+const laancOptions = ['Yes', 'No', 'Not Applicable'];
 /**
  * Purpose: Defines the ordered water body type options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const waterBodyTypeOptions = [
-  "River",
-  "Stream",
-  "Lake",
-  "Pond",
-  "Irrigation Canal",
-  "Storm Drain",
-  "Wetland",
-  "Other",
-];
+const waterBodyTypeOptions = ['River', 'Stream', 'Lake', 'Pond', 'Irrigation Canal', 'Storm Drain', 'Wetland', 'Other'];
 /**
  * Purpose: Defines the ordered reclamation method options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const reclamationMethodOptions = [
-  "Collection Tank",
-  "Absorbent Material",
-  "Containment Berm",
-  "Third Party Vendor",
-  "Not Required",
-];
+const reclamationMethodOptions = ['Collection Tank', 'Absorbent Material', 'Containment Berm', 'Third Party Vendor', 'Not Required'];
 /**
  * Purpose: Defines the ordered status options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const statusOptions = ["Draft", "Complete"];
+const statusOptions = ['Draft', 'Complete'];
 /**
  * Purpose: Defines the ordered citation options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const citationOptions = [
-  "Clean Water Act 402",
-  "Clean Water Act 404",
-  "FIFRA",
-  "CA DPR",
-  "Other State Ag Dept",
-  "OSHA HazCom",
-  "Not Applicable",
-];
+const citationOptions = ['Clean Water Act 402', 'Clean Water Act 404', 'FIFRA', 'CA DPR', 'Other State Ag Dept', 'OSHA HazCom', 'Not Applicable'];
 /**
  * Purpose: Maps citation guidance values to the canonical metadata consumed by job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
 const citationGuidance: Record<string, string> = {
-  "Clean Water Act 402":
-    "This may apply if wash water or pollutants could enter a storm drain, ditch, creek, or waterway.",
-  "Clean Water Act 404":
-    "This may apply if work impacts wetlands or protected waters.",
-  FIFRA:
-    "This may apply if pesticides, disinfectants, or regulated chemicals are used.",
-  "CA DPR":
-    "This may apply for agricultural chemical applications in California.",
-  "Other State Ag Dept":
-    "This may apply if state agricultural rules cover the chemical use or application site.",
-  "OSHA HazCom":
-    "This may apply if workers handle hazardous chemicals requiring SDS/PPE communication.",
-  "Not Applicable":
-    "This may apply when no listed regulatory citation is relevant to the operation.",
+  'Clean Water Act 402': 'This may apply if wash water or pollutants could enter a storm drain, ditch, creek, or waterway.',
+  'Clean Water Act 404': 'This may apply if work impacts wetlands or protected waters.',
+  FIFRA: 'This may apply if pesticides, disinfectants, or regulated chemicals are used.',
+  'CA DPR': 'This may apply for agricultural chemical applications in California.',
+  'Other State Ag Dept': 'This may apply if state agricultural rules cover the chemical use or application site.',
+  'OSHA HazCom': 'This may apply if workers handle hazardous chemicals requiring SDS/PPE communication.',
+  'Not Applicable': 'This may apply when no listed regulatory citation is relevant to the operation.'
 };
 /**
  * Purpose: Defines the ordered ppe options used for UI choices and workflow decisions in job hazard analysis page.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const ppeOptions = [
-  "Safety Glasses",
-  "Chemical Resistant Gloves",
-  "Non-Slip Footwear",
-  "High-Vis Vest",
-  "Hearing Protection",
-  "Hard Hat",
-];
+const ppeOptions = ['Safety Glasses', 'Chemical Resistant Gloves', 'Non-Slip Footwear', 'High-Vis Vest', 'Hearing Protection', 'Hard Hat'];
 const today = new Date().toISOString().slice(0, 10);
-const defaultIncidentProcedure =
-  "Land immediately, secure area, assess injuries, notify RPIC, document, and report per FAA requirements if applicable.";
-const environmentalRunoffHelperText =
-  "Runoff planning is not limited to chemical use. Even DI or rinse water may become contaminated after contacting surfaces and should not enter storm drains or waterways.";
-const evidencePhotosBucket = "job-evidence-photos";
+const defaultIncidentProcedure = 'Land immediately, secure area, assess injuries, notify RPIC, document, and report per FAA requirements if applicable.';
+const environmentalRunoffHelperText = 'Runoff planning is not limited to chemical use. Even DI or rinse water may become contaminated after contacting surfaces and should not enter storm drains or waterways.';
+const evidencePhotosBucket = 'job-evidence-photos';
 const maxEvidencePhotoWidth = 1600;
 const evidencePhotoQuality = 0.82;
 const thumbnailWidth = 360;
+const maxCollapsedPhotoThumbnails = 4;
 
 /**
  * Purpose: Stores the shared common hazards structure used by the job hazard analysis page module.
@@ -241,72 +134,17 @@ const thumbnailWidth = 360;
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
 const commonHazards = [
-  [
-    "Drone fly-away or loss of control over public or personnel",
-    "Aircraft / Systems",
-    "RPIC",
-    "Pre-flight checks, VLOS maintained, visual observer assigned, exclusion zone established, emergency procedure briefed.",
-  ],
-  [
-    "Drone rotor strike to ground personnel or public",
-    "Ground / Site",
-    "VO",
-    "Exclusion zone marked and enforced, VO monitors perimeter, public warning signage posted, site access controlled.",
-  ],
-  [
-    "Pressure equipment failure or hose burst",
-    "Equipment",
-    "RPIC",
-    "Pre-job equipment inspection, pressure relief valve verified, hose hazard briefed, PPE worn by all crew.",
-  ],
-  [
-    "Hose trip hazard to crew or public",
-    "Ground / Site",
-    "Crew",
-    "Hoses routed and secured, cones or barriers placed, ground crew maintains awareness, public exclusion enforced.",
-  ],
-  [
-    "Chemical or soft wash exposure to personnel",
-    "Chemical Handling",
-    "RPIC",
-    "SDS reviewed, PPE issued, dilution ratios verified, containment plan in place, eyewash available.",
-  ],
-  [
-    "Contaminated runoff entering storm drains or waterways",
-    "Environmental",
-    "RPIC",
-    "Storm drains and waterways identified, drains covered or blocked, containment berm deployed, runoff direction assessed, wash water contained where required.",
-  ],
-  [
-    "Water or slip hazard on ground surface",
-    "Ground / Site",
-    "Crew",
-    "Non-slip footwear required, wet surface signage posted, work area monitored continuously, crew briefed.",
-  ],
-  [
-    "Electrical hazard from overhead power lines",
-    "Infrastructure",
-    "RPIC",
-    "Site survey identifies power lines, minimum clearance maintained, VO monitors proximity, suspend if clearance is unsafe.",
-  ],
-  [
-    "Battery fire or thermal runaway",
-    "Aircraft / Systems",
-    "RPIC",
-    "Battery inspection before flight, LiPo-safe transport, fire extinguisher on site, no charging near combustibles.",
-  ],
-  [
-    "Unauthorized airspace or LAANC violation",
-    "Airspace",
-    "RPIC",
-    "Airspace checked before operation, LAANC authorization obtained where required, documentation stored in job file.",
-  ],
-  [
-    "Heat stress or dehydration",
-    "Environmental",
-    "RPIC",
-    "Water on site, rest breaks scheduled, heat index monitored, work suspended if conditions exceed safe limits.",
-  ],
+  ['Drone fly-away or loss of control over public or personnel', 'Aircraft / Systems', 'RPIC', 'Pre-flight checks, VLOS maintained, visual observer assigned, exclusion zone established, emergency procedure briefed.'],
+  ['Drone rotor strike to ground personnel or public', 'Ground / Site', 'VO', 'Exclusion zone marked and enforced, VO monitors perimeter, public warning signage posted, site access controlled.'],
+  ['Pressure equipment failure or hose burst', 'Equipment', 'RPIC', 'Pre-job equipment inspection, pressure relief valve verified, hose hazard briefed, PPE worn by all crew.'],
+  ['Hose trip hazard to crew or public', 'Ground / Site', 'Crew', 'Hoses routed and secured, cones or barriers placed, ground crew maintains awareness, public exclusion enforced.'],
+  ['Chemical or soft wash exposure to personnel', 'Chemical Handling', 'RPIC', 'SDS reviewed, PPE issued, dilution ratios verified, containment plan in place, eyewash available.'],
+  ['Contaminated runoff entering storm drains or waterways', 'Environmental', 'RPIC', 'Storm drains and waterways identified, drains covered or blocked, containment berm deployed, runoff direction assessed, wash water contained where required.'],
+  ['Water or slip hazard on ground surface', 'Ground / Site', 'Crew', 'Non-slip footwear required, wet surface signage posted, work area monitored continuously, crew briefed.'],
+  ['Electrical hazard from overhead power lines', 'Infrastructure', 'RPIC', 'Site survey identifies power lines, minimum clearance maintained, VO monitors proximity, suspend if clearance is unsafe.'],
+  ['Battery fire or thermal runaway', 'Aircraft / Systems', 'RPIC', 'Battery inspection before flight, LiPo-safe transport, fire extinguisher on site, no charging near combustibles.'],
+  ['Unauthorized airspace or LAANC violation', 'Airspace', 'RPIC', 'Airspace checked before operation, LAANC authorization obtained where required, documentation stored in job file.'],
+  ['Heat stress or dehydration', 'Environmental', 'RPIC', 'Water on site, rest breaks scheduled, heat index monitored, work suspended if conditions exceed safe limits.']
 ] as const;
 
 /**
@@ -314,19 +152,7 @@ const commonHazards = [
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type Job = {
-  id: string;
-  organization_id: string;
-  source_proposal_id?: string | null;
-  name: string;
-  service_type: string;
-  location: string;
-  planned_date: string;
-  status: string;
-  client_name?: string | null;
-  site_address?: string | null;
-  preliminary_hazards?: unknown;
-};
+type Job = { id: string; organization_id: string; source_proposal_id?: string | null; name: string; service_type: string; location: string; planned_date: string; status: string; client_name?: string | null; site_address?: string | null; preliminary_hazards?: unknown };
 /**
  * Purpose: Defines the role person data contract used by the job hazard analysis page module.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
@@ -338,94 +164,34 @@ type RolePerson = { id: string; full_name: string; user_id: string };
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type JobPersonnelAssignment = {
-  id: string;
-  assigned_role: string;
-  personnel: RolePerson | null;
-};
+type JobPersonnelAssignment = { id: string; assigned_role: string; personnel: RolePerson | null };
 /**
  * Purpose: Defines the safety designation data contract used by the job hazard analysis page module.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
 type SafetyDesignation = { personnel: RolePerson } | null;
-type JhaAttestations = {
-  safetyManagerReviewedAt: string | null;
-  safetyManagerName: string | null;
-  safetyManagerRoleLabel: string | null;
-  safetyManagerReviewStale: boolean;
-  rpicAcceptedAt: string | null;
-  rpicName: string | null;
-  rpicRoleLabel: string | null;
-  rpicAcceptanceStale: boolean;
-};
-const emptyAttestations: JhaAttestations = {
-  safetyManagerReviewedAt: null,
-  safetyManagerName: null,
-  safetyManagerRoleLabel: null,
-  safetyManagerReviewStale: false,
-  rpicAcceptedAt: null,
-  rpicName: null,
-  rpicRoleLabel: null,
-  rpicAcceptanceStale: false,
-};
-type JobEquipmentAssignment = {
-  id: string;
-  equipment: {
-    name: string;
-    equipment_type: string | null;
-    make?: string | null;
-    model?: string | null;
-  } | null;
-};
+type JhaAttestations = { safetyManagerReviewedAt: string | null; safetyManagerName: string | null; safetyManagerRoleLabel: string | null; safetyManagerReviewStale: boolean; rpicAcceptedAt: string | null; rpicName: string | null; rpicRoleLabel: string | null; rpicAcceptanceStale: boolean };
+const emptyAttestations: JhaAttestations = { safetyManagerReviewedAt: null, safetyManagerName: null, safetyManagerRoleLabel: null, safetyManagerReviewStale: false, rpicAcceptedAt: null, rpicName: null, rpicRoleLabel: null, rpicAcceptanceStale: false };
+type JobEquipmentAssignment = { id: string; equipment: { name: string; equipment_type: string | null; make?: string | null; model?: string | null } | null };
 /**
  * Purpose: Defines the mission basics source data data contract used by the job hazard analysis page module.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type MissionBasicsSourceData = Pick<
-  JhaFormState,
-  | "operatorCompany"
-  | "remotePilotInCommand"
-  | "clientPropertyOwner"
-  | "jobDate"
-  | "siteAddress"
-  | "dronePlatform"
-  | "jobTypeScope"
-  | "crewMembers"
->;
+type MissionBasicsSourceData = Pick<JhaFormState, 'operatorCompany' | 'remotePilotInCommand' | 'clientPropertyOwner' | 'jobDate' | 'siteAddress' | 'dronePlatform' | 'jobTypeScope' | 'crewMembers'>;
 /**
  * Purpose: Represents job hazard photo data read, written, or rendered by the job hazard analysis page workflow.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type JobHazardPhoto = {
-  id: string;
-  organization_id: string;
-  job_id: string;
-  hazard_id: string | null;
-  hazard_name: string;
-  photo_url: string;
-  thumbnail_url: string | null;
-  caption: string | null;
-  include_in_packet: boolean;
-  uploaded_by: string | null;
-  created_at: string | null;
-  deleted_at: string | null;
-  display_url?: string | null;
-  thumbnail_display_url?: string | null;
-};
+type JobHazardPhoto = { id: string; organization_id: string; job_id: string; hazard_id: string | null; hazard_name: string; photo_url: string; thumbnail_url: string | null; caption: string | null; include_in_packet: boolean; uploaded_by: string | null; created_at: string | null; deleted_at: string | null; display_url?: string | null; thumbnail_display_url?: string | null };
 /**
  * Purpose: Defines the optimized image data contract used by the job hazard analysis page module.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type OptimizedImage = {
-  blob: Blob;
-  width: number;
-  height: number;
-  contentType: string;
-};
+type OptimizedImage = { blob: Blob; width: number; height: number; contentType: string };
 /**
  * Purpose: Defines the hazard photo upload options data contract used by the job hazard analysis page module.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
@@ -437,19 +203,8 @@ type HazardPhotoUploadOptions = { caption: string; includeInPacket: boolean };
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type HazardPhotoUpdate = Pick<
-  JobHazardPhoto,
-  "caption" | "include_in_packet"
-> & { hazard_id?: string | null; hazard_name?: string };
-type HazardEntry = {
-  id: string;
-  description: string;
-  category: string;
-  mitigation: string;
-  owner: string;
-  notes: string;
-  sourceType?: "Custom Hazard" | "Library";
-};
+type HazardPhotoUpdate = Pick<JobHazardPhoto, 'caption' | 'include_in_packet'> & { hazard_id?: string | null; hazard_name?: string };
+type HazardEntry = { id: string; description: string; category: string; mitigation: string; owner: string; notes: string; sourceType?: 'Custom Hazard' | 'Library' };
 type PpeValue = boolean | string | string[];
 /**
  * Purpose: Defines the ppe requirements data contract used by the job hazard analysis page module.
@@ -463,77 +218,10 @@ type PpeRequirements = Record<string, PpeValue>;
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
 type JhaFormState = {
-  operatorCompany: string;
-  jhaNumber: string;
-  remotePilotInCommand: string;
-  datePrepared: string;
-  clientPropertyOwner: string;
-  jobDate: string;
-  siteAddress: string;
-  dronePlatform: string;
-  jobTypeScope: string;
-  crewMembers: string;
-  weatherConditions: string;
-  faaAirspaceClass: string;
-  surfaceType: string;
-  surfaceTypeOther: string;
-  workSurfaceType: string;
-  workSurfaceTypeOther: string;
-  buildingHeight: string;
-  siteAccess: string;
-  siteAccessConstraints: string[];
-  siteAccessOther: string;
-  siteAccessNotes: string;
-  windSpeed: string;
-  weather: string;
-  visibility: string;
-  publicPresence: boolean;
-  exclusionZonePlanned: boolean;
-  exclusionZoneDescription: string;
-  publicRightOfWayRestrictionRequired: string;
-  permitAuthorizationRequired: string;
-  permitIssuingAuthority: string;
-  permitAuthorizationNumber: string;
-  permitAuthorizationStatus: string;
-  permitApprovalDate: string;
-  permitExpirationDate: string;
-  environmentalConcern: boolean;
-  environmentalConcernCategories: string[];
-  environmentalConcernOther: string;
-  runoffRisk: boolean;
-  runoffContaminants: string[];
-  runoffContaminantOther: string;
-  chemicalType: string;
-  chemicalSdsReviewed: boolean;
-  hazComCommunicationRequired: boolean;
-  containmentPlan: string;
-  regulatoryCitations: string[];
-  waterBodyProximity: boolean;
-  waterBodyDistance: string;
-  waterBodyType: string;
-  secondaryContainmentInPlace: boolean;
-  reclamationMethod: string;
-  reclamationVolumeEstimate: string;
-  disposalVendorNameContact: string;
-  laancRequired: string;
-  relevantAirportHeliport: string;
-  knownAirspaceRestrictions: string;
-  additionalAuthorizationRequired: string;
-  hazardEntries: HazardEntry[];
-  ppeRequirements: PpeRequirements;
-  nearestHospital: string;
-  emergencyFacilityAddress: string;
-  emergencyContact: string;
-  droneIncidentProcedure: string;
-  communicationMethods: string[];
-  communicationMethodOther: string;
-  radioChannel: string;
-  communicationPlanReviewed: boolean;
-  lostCommunicationProcedureReviewed: boolean;
-  crewBriefed: boolean;
-  controlsInPlace: boolean;
-  stopWorkAuthorityAcknowledged: boolean;
-  status: string;
+  operatorCompany: string; jhaNumber: string; remotePilotInCommand: string; datePrepared: string; clientPropertyOwner: string; jobDate: string; siteAddress: string; dronePlatform: string; jobTypeScope: string; crewMembers: string; weatherConditions: string; faaAirspaceClass: string;
+  surfaceType: string; surfaceTypeOther: string; workSurfaceType: string; workSurfaceTypeOther: string; buildingHeight: string; siteAccess: string; siteAccessConstraints: string[]; siteAccessOther: string; siteAccessNotes: string; windSpeed: string; weather: string; visibility: string; publicPresence: boolean; exclusionZonePlanned: boolean; exclusionZoneDescription: string; publicRightOfWayRestrictionRequired: string; permitAuthorizationRequired: string; permitIssuingAuthority: string; permitAuthorizationNumber: string; permitAuthorizationStatus: string; permitApprovalDate: string; permitExpirationDate: string;
+  environmentalConcern: boolean; environmentalConcernCategories: string[]; environmentalConcernOther: string; runoffRisk: boolean; runoffContaminants: string[]; runoffContaminantOther: string; chemicalType: string; chemicalSdsReviewed: boolean; hazComCommunicationRequired: boolean; containmentPlan: string; regulatoryCitations: string[]; waterBodyProximity: boolean; waterBodyDistance: string; waterBodyType: string; secondaryContainmentInPlace: boolean; reclamationMethod: string; reclamationVolumeEstimate: string; disposalVendorNameContact: string;
+  laancRequired: string; relevantAirportHeliport: string; knownAirspaceRestrictions: string; additionalAuthorizationRequired: string; hazardEntries: HazardEntry[]; ppeRequirements: PpeRequirements; nearestHospital: string; emergencyFacilityAddress: string; emergencyContact: string; droneIncidentProcedure: string; communicationMethods: string[]; communicationMethodOther: string; radioChannel: string; communicationPlanReviewed: boolean; lostCommunicationProcedureReviewed: boolean; crewBriefed: boolean; controlsInPlace: boolean; stopWorkAuthorityAcknowledged: boolean; status: string;
 };
 /**
  * Purpose: Defines the jha assessment data contract used by the job hazard analysis page module.
@@ -546,208 +234,101 @@ type JhaAssessment = Record<string, any>;
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type ProposalAirspaceSource = {
-  airspace_class: string | null;
-  relevant_airport_heliport: string | null;
-  known_airspace_restrictions: string | null;
-  laanc_required: boolean | null;
-  additional_authorization_required: boolean | null;
-};
+type ProposalAirspaceSource = { airspace_class: string | null; relevant_airport_heliport: string | null; known_airspace_restrictions: string | null; laanc_required: boolean | null; additional_authorization_required: boolean | null };
 
 /**
  * Computes create safe storage name for the surrounding workflow.
  * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
  */
-function createSafeStorageName() {
-  if ("randomUUID" in crypto) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
+function createSafeStorageName() { if ('randomUUID' in crypto) return crypto.randomUUID(); return `${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 /**
  * Computes get storage path url for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-async function getDisplayUrl(path: string | null) {
-  if (!path) return null;
-  if (path.startsWith("http")) return path;
-  const { data, error } = await supabase.storage
-    .from(evidencePhotosBucket)
-    .createSignedUrl(path, 60 * 60);
-  if (!error && data?.signedUrl) return data.signedUrl;
-  return null;
-}
+function getStoragePathUrl(path: string) { return supabase.storage.from(evidencePhotosBucket).getPublicUrl(path).data.publicUrl; }
+/**
+ * Computes get display url for the surrounding workflow.
+ * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
+ */
+async function getDisplayUrl(path: string | null) { if (!path) return null; if (path.startsWith('http')) return path; const { data, error } = await supabase.storage.from(evidencePhotosBucket).createSignedUrl(path, 60 * 60); if (!error && data?.signedUrl) return data.signedUrl; return getStoragePathUrl(path); }
+/**
+ * Picks the smallest available image URL for an evidence photo preview.
+ * Fallback/error behavior: Falls back to the full photo and then to the storage path URL when signed URLs are unavailable.
+ */
+function getPhotoThumbnailSrc(photo: JobHazardPhoto) { return photo.thumbnail_display_url ?? photo.display_url ?? getStoragePathUrl(photo.thumbnail_url ?? photo.photo_url); }
 /**
  * Implements attach display urls for this module.
  * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
  */
-async function attachDisplayUrls(photos: JobHazardPhoto[]) {
-  return Promise.all(
-    photos.map(async (photo) => ({
-      ...photo,
-      display_url: await getDisplayUrl(photo.photo_url),
-      thumbnail_display_url: await getDisplayUrl(photo.thumbnail_url),
-    })),
-  );
-}
+async function attachDisplayUrls(photos: JobHazardPhoto[]) { return Promise.all(photos.map(async (photo) => ({ ...photo, display_url: await getDisplayUrl(photo.photo_url), thumbnail_display_url: await getDisplayUrl(photo.thumbnail_url) }))); }
 /**
  * Performs load image for the surrounding workflow.
  * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
  */
-function loadImage(file: File) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("Unable to read this image file."));
-    };
-    image.src = objectUrl;
-  });
-}
+function loadImage(file: File) { return new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); const objectUrl = URL.createObjectURL(file); image.onload = () => { URL.revokeObjectURL(objectUrl); resolve(image); }; image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Unable to read this image file.')); }; image.src = objectUrl; }); }
 /**
  * Implements optimize image for this module.
  * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
  */
-async function optimizeImage(
-  file: File,
-  maxWidth: number,
-  quality: number,
-): Promise<OptimizedImage> {
-  const image = await loadImage(file);
-  const scale = image.width > maxWidth ? maxWidth / image.width : 1;
-  const width = Math.max(1, Math.round(image.width * scale));
-  const height = Math.max(1, Math.round(image.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context)
-    throw new Error("Image optimization is not supported in this browser.");
-  context.drawImage(image, 0, 0, width, height);
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", quality),
-  );
-  if (!blob)
-    throw new Error("Image compression is not supported in this browser.");
-  return { blob, width, height, contentType: "image/jpeg" };
-}
+async function optimizeImage(file: File, maxWidth: number, quality: number): Promise<OptimizedImage> { const image = await loadImage(file); const scale = image.width > maxWidth ? maxWidth / image.width : 1; const width = Math.max(1, Math.round(image.width * scale)); const height = Math.max(1, Math.round(image.height * scale)); const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; const context = canvas.getContext('2d'); if (!context) throw new Error('Image optimization is not supported in this browser.'); context.drawImage(image, 0, 0, width, height); const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality)); if (!blob) throw new Error('Image compression is not supported in this browser.'); return { blob, width, height, contentType: 'image/jpeg' }; }
 /**
  * Computes create hazard entry for the surrounding workflow.
  * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
  */
-function createHazardEntry(overrides: Partial<HazardEntry> = {}): HazardEntry {
-  return {
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    description: "",
-    category: "",
-    mitigation: "",
-    owner: "",
-    notes: "",
-    ...overrides,
-  };
-}
+function createHazardEntry(overrides: Partial<HazardEntry> = {}): HazardEntry { return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, description: '', category: '', mitigation: '', owner: '', notes: '', ...overrides }; }
 /**
  * Computes get initial ppe requirements for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function getInitialPpeRequirements(): PpeRequirements {
-  return ppeOptions.reduce<PpeRequirements>(
-    (requirements, option) => ({ ...requirements, [option]: false }),
-    {},
-  );
-}
+function getInitialPpeRequirements(): PpeRequirements { return ppeOptions.reduce<PpeRequirements>((requirements, option) => ({ ...requirements, [option]: false }), {}); }
 /**
  * Computes get stored array for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function getStoredArray(value: PpeValue | undefined) {
-  return Array.isArray(value) ? value : [];
-}
+function getStoredArray(value: PpeValue | undefined) { return Array.isArray(value) ? value : []; }
 /**
  * Computes get stored string for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function getStoredString(value: PpeValue | undefined) {
-  return typeof value === "string" ? value : "";
-}
+function getStoredString(value: PpeValue | undefined) { return typeof value === 'string' ? value : ''; }
 /**
  * Computes split stored option for the surrounding workflow.
  * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
  */
-function splitStoredOption(
-  value: string | null | undefined,
-  options: string[],
-) {
-  if (!value) return { option: "", other: "" };
-  return options.includes(value)
-    ? { option: value, other: "" }
-    : { option: "Other", other: value };
-}
+function splitStoredOption(value: string | null | undefined, options: string[]) { if (!value) return { option: '', other: '' }; return options.includes(value) ? { option: value, other: '' } : { option: 'Other', other: value }; }
 /**
  * Computes get effective ground surface for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function getEffectiveGroundSurface(formData: JhaFormState) {
-  return formData.surfaceType === "Other"
-    ? formData.surfaceTypeOther.trim()
-    : formData.surfaceType;
-}
+function getEffectiveGroundSurface(formData: JhaFormState) { return formData.surfaceType === 'Other' ? formData.surfaceTypeOther.trim() : formData.surfaceType; }
 /**
  * Computes get effective work surface for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function getEffectiveWorkSurface(formData: JhaFormState) {
-  return formData.workSurfaceType === "Other"
-    ? formData.workSurfaceTypeOther.trim()
-    : formData.workSurfaceType;
-}
+function getEffectiveWorkSurface(formData: JhaFormState) { return formData.workSurfaceType === 'Other' ? formData.workSurfaceTypeOther.trim() : formData.workSurfaceType; }
 /**
  * Computes parse nullable number for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function parseNullableNumber(value: string) {
-  return value.trim() ? Number(value) : null;
-}
+function parseNullableNumber(value: string) { return value.trim() ? Number(value) : null; }
 /**
  * Computes format date for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function formatDate(value: string) {
-  if (!value) return "Not scheduled";
-  const [year, month, day] = value.split("-");
-  return year && month && day ? `${month}/${day}/${year}` : value;
-}
+function formatDate(value: string) { if (!value) return 'Not scheduled'; const [year, month, day] = value.split('-'); return year && month && day ? `${month}/${day}/${year}` : value; }
 /**
  * Determines has runoff hazard for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function hasRunoffHazard(formData: JhaFormState) {
-  return formData.hazardEntries.some(
-    (entry) =>
-      entry.description ===
-      "Contaminated runoff entering storm drains or waterways",
-  );
-}
+function hasRunoffHazard(formData: JhaFormState) { return formData.hazardEntries.some((entry) => entry.description === 'Contaminated runoff entering storm drains or waterways'); }
 
 /**
  * Computes normalize job personnel assignment for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
 function normalizeJobPersonnelAssignment(row: unknown): JobPersonnelAssignment {
-  const assignment = row as JobPersonnelAssignment & {
-    personnel:
-      | JobPersonnelAssignment["personnel"]
-      | JobPersonnelAssignment["personnel"][];
-  };
-  return {
-    ...assignment,
-    personnel: Array.isArray(assignment.personnel)
-      ? (assignment.personnel[0] ?? null)
-      : assignment.personnel,
-  };
+  const assignment = row as JobPersonnelAssignment & { personnel: JobPersonnelAssignment['personnel'] | JobPersonnelAssignment['personnel'][] };
+  return { ...assignment, personnel: Array.isArray(assignment.personnel) ? assignment.personnel[0] ?? null : assignment.personnel };
 }
 
 /**
@@ -755,17 +336,8 @@ function normalizeJobPersonnelAssignment(row: unknown): JobPersonnelAssignment {
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
 function normalizeJobEquipmentAssignment(row: unknown): JobEquipmentAssignment {
-  const assignment = row as JobEquipmentAssignment & {
-    equipment:
-      | JobEquipmentAssignment["equipment"]
-      | JobEquipmentAssignment["equipment"][];
-  };
-  return {
-    ...assignment,
-    equipment: Array.isArray(assignment.equipment)
-      ? (assignment.equipment[0] ?? null)
-      : assignment.equipment,
-  };
+  const assignment = row as JobEquipmentAssignment & { equipment: JobEquipmentAssignment['equipment'] | JobEquipmentAssignment['equipment'][] };
+  return { ...assignment, equipment: Array.isArray(assignment.equipment) ? assignment.equipment[0] ?? null : assignment.equipment };
 }
 
 /**
@@ -774,55 +346,30 @@ function normalizeJobEquipmentAssignment(row: unknown): JobEquipmentAssignment {
  */
 function getAssignedEquipmentLabel(assignment: JobEquipmentAssignment) {
   const equipment = assignment.equipment;
-  if (!equipment) return "";
-  const makeModel = [equipment.make, equipment.model]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  return makeModel && makeModel !== equipment.name
-    ? `${equipment.name} (${makeModel})`
-    : equipment.name;
+  if (!equipment) return '';
+  const makeModel = [equipment.make, equipment.model].filter(Boolean).join(' ').trim();
+  return makeModel && makeModel !== equipment.name ? `${equipment.name} (${makeModel})` : equipment.name;
 }
 
 /**
  * Computes build mission basics source data for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function buildMissionBasicsSourceData(
-  job: Job,
-  assignments: JobPersonnelAssignment[],
-  equipmentAssignments: JobEquipmentAssignment[],
-  operatorCompany: string,
-): MissionBasicsSourceData {
-  const rpicAssignment = assignments.find(
-    (assignment) => assignment.assigned_role === "RPIC",
-  );
-  const crewAssignments = assignments.filter(
-    (assignment) => assignment.assigned_role !== "RPIC",
-  );
-  const assignedDrones = equipmentAssignments.filter(
-    (assignment) => assignment.equipment?.equipment_type === "Drone",
-  );
-  const droneAssignments =
-    assignedDrones.length > 0 ? assignedDrones : equipmentAssignments;
+function buildMissionBasicsSourceData(job: Job, assignments: JobPersonnelAssignment[], equipmentAssignments: JobEquipmentAssignment[], operatorCompany: string): MissionBasicsSourceData {
+  const rpicAssignment = assignments.find((assignment) => assignment.assigned_role === 'RPIC');
+  const crewAssignments = assignments.filter((assignment) => assignment.assigned_role !== 'RPIC');
+  const assignedDrones = equipmentAssignments.filter((assignment) => assignment.equipment?.equipment_type === 'Drone');
+  const droneAssignments = assignedDrones.length > 0 ? assignedDrones : equipmentAssignments;
 
   return {
     operatorCompany,
-    remotePilotInCommand: rpicAssignment?.personnel?.full_name ?? "",
-    clientPropertyOwner: job.client_name ?? "",
-    jobDate: job.planned_date ?? "",
-    siteAddress: job.site_address?.trim() || job.location || "",
-    dronePlatform: droneAssignments
-      .map(getAssignedEquipmentLabel)
-      .filter(Boolean)
-      .join(", "),
+    remotePilotInCommand: rpicAssignment?.personnel?.full_name ?? '',
+    clientPropertyOwner: job.client_name ?? '',
+    jobDate: job.planned_date ?? '',
+    siteAddress: job.site_address?.trim() || job.location || '',
+    dronePlatform: droneAssignments.map(getAssignedEquipmentLabel).filter(Boolean).join(', '),
     jobTypeScope: `${job.service_type} - ${job.name}`,
-    crewMembers: crewAssignments
-      .map(
-        (assignment) =>
-          `${assignment.personnel?.full_name ?? "Personnel record unavailable"} (${assignment.assigned_role})`,
-      )
-      .join(", "),
+    crewMembers: crewAssignments.map((assignment) => `${assignment.personnel?.full_name ?? 'Personnel record unavailable'} (${assignment.assigned_role})`).join(', ')
   };
 }
 
@@ -830,338 +377,35 @@ function buildMissionBasicsSourceData(
  * Computes get initial form state for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function getInitialFormState(
-  job: Job | null,
-  missionBasicsSource?: MissionBasicsSourceData,
-  proposal?: ProposalAirspaceSource | null,
-): JhaFormState {
-  return {
-    operatorCompany: missionBasicsSource?.operatorCompany ?? "",
-    jhaNumber: job ? `JHA-${job.id.slice(0, 8).toUpperCase()}` : "",
-    remotePilotInCommand: missionBasicsSource?.remotePilotInCommand ?? "",
-    datePrepared: today,
-    clientPropertyOwner: missionBasicsSource?.clientPropertyOwner ?? "",
-    jobDate: missionBasicsSource?.jobDate ?? job?.planned_date ?? today,
-    siteAddress: missionBasicsSource?.siteAddress ?? job?.location ?? "",
-    dronePlatform: missionBasicsSource?.dronePlatform ?? "",
-    jobTypeScope:
-      missionBasicsSource?.jobTypeScope ??
-      (job ? `${job.service_type} - ${job.name}` : ""),
-    crewMembers: missionBasicsSource?.crewMembers ?? "",
-    weatherConditions: "",
-    faaAirspaceClass: proposal?.airspace_class?.replace("Class ", "") ?? "",
-    surfaceType: "",
-    surfaceTypeOther: "",
-    workSurfaceType: "",
-    workSurfaceTypeOther: "",
-    buildingHeight: "",
-    siteAccess: "",
-    siteAccessConstraints: [],
-    siteAccessOther: "",
-    siteAccessNotes: "",
-    windSpeed: "",
-    weather: weatherOptions[0],
-    visibility: visibilityOptions[0],
-    publicPresence: false,
-    exclusionZonePlanned: false,
-    exclusionZoneDescription: "",
-    publicRightOfWayRestrictionRequired: "",
-    permitAuthorizationRequired: "",
-    permitIssuingAuthority: "",
-    permitAuthorizationNumber: "",
-    permitAuthorizationStatus: "Pending",
-    permitApprovalDate: "",
-    permitExpirationDate: "",
-    environmentalConcern: false,
-    environmentalConcernCategories: [],
-    environmentalConcernOther: "",
-    runoffRisk: false,
-    runoffContaminants: [],
-    runoffContaminantOther: "",
-    chemicalType: "",
-    chemicalSdsReviewed: false,
-    hazComCommunicationRequired: false,
-    containmentPlan: "",
-    regulatoryCitations: [],
-    waterBodyProximity: false,
-    waterBodyDistance: "",
-    waterBodyType: waterBodyTypeOptions[0],
-    secondaryContainmentInPlace: false,
-    reclamationMethod: reclamationMethodOptions[0],
-    reclamationVolumeEstimate: "",
-    disposalVendorNameContact: "",
-    laancRequired:
-      proposal?.laanc_required === true
-        ? "Yes"
-        : proposal?.laanc_required === false
-          ? "No"
-          : laancOptions[2],
-    relevantAirportHeliport: proposal?.relevant_airport_heliport ?? "",
-    knownAirspaceRestrictions: proposal?.known_airspace_restrictions ?? "",
-    additionalAuthorizationRequired:
-      proposal?.additional_authorization_required === true
-        ? "Yes"
-        : proposal?.additional_authorization_required === false
-          ? "No"
-          : "Not Applicable",
-    hazardEntries: [],
-    ppeRequirements: getInitialPpeRequirements(),
-    nearestHospital: "",
-    emergencyFacilityAddress: "",
-    emergencyContact: "",
-    droneIncidentProcedure: defaultIncidentProcedure,
-    communicationMethods: [],
-    communicationMethodOther: "",
-    radioChannel: "",
-    communicationPlanReviewed: false,
-    lostCommunicationProcedureReviewed: false,
-    crewBriefed: false,
-    controlsInPlace: false,
-    stopWorkAuthorityAcknowledged: false,
-    status: statusOptions[0],
-  };
+function getInitialFormState(job: Job | null, missionBasicsSource?: MissionBasicsSourceData, proposal?: ProposalAirspaceSource | null): JhaFormState {
+  return { operatorCompany: missionBasicsSource?.operatorCompany ?? '', jhaNumber: job ? `JHA-${job.id.slice(0, 8).toUpperCase()}` : '', remotePilotInCommand: missionBasicsSource?.remotePilotInCommand ?? '', datePrepared: today, clientPropertyOwner: missionBasicsSource?.clientPropertyOwner ?? '', jobDate: missionBasicsSource?.jobDate ?? job?.planned_date ?? today, siteAddress: missionBasicsSource?.siteAddress ?? job?.location ?? '', dronePlatform: missionBasicsSource?.dronePlatform ?? '', jobTypeScope: missionBasicsSource?.jobTypeScope ?? (job ? `${job.service_type} - ${job.name}` : ''), crewMembers: missionBasicsSource?.crewMembers ?? '', weatherConditions: '', faaAirspaceClass: proposal?.airspace_class?.replace('Class ', '') ?? '', surfaceType: '', surfaceTypeOther: '', workSurfaceType: '', workSurfaceTypeOther: '', buildingHeight: '', siteAccess: '', siteAccessConstraints: [], siteAccessOther: '', siteAccessNotes: '', windSpeed: '', weather: weatherOptions[0], visibility: visibilityOptions[0], publicPresence: false, exclusionZonePlanned: false, exclusionZoneDescription: '', publicRightOfWayRestrictionRequired: '', permitAuthorizationRequired: '', permitIssuingAuthority: '', permitAuthorizationNumber: '', permitAuthorizationStatus: 'Pending', permitApprovalDate: '', permitExpirationDate: '', environmentalConcern: false, environmentalConcernCategories: [], environmentalConcernOther: '', runoffRisk: false, runoffContaminants: [], runoffContaminantOther: '', chemicalType: '', chemicalSdsReviewed: false, hazComCommunicationRequired: false, containmentPlan: '', regulatoryCitations: [], waterBodyProximity: false, waterBodyDistance: '', waterBodyType: waterBodyTypeOptions[0], secondaryContainmentInPlace: false, reclamationMethod: reclamationMethodOptions[0], reclamationVolumeEstimate: '', disposalVendorNameContact: '', laancRequired: proposal?.laanc_required === true ? 'Yes' : proposal?.laanc_required === false ? 'No' : laancOptions[2], relevantAirportHeliport: proposal?.relevant_airport_heliport ?? '', knownAirspaceRestrictions: proposal?.known_airspace_restrictions ?? '', additionalAuthorizationRequired: proposal?.additional_authorization_required === true ? 'Yes' : proposal?.additional_authorization_required === false ? 'No' : 'Not Applicable', hazardEntries: [], ppeRequirements: getInitialPpeRequirements(), nearestHospital: '', emergencyFacilityAddress: '', emergencyContact: '', droneIncidentProcedure: defaultIncidentProcedure, communicationMethods: [], communicationMethodOther: '', radioChannel: '', communicationPlanReviewed: false, lostCommunicationProcedureReviewed: false, crewBriefed: false, controlsInPlace: false, stopWorkAuthorityAcknowledged: false, status: statusOptions[0] };
 }
-function normalizeHazards(value: unknown) {
-  if (!Array.isArray(value)) return [];
-  return value.map((entry) => {
-    const item = entry as Partial<HazardEntry> & {
-      hazard_name?: string;
-      hazard?: string;
-      default_mitigation?: string;
-    };
-    return createHazardEntry({
-      id: item.id || createHazardEntry().id,
-      description: item.description ?? item.hazard_name ?? item.hazard ?? "",
-      category: item.category ?? "",
-      mitigation: item.mitigation ?? item.default_mitigation ?? "",
-      owner: item.owner ?? "",
-      notes: item.notes ?? "",
-      sourceType: item.sourceType,
-    });
-  });
-}
-function normalizePpe(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return getInitialPpeRequirements();
-  return { ...getInitialPpeRequirements(), ...(value as PpeRequirements) };
-}
+function normalizeHazards(value: unknown) { if (!Array.isArray(value)) return []; return value.map((entry) => { const item = entry as Partial<HazardEntry> & { hazard_name?: string; hazard?: string; default_mitigation?: string; source?: string }; const sourceType = item.sourceType ?? (item.source === 'custom' ? 'Custom Hazard' : item.source === 'library' ? 'Library' : undefined); return createHazardEntry({ id: item.id || createHazardEntry().id, description: item.description ?? item.hazard_name ?? item.hazard ?? '', category: item.category ?? '', mitigation: item.mitigation ?? item.default_mitigation ?? '', owner: item.owner ?? '', notes: item.notes ?? '', sourceType }); }); }
+function normalizePpe(value: unknown) { if (!value || typeof value !== 'object' || Array.isArray(value)) return getInitialPpeRequirements(); return { ...getInitialPpeRequirements(), ...(value as PpeRequirements) }; }
+/**
+ * Builds the content columns a JHA save writes, excluding ownership, certification time, and update time.
+ * Fallback/error behavior: blank text persists as null and unparseable numbers follow parseNullableNumber.
+ */
+function buildAssessmentRecord(formData: JhaFormState) { const ppeRequirements = { ...formData.ppeRequirements, __workSurfaceType: getEffectiveWorkSurface(formData), __siteAccessConstraints: formData.siteAccessConstraints, __siteAccessOther: formData.siteAccessOther.trim(), __siteAccessNotes: formData.siteAccessNotes.trim(), __environmentalConcern: formData.environmentalConcern, __environmentalConcernCategories: formData.environmentalConcernCategories, __environmentalConcernOther: formData.environmentalConcernOther.trim(), __runoffContaminants: formData.runoffContaminants, __runoffContaminantOther: formData.runoffContaminantOther.trim(), __chemicalSdsReviewed: formData.chemicalSdsReviewed, __hazComCommunicationRequired: formData.hazComCommunicationRequired, __communicationMethods: formData.communicationMethods, __communicationMethodOther: formData.communicationMethodOther.trim(), __radioChannel: formData.radioChannel.trim(), __communicationPlanReviewed: formData.communicationPlanReviewed, __lostCommunicationProcedureReviewed: formData.lostCommunicationProcedureReviewed }; const siteAccessSummary = [...formData.siteAccessConstraints.filter((constraint) => constraint !== 'Other'), formData.siteAccessConstraints.includes('Other') ? formData.siteAccessOther.trim() : '', formData.siteAccessNotes.trim()].filter(Boolean).join('; '); return { operator_company: formData.operatorCompany.trim() || null, jha_number: formData.jhaNumber.trim() || null, remote_pilot_in_command: formData.remotePilotInCommand.trim() || null, date_prepared: formData.datePrepared || null, client_property_owner: formData.clientPropertyOwner.trim() || null, job_date: formData.jobDate || null, site_address: formData.siteAddress.trim() || null, drone_platform: formData.dronePlatform.trim() || null, job_type_scope: formData.jobTypeScope.trim() || null, crew_members: formData.crewMembers.trim() || null, weather_conditions: formData.weatherConditions.trim() || null, faa_airspace_class: formData.faaAirspaceClass || null, surface_type: getEffectiveGroundSurface(formData) || null, building_height: parseNullableNumber(formData.buildingHeight), site_access: siteAccessSummary || null, wind_speed: parseNullableNumber(formData.windSpeed), weather: formData.weather, visibility: formData.visibility, public_presence: formData.publicPresence, exclusion_zone_planned: formData.exclusionZonePlanned, exclusion_zone_description: formData.exclusionZoneDescription.trim() || null, public_right_of_way_restriction_required: formData.publicRightOfWayRestrictionRequired === 'Yes' ? true : formData.publicRightOfWayRestrictionRequired === 'No' ? false : null, permit_authorization_required: formData.publicRightOfWayRestrictionRequired === 'Yes' ? (formData.permitAuthorizationRequired === 'Yes' ? true : formData.permitAuthorizationRequired === 'No' ? false : null) : null, permit_issuing_authority: formData.publicRightOfWayRestrictionRequired === 'Yes' && formData.permitAuthorizationRequired === 'Yes' ? formData.permitIssuingAuthority.trim() || null : null, permit_authorization_number: formData.publicRightOfWayRestrictionRequired === 'Yes' && formData.permitAuthorizationRequired === 'Yes' ? formData.permitAuthorizationNumber.trim() || null : null, permit_authorization_status: formData.publicRightOfWayRestrictionRequired === 'Yes' && formData.permitAuthorizationRequired === 'Yes' ? formData.permitAuthorizationStatus || null : null, permit_approval_date: formData.publicRightOfWayRestrictionRequired === 'Yes' && formData.permitAuthorizationRequired === 'Yes' ? formData.permitApprovalDate || null : null, permit_expiration_date: formData.publicRightOfWayRestrictionRequired === 'Yes' && formData.permitAuthorizationRequired === 'Yes' ? formData.permitExpirationDate || null : null, runoff_risk: formData.runoffRisk, chemical_type: formData.runoffContaminants.includes('Chemical product used') ? formData.chemicalType.trim() || null : null, containment_plan: formData.containmentPlan.trim() || null, regulatory_citations: formData.regulatoryCitations, water_body_proximity: formData.waterBodyProximity, water_body_distance: parseNullableNumber(formData.waterBodyDistance), water_body_type: formData.waterBodyType || null, secondary_containment_in_place: formData.secondaryContainmentInPlace, reclamation_method: formData.reclamationMethod || null, reclamation_volume_estimate: parseNullableNumber(formData.reclamationVolumeEstimate), disposal_vendor_name_contact: formData.disposalVendorNameContact.trim() || null, laanc_required: formData.laancRequired, relevant_airport_heliport: formData.relevantAirportHeliport.trim() || null, known_airspace_restrictions: formData.knownAirspaceRestrictions.trim() || null, additional_authorization_required: formData.additionalAuthorizationRequired, hazard_entries: formData.hazardEntries, ppe_requirements: ppeRequirements, nearest_hospital: formData.nearestHospital.trim() || null, emergency_facility_address: formData.emergencyFacilityAddress.trim() || null, emergency_contact: formData.emergencyContact.trim() || null, drone_incident_procedure: formData.droneIncidentProcedure.trim() || null, crew_briefed: formData.crewBriefed, controls_in_place: formData.controlsInPlace, stop_work_authority_acknowledged: formData.stopWorkAuthorityAcknowledged, status: formData.status }; }
 /**
  * Computes to form state for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function toFormState(
-  job: Job,
-  assessment: JhaAssessment | null,
-  missionBasicsSource: MissionBasicsSourceData,
-  proposal?: ProposalAirspaceSource | null,
-): JhaFormState {
-  const defaults = {
-    ...getInitialFormState(job, missionBasicsSource, proposal),
-    hazardEntries: normalizeHazards(job.preliminary_hazards),
-  };
-  if (!assessment) return defaults;
-  const ppeRequirements = normalizePpe(assessment.ppe_requirements);
-  const groundSurface = splitStoredOption(
-    assessment.surface_type,
-    groundSurfaceOptions,
-  );
-  const workSurface = splitStoredOption(
-    getStoredString(ppeRequirements.__workSurfaceType),
-    workSurfaceOptions,
-  );
-  const storedRunoffContaminants = getStoredArray(
-    ppeRequirements.__runoffContaminants,
-  );
-  return {
-    ...defaults,
-    operatorCompany: defaults.operatorCompany,
-    jhaNumber: assessment.jha_number ?? defaults.jhaNumber,
-    remotePilotInCommand: defaults.remotePilotInCommand,
-    datePrepared: assessment.date_prepared ?? defaults.datePrepared,
-    clientPropertyOwner: defaults.clientPropertyOwner,
-    jobDate: defaults.jobDate,
-    siteAddress: defaults.siteAddress,
-    dronePlatform: defaults.dronePlatform,
-    jobTypeScope: defaults.jobTypeScope,
-    crewMembers: defaults.crewMembers,
-    weatherConditions: assessment.weather_conditions ?? "",
-    faaAirspaceClass:
-      assessment.faa_airspace_class ?? defaults.faaAirspaceClass,
-    surfaceType: groundSurface.option,
-    surfaceTypeOther: groundSurface.other,
-    workSurfaceType: workSurface.option,
-    workSurfaceTypeOther: workSurface.other,
-    buildingHeight: assessment.building_height?.toString() ?? "",
-    siteAccess: assessment.site_access ?? "",
-    siteAccessConstraints: getStoredArray(
-      ppeRequirements.__siteAccessConstraints,
-    ),
-    siteAccessOther: getStoredString(ppeRequirements.__siteAccessOther),
-    siteAccessNotes:
-      (getStoredString(ppeRequirements.__siteAccessNotes) ||
-        assessment.site_access) ??
-      "",
-    windSpeed: assessment.wind_speed?.toString() ?? "",
-    weather: assessment.weather ?? defaults.weather,
-    visibility: assessment.visibility ?? defaults.visibility,
-    publicPresence: Boolean(assessment.public_presence),
-    exclusionZonePlanned: Boolean(assessment.exclusion_zone_planned),
-    exclusionZoneDescription: assessment.exclusion_zone_description ?? "",
-    publicRightOfWayRestrictionRequired:
-      assessment.public_right_of_way_restriction_required === true
-        ? "Yes"
-        : assessment.public_right_of_way_restriction_required === false
-          ? "No"
-          : "",
-    permitAuthorizationRequired:
-      assessment.permit_authorization_required === true
-        ? "Yes"
-        : assessment.permit_authorization_required === false
-          ? "No"
-          : "",
-    permitIssuingAuthority: assessment.permit_issuing_authority ?? "",
-    permitAuthorizationNumber: assessment.permit_authorization_number ?? "",
-    permitAuthorizationStatus:
-      assessment.permit_authorization_status ?? "Pending",
-    permitApprovalDate: assessment.permit_approval_date ?? "",
-    permitExpirationDate: assessment.permit_expiration_date ?? "",
-    environmentalConcern:
-      Boolean(ppeRequirements.__environmentalConcern) ||
-      Boolean(assessment.runoff_risk) ||
-      Boolean(assessment.water_body_proximity),
-    environmentalConcernCategories: getStoredArray(
-      ppeRequirements.__environmentalConcernCategories,
-    ),
-    environmentalConcernOther: getStoredString(
-      ppeRequirements.__environmentalConcernOther,
-    ),
-    runoffRisk: Boolean(assessment.runoff_risk),
-    runoffContaminants:
-      storedRunoffContaminants.length > 0
-        ? storedRunoffContaminants
-        : assessment.chemical_type
-          ? ["Chemical product used"]
-          : [],
-    runoffContaminantOther: getStoredString(
-      ppeRequirements.__runoffContaminantOther,
-    ),
-    chemicalType: assessment.chemical_type ?? "",
-    chemicalSdsReviewed: Boolean(ppeRequirements.__chemicalSdsReviewed),
-    hazComCommunicationRequired: Boolean(
-      ppeRequirements.__hazComCommunicationRequired,
-    ),
-    containmentPlan: assessment.containment_plan ?? "",
-    regulatoryCitations: assessment.regulatory_citations ?? [],
-    waterBodyProximity: Boolean(assessment.water_body_proximity),
-    waterBodyDistance: assessment.water_body_distance?.toString() ?? "",
-    waterBodyType: assessment.water_body_type ?? defaults.waterBodyType,
-    secondaryContainmentInPlace: Boolean(
-      assessment.secondary_containment_in_place,
-    ),
-    reclamationMethod:
-      assessment.reclamation_method ?? defaults.reclamationMethod,
-    reclamationVolumeEstimate:
-      assessment.reclamation_volume_estimate?.toString() ?? "",
-    disposalVendorNameContact: assessment.disposal_vendor_name_contact ?? "",
-    laancRequired: assessment.laanc_required ?? defaults.laancRequired,
-    relevantAirportHeliport:
-      assessment.relevant_airport_heliport ??
-      assessment.nearby_airport_heliport ??
-      defaults.relevantAirportHeliport,
-    knownAirspaceRestrictions:
-      assessment.known_airspace_restrictions ??
-      defaults.knownAirspaceRestrictions,
-    additionalAuthorizationRequired:
-      assessment.additional_authorization_required ??
-      defaults.additionalAuthorizationRequired,
-    hazardEntries: normalizeHazards(assessment.hazard_entries),
-    ppeRequirements,
-    nearestHospital: assessment.nearest_hospital ?? "",
-    emergencyFacilityAddress: assessment.emergency_facility_address ?? "",
-    emergencyContact: assessment.emergency_contact ?? "",
-    droneIncidentProcedure:
-      assessment.drone_incident_procedure ?? defaultIncidentProcedure,
-    communicationMethods: getStoredArray(
-      ppeRequirements.__communicationMethods,
-    ),
-    communicationMethodOther: getStoredString(
-      ppeRequirements.__communicationMethodOther,
-    ),
-    radioChannel: getStoredString(ppeRequirements.__radioChannel),
-    communicationPlanReviewed: Boolean(
-      ppeRequirements.__communicationPlanReviewed,
-    ),
-    lostCommunicationProcedureReviewed: Boolean(
-      ppeRequirements.__lostCommunicationProcedureReviewed,
-    ),
-    crewBriefed: Boolean(assessment.crew_briefed),
-    controlsInPlace: Boolean(assessment.controls_in_place),
-    stopWorkAuthorityAcknowledged: Boolean(
-      assessment.stop_work_authority_acknowledged,
-    ),
-    status: assessment.status ?? defaults.status,
-  };
+function toFormState(job: Job, assessment: JhaAssessment | null, missionBasicsSource: MissionBasicsSourceData, proposal?: ProposalAirspaceSource | null): JhaFormState {
+  const defaults = { ...getInitialFormState(job, missionBasicsSource, proposal), hazardEntries: normalizeHazards(job.preliminary_hazards) }; if (!assessment) return defaults; const ppeRequirements = normalizePpe(assessment.ppe_requirements); const groundSurface = splitStoredOption(assessment.surface_type, groundSurfaceOptions); const workSurface = splitStoredOption(getStoredString(ppeRequirements.__workSurfaceType), workSurfaceOptions); const storedRunoffContaminants = getStoredArray(ppeRequirements.__runoffContaminants);
+  return { ...defaults, operatorCompany: defaults.operatorCompany, jhaNumber: assessment.jha_number ?? defaults.jhaNumber, remotePilotInCommand: defaults.remotePilotInCommand, datePrepared: assessment.date_prepared ?? defaults.datePrepared, clientPropertyOwner: defaults.clientPropertyOwner, jobDate: defaults.jobDate, siteAddress: defaults.siteAddress, dronePlatform: defaults.dronePlatform, jobTypeScope: defaults.jobTypeScope, crewMembers: defaults.crewMembers, weatherConditions: assessment.weather_conditions ?? '', faaAirspaceClass: assessment.faa_airspace_class ?? defaults.faaAirspaceClass, surfaceType: groundSurface.option, surfaceTypeOther: groundSurface.other, workSurfaceType: workSurface.option, workSurfaceTypeOther: workSurface.other, buildingHeight: assessment.building_height?.toString() ?? '', siteAccess: assessment.site_access ?? '', siteAccessConstraints: getStoredArray(ppeRequirements.__siteAccessConstraints), siteAccessOther: getStoredString(ppeRequirements.__siteAccessOther), siteAccessNotes: (getStoredString(ppeRequirements.__siteAccessNotes) || assessment.site_access) ?? '', windSpeed: assessment.wind_speed?.toString() ?? '', weather: assessment.weather ?? defaults.weather, visibility: assessment.visibility ?? defaults.visibility, publicPresence: Boolean(assessment.public_presence), exclusionZonePlanned: Boolean(assessment.exclusion_zone_planned), exclusionZoneDescription: assessment.exclusion_zone_description ?? '', publicRightOfWayRestrictionRequired: assessment.public_right_of_way_restriction_required === true ? 'Yes' : assessment.public_right_of_way_restriction_required === false ? 'No' : '', permitAuthorizationRequired: assessment.permit_authorization_required === true ? 'Yes' : assessment.permit_authorization_required === false ? 'No' : '', permitIssuingAuthority: assessment.permit_issuing_authority ?? '', permitAuthorizationNumber: assessment.permit_authorization_number ?? '', permitAuthorizationStatus: assessment.permit_authorization_status ?? 'Pending', permitApprovalDate: assessment.permit_approval_date ?? '', permitExpirationDate: assessment.permit_expiration_date ?? '', environmentalConcern: Boolean(ppeRequirements.__environmentalConcern) || Boolean(assessment.runoff_risk) || Boolean(assessment.water_body_proximity), environmentalConcernCategories: getStoredArray(ppeRequirements.__environmentalConcernCategories), environmentalConcernOther: getStoredString(ppeRequirements.__environmentalConcernOther), runoffRisk: Boolean(assessment.runoff_risk), runoffContaminants: storedRunoffContaminants.length > 0 ? storedRunoffContaminants : assessment.chemical_type ? ['Chemical product used'] : [], runoffContaminantOther: getStoredString(ppeRequirements.__runoffContaminantOther), chemicalType: assessment.chemical_type ?? '', chemicalSdsReviewed: Boolean(ppeRequirements.__chemicalSdsReviewed), hazComCommunicationRequired: Boolean(ppeRequirements.__hazComCommunicationRequired), containmentPlan: assessment.containment_plan ?? '', regulatoryCitations: assessment.regulatory_citations ?? [], waterBodyProximity: Boolean(assessment.water_body_proximity), waterBodyDistance: assessment.water_body_distance?.toString() ?? '', waterBodyType: assessment.water_body_type ?? defaults.waterBodyType, secondaryContainmentInPlace: Boolean(assessment.secondary_containment_in_place), reclamationMethod: assessment.reclamation_method ?? defaults.reclamationMethod, reclamationVolumeEstimate: assessment.reclamation_volume_estimate?.toString() ?? '', disposalVendorNameContact: assessment.disposal_vendor_name_contact ?? '', laancRequired: assessment.laanc_required ?? defaults.laancRequired, relevantAirportHeliport: assessment.relevant_airport_heliport ?? assessment.nearby_airport_heliport ?? defaults.relevantAirportHeliport, knownAirspaceRestrictions: assessment.known_airspace_restrictions ?? defaults.knownAirspaceRestrictions, additionalAuthorizationRequired: assessment.additional_authorization_required ?? defaults.additionalAuthorizationRequired, hazardEntries: normalizeHazards(assessment.hazard_entries), ppeRequirements, nearestHospital: assessment.nearest_hospital ?? '', emergencyFacilityAddress: assessment.emergency_facility_address ?? '', emergencyContact: assessment.emergency_contact ?? '', droneIncidentProcedure: assessment.drone_incident_procedure ?? defaultIncidentProcedure, communicationMethods: getStoredArray(ppeRequirements.__communicationMethods), communicationMethodOther: getStoredString(ppeRequirements.__communicationMethodOther), radioChannel: getStoredString(ppeRequirements.__radioChannel), communicationPlanReviewed: Boolean(ppeRequirements.__communicationPlanReviewed), lostCommunicationProcedureReviewed: Boolean(ppeRequirements.__lostCommunicationProcedureReviewed), crewBriefed: Boolean(assessment.crew_briefed), controlsInPlace: Boolean(assessment.controls_in_place), stopWorkAuthorityAcknowledged: Boolean(assessment.stop_work_authority_acknowledged), status: assessment.status ?? defaults.status };
 }
-function getStepCompletion(formData: JhaFormState) {
-  return [
-    Boolean(
-      formData.jhaNumber &&
-      formData.jobDate &&
-      formData.siteAddress &&
-      formData.jobTypeScope,
-    ),
-    Boolean(
-      getEffectiveGroundSurface(formData) &&
-      getEffectiveWorkSurface(formData) &&
-      formData.windSpeed &&
-      formData.weather &&
-      formData.visibility,
-    ),
-    Boolean(formData.faaAirspaceClass || formData.laancRequired),
-    !formData.runoffRisk || Boolean(formData.containmentPlan),
-    formData.hazardEntries.some(
-      (entry) => entry.description.trim() && entry.mitigation.trim(),
-    ),
-    Boolean(
-      formData.crewBriefed &&
-      formData.controlsInPlace &&
-      formData.stopWorkAuthorityAcknowledged,
-    ),
-  ];
-}
+function getStepCompletion(formData: JhaFormState) { return [Boolean(formData.jhaNumber && formData.jobDate && formData.siteAddress && formData.jobTypeScope), Boolean(getEffectiveGroundSurface(formData) && getEffectiveWorkSurface(formData) && formData.windSpeed && formData.weather && formData.visibility), Boolean(formData.faaAirspaceClass || formData.laancRequired), !formData.runoffRisk || Boolean(formData.containmentPlan), formData.hazardEntries.some((entry) => entry.description.trim() && entry.mitigation.trim()), Boolean(formData.crewBriefed && formData.controlsInPlace)]; }
 
 /**
  * Renders the job hazard analysis interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
 export function JobHazardAnalysisPage() {
-  const { jobId } = useParams();
-  const [job, setJob] = useState<Job | null>(null);
-  const [personnelAssignments, setPersonnelAssignments] = useState<
-    JobPersonnelAssignment[]
-  >([]);
-  const [safetyDesignation, setSafetyDesignation] =
-    useState<SafetyDesignation>(null);
-  const [attestations, setAttestations] =
-    useState<JhaAttestations>(emptyAttestations);
-  const [currentUserId, setCurrentUserId] = useState("");
-  const [formData, setFormData] = useState<JhaFormState | null>(null);
-  const [hazardLibrary, setHazardLibrary] = useState<HazardLibraryEntry[]>(
-    fallbackHazardLibrary,
-  );
-  const [photosByHazardId, setPhotosByHazardId] = useState<
-    Record<string, JobHazardPhoto[]>
-  >({});
-  const [uploadingHazardId, setUploadingHazardId] = useState<string | null>(
-    null,
-  );
-  const [photoError, setPhotoError] = useState<string | null>(null);
-  const [activeStep, setActiveStep] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const { jobId } = useParams(); const navigate = useNavigate(); const [job, setJob] = useState<Job | null>(null); const [personnelAssignments, setPersonnelAssignments] = useState<JobPersonnelAssignment[]>([]); const [safetyDesignation, setSafetyDesignation] = useState<SafetyDesignation>(null); const [attestations, setAttestations] = useState<JhaAttestations>(emptyAttestations); const [currentUserId, setCurrentUserId] = useState(''); const [formData, setFormData] = useState<JhaFormState | null>(null); const [hazardLibrary, setHazardLibrary] = useState<HazardLibraryEntry[]>(fallbackHazardLibrary); const [photosByHazardId, setPhotosByHazardId] = useState<Record<string, JobHazardPhoto[]>>({}); const [uploadingHazardId, setUploadingHazardId] = useState<string | null>(null); const [photoError, setPhotoError] = useState<string | null>(null); const [activeStep, setActiveStep] = useState(0); const [isLoading, setIsLoading] = useState(true); const [isSaving, setIsSaving] = useState(false); const [loadError, setLoadError] = useState<string | null>(null); const [saveError, setSaveError] = useState<string | null>(null); const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  // Stored JHA row as last loaded or saved. Saves whose columns all match it are skipped so paging
+  // through an approved JHA does not rewrite the row and mark Ready to Operate stale.
+  const [persistedAssessment, setPersistedAssessment] = useState<JhaAssessment | null>(null);
   useEffect(() => {
     let isMounted = true;
 
@@ -1171,7 +415,7 @@ export function JobHazardAnalysisPage() {
      */
     async function loadJha() {
       if (!jobId) {
-        setLoadError("Missing job id.");
+        setLoadError('Missing job id.');
         setIsLoading(false);
         return;
       }
@@ -1182,170 +426,86 @@ export function JobHazardAnalysisPage() {
 
       try {
         const jobQuery = supabase
-          .from("jobs")
-          .select(
-            "id, organization_id, name, service_type, location, planned_date, status, client_name, site_address, source_proposal_id, preliminary_hazards",
-          )
-          .eq("id", jobId)
+          .from('jobs')
+          .select('id, organization_id, name, service_type, location, planned_date, status, client_name, site_address, source_proposal_id, preliminary_hazards')
+          .eq('id', jobId)
           .maybeSingle();
-        const assessmentQuery = supabase
-          .from("jha_assessments")
-          .select(
-            "jha_number, date_prepared, weather_conditions, faa_airspace_class, surface_type, building_height, site_access, wind_speed, weather, visibility, public_presence, exclusion_zone_planned, exclusion_zone_description, public_right_of_way_restriction_required, permit_authorization_required, permit_issuing_authority, permit_authorization_number, permit_authorization_status, permit_approval_date, permit_expiration_date, runoff_risk, chemical_type, containment_plan, regulatory_citations, water_body_proximity, water_body_distance, water_body_type, secondary_containment_in_place, reclamation_method, reclamation_volume_estimate, disposal_vendor_name_contact, laanc_required, relevant_airport_heliport, nearby_airport_heliport, known_airspace_restrictions, additional_authorization_required, hazard_entries, ppe_requirements, nearest_hospital, emergency_facility_address, emergency_contact, drone_incident_procedure, crew_briefed, controls_in_place, stop_work_authority_acknowledged, status, safety_manager_name, safety_manager_role_label, safety_manager_reviewed_at, safety_manager_review_stale, rpic_name, rpic_role_label, rpic_accepted_at, rpic_acceptance_stale",
-          )
-          .eq("job_id", jobId)
-          .maybeSingle();
+        const assessmentQuery = supabase.from('jha_assessments').select('*').eq('job_id', jobId).maybeSingle();
         const photoQuery = supabase
-          .from("job_hazard_photos")
-          .select(
-            "id, organization_id, job_id, hazard_id, hazard_name, photo_url, thumbnail_url, caption, include_in_packet, uploaded_by, created_at, deleted_at",
-          )
-          .eq("job_id", jobId)
-          .is("deleted_at", null)
-          .order("created_at", { ascending: false });
+          .from('job_hazard_photos')
+          .select('*')
+          .eq('job_id', jobId)
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false });
         const assignmentsQuery = supabase
-          .from("job_personnel")
-          .select(
-            "id, assigned_role, personnel:personnel_id(id, full_name, user_id)",
-          )
-          .eq("job_id", jobId)
-          .order("created_at", { ascending: true });
+          .from('job_personnel')
+          .select('id, assigned_role, personnel:personnel_id(id, full_name, user_id)')
+          .eq('job_id', jobId)
+          .order('created_at', { ascending: true });
         const hazardLibraryQuery = supabase
-          .from("hazard_library")
-          .select(
-            "id, hazard_name, category, default_mitigation, service_types, is_universal, is_system_hazard",
-          )
-          .order("category", { ascending: true })
-          .order("hazard_name", { ascending: true });
+          .from('hazard_library')
+          .select('id, hazard_name, category, default_mitigation, service_types, is_universal, is_system_hazard')
+          .order('category', { ascending: true })
+          .order('hazard_name', { ascending: true });
         const equipmentAssignmentsQuery = supabase
-          .from("job_equipment")
-          .select(
-            "id, equipment:equipment_id(name, equipment_type, make, model)",
-          )
-          .eq("job_id", jobId)
-          .order("created_at", { ascending: true });
+          .from('job_equipment')
+          .select('id, equipment:equipment_id(name, equipment_type, make, model)')
+          .eq('job_id', jobId)
+          .order('created_at', { ascending: true });
 
-        const [
-          jobResult,
-          assessmentResult,
-          photoResult,
-          assignmentsResult,
-          equipmentAssignmentsResult,
-          hazardLibraryResult,
-        ] = await Promise.all([
+        const [jobResult, assessmentResult, photoResult, assignmentsResult, equipmentAssignmentsResult, hazardLibraryResult] = await Promise.all([
           jobQuery,
           assessmentQuery,
           photoQuery,
           assignmentsQuery,
           equipmentAssignmentsQuery,
-          hazardLibraryQuery,
+          hazardLibraryQuery
         ]);
 
         if (jobResult.error) throw jobResult.error;
         if (assessmentResult.error) throw assessmentResult.error;
         if (photoResult.error) throw photoResult.error;
         if (assignmentsResult.error) throw assignmentsResult.error;
-        if (equipmentAssignmentsResult.error)
-          throw equipmentAssignmentsResult.error;
+        if (equipmentAssignmentsResult.error) throw equipmentAssignmentsResult.error;
         if (hazardLibraryResult.error) throw hazardLibraryResult.error;
-        if (!jobResult.data) throw new Error("Job not found.");
+        if (!jobResult.data) throw new Error('Job not found.');
 
         const loadedJob = jobResult.data as Job;
-        const organizationSettings = await loadOrganizationSettingsById(
-          loadedJob.organization_id,
-        );
+        const organizationSettings = await loadOrganizationSettingsById(loadedJob.organization_id);
         const [designationResult, authResult] = await Promise.all([
-          supabase
-            .from("organization_safety_designations")
-            .select("personnel:personnel_id(id, full_name, user_id)")
-            .eq("organization_id", loadedJob.organization_id)
-            .maybeSingle(),
-          supabase.auth.getUser(),
+          supabase.from('organization_safety_designations').select('personnel:personnel_id(id, full_name, user_id)').eq('organization_id', loadedJob.organization_id).maybeSingle(),
+          supabase.auth.getUser()
         ]);
         if (designationResult.error) throw designationResult.error;
         if (authResult.error) throw authResult.error;
         let proposalAirspace: ProposalAirspaceSource | null = null;
         if (loadedJob.source_proposal_id) {
-          const proposalResult = await supabase
-            .from("proposals")
-            .select(
-              "airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required",
-            )
-            .eq("id", loadedJob.source_proposal_id)
-            .maybeSingle();
+          const proposalResult = await supabase.from('proposals').select('airspace_class, relevant_airport_heliport, known_airspace_restrictions, laanc_required, additional_authorization_required').eq('id', loadedJob.source_proposal_id).maybeSingle();
           if (proposalResult.error) throw proposalResult.error;
-          proposalAirspace =
-            proposalResult.data as ProposalAirspaceSource | null;
+          proposalAirspace = proposalResult.data as ProposalAirspaceSource | null;
         }
-        const assignments = (assignmentsResult.data ?? []).map(
-          normalizeJobPersonnelAssignment,
-        );
+        const assignments = (assignmentsResult.data ?? []).map(normalizeJobPersonnelAssignment);
         const missionBasicsSource = buildMissionBasicsSourceData(
           loadedJob,
           assignments,
-          (equipmentAssignmentsResult.data ?? []).map(
-            normalizeJobEquipmentAssignment,
-          ),
-          organizationSettings?.companyName ?? "",
+          (equipmentAssignmentsResult.data ?? []).map(normalizeJobEquipmentAssignment),
+          organizationSettings?.companyName ?? ''
         );
-        const signedPhotos = await attachDisplayUrls(
-          (photoResult.data ?? []) as JobHazardPhoto[],
-        );
-        const groupedPhotos = signedPhotos.reduce<
-          Record<string, JobHazardPhoto[]>
-        >(
-          (groups, photo) => ({
-            ...groups,
-            [photo.hazard_id ?? "none"]: [
-              ...(groups[photo.hazard_id ?? "none"] ?? []),
-              photo,
-            ],
-          }),
-          {},
-        );
+        const signedPhotos = await attachDisplayUrls((photoResult.data ?? []) as JobHazardPhoto[]);
+        const groupedPhotos = signedPhotos.reduce<Record<string, JobHazardPhoto[]>>((groups, photo) => ({ ...groups, [photo.hazard_id ?? 'none']: [...(groups[photo.hazard_id ?? 'none'] ?? []), photo] }), {});
 
         if (!isMounted) return;
         setJob(loadedJob);
         setPersonnelAssignments(assignments);
-        const designationRow = designationResult.data as {
-          personnel: RolePerson | RolePerson[] | null;
-        } | null;
-        const designatedPerson = Array.isArray(designationRow?.personnel)
-          ? designationRow?.personnel[0]
-          : designationRow?.personnel;
-        setSafetyDesignation(
-          designatedPerson ? { personnel: designatedPerson } : null,
-        );
-        setCurrentUserId(authResult.data.user?.id ?? "");
+        const designationRow = designationResult.data as { personnel: RolePerson | RolePerson[] | null } | null;
+        const designatedPerson = Array.isArray(designationRow?.personnel) ? designationRow?.personnel[0] : designationRow?.personnel;
+        setSafetyDesignation(designatedPerson ? { personnel: designatedPerson } : null);
+        setCurrentUserId(authResult.data.user?.id ?? '');
         const assessment = assessmentResult.data as JhaAssessment | null;
-        setAttestations({
-          safetyManagerReviewedAt:
-            assessment?.safety_manager_reviewed_at ?? null,
-          safetyManagerName: assessment?.safety_manager_name ?? null,
-          safetyManagerRoleLabel: assessment?.safety_manager_role_label ?? null,
-          safetyManagerReviewStale: Boolean(
-            assessment?.safety_manager_review_stale,
-          ),
-          rpicAcceptedAt: assessment?.rpic_accepted_at ?? null,
-          rpicName: assessment?.rpic_name ?? null,
-          rpicRoleLabel: assessment?.rpic_role_label ?? null,
-          rpicAcceptanceStale: Boolean(assessment?.rpic_acceptance_stale),
-        });
-        setHazardLibrary(
-          hazardLibraryResult.data?.length
-            ? restoreSystemHazardMappings(
-                hazardLibraryResult.data as HazardLibraryEntry[],
-              )
-            : fallbackHazardLibrary,
-        );
-        setFormData(
-          toFormState(
-            loadedJob,
-            assessmentResult.data as JhaAssessment | null,
-            missionBasicsSource,
-            proposalAirspace,
-          ),
-        );
+        setAttestations({ safetyManagerReviewedAt: assessment?.safety_manager_reviewed_at ?? null, safetyManagerName: assessment?.safety_manager_name ?? null, safetyManagerRoleLabel: assessment?.safety_manager_role_label ?? null, safetyManagerReviewStale: Boolean(assessment?.safety_manager_review_stale), rpicAcceptedAt: assessment?.rpic_accepted_at ?? null, rpicName: assessment?.rpic_name ?? null, rpicRoleLabel: assessment?.rpic_role_label ?? null, rpicAcceptanceStale: Boolean(assessment?.rpic_acceptance_stale) });
+        setHazardLibrary(hazardLibraryResult.data?.length ? restoreSystemHazardMappings(hazardLibraryResult.data as HazardLibraryEntry[]) : fallbackHazardLibrary);
+        setFormData(toFormState(loadedJob, assessment, missionBasicsSource, proposalAirspace));
+        setPersistedAssessment(assessment);
         setPhotosByHazardId(groupedPhotos);
       } catch (error) {
         if (isMounted) setLoadError(getErrorMessage(error));
@@ -1365,913 +525,103 @@ export function JobHazardAnalysisPage() {
    * Renders the update field interface and coordinates its user interactions.
    * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
    */
-  function updateField<T extends keyof JhaFormState>(
-    field: T,
-    value: JhaFormState[T],
-  ) {
-    setFormData((current) =>
-      current ? { ...current, [field]: value } : current,
-    );
-    setSaveMessage(null);
-  }
+  function updateField<T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) { setFormData((current) => (current ? { ...current, [field]: value } : current)); setSaveMessage(null); }
   /**
    * Handles update hazard while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
-  function updateHazard(
-    index: number,
-    field: keyof HazardEntry,
-    value: string,
-  ) {
-    setFormData((current) =>
-      current
-        ? {
-            ...current,
-            hazardEntries: current.hazardEntries.map((entry, entryIndex) =>
-              entryIndex === index ? { ...entry, [field]: value } : entry,
-            ),
-          }
-        : current,
-    );
-    setSaveMessage(null);
-  }
-  function addHazardFromSuggestion(
-    hazard: (typeof commonHazards)[number] | HazardLibraryEntry,
-  ) {
-    const values =
-      "hazard_name" in hazard
-        ? {
-            description: hazard.hazard_name,
-            category: hazard.category,
-            owner: "",
-            mitigation: hazard.default_mitigation,
-            sourceType: "Library" as const,
-          }
-        : {
-            description: hazard[0],
-            category: hazard[1],
-            owner: hazard[2],
-            mitigation: hazard[3],
-            sourceType: "Library" as const,
-          };
-    setFormData((current) => {
-      if (
-        !current ||
-        current.hazardEntries.some(
-          (entry) =>
-            entry.description.toLowerCase() ===
-            values.description.toLowerCase(),
-        )
-      )
-        return current;
-      return {
-        ...current,
-        hazardEntries: [...current.hazardEntries, createHazardEntry(values)],
-      };
-    });
-    setSaveMessage(null);
-  }
-  function addCustomHazard() {
-    setFormData((current) =>
-      current
-        ? {
-            ...current,
-            hazardEntries: [
-              ...current.hazardEntries,
-              createHazardEntry({ sourceType: "Custom Hazard" }),
-            ],
-          }
-        : current,
-    );
-    setSaveMessage(null);
-  }
-  function removeHazard(index: number) {
-    setFormData((current) =>
-      current
-        ? {
-            ...current,
-            hazardEntries: current.hazardEntries.filter(
-              (_, entryIndex) => entryIndex !== index,
-            ),
-          }
-        : current,
-    );
-    setSaveMessage(null);
-  }
+  function updateHazard(index: number, field: keyof HazardEntry, value: string) { setFormData((current) => current ? { ...current, hazardEntries: current.hazardEntries.map((entry, entryIndex) => entryIndex === index ? { ...entry, [field]: value } : entry) } : current); setSaveMessage(null); }
+  function addHazardFromSuggestion(hazard: (typeof commonHazards)[number] | HazardLibraryEntry) { const values = 'hazard_name' in hazard ? { description: hazard.hazard_name, category: hazard.category, owner: '', mitigation: hazard.default_mitigation, sourceType: 'Library' as const } : { description: hazard[0], category: hazard[1], owner: hazard[2], mitigation: hazard[3], sourceType: 'Library' as const }; setFormData((current) => { if (!current || current.hazardEntries.some((entry) => entry.description.toLowerCase() === values.description.toLowerCase())) return current; return { ...current, hazardEntries: [...current.hazardEntries, createHazardEntry(values)] }; }); setSaveMessage(null); }
+  function addCustomHazard() { setFormData((current) => current ? { ...current, hazardEntries: [...current.hazardEntries, createHazardEntry({ sourceType: 'Custom Hazard' })] } : current); setSaveMessage(null); }
+  function removeHazard(index: number) { setFormData((current) => current ? { ...current, hazardEntries: current.hazardEntries.filter((_, entryIndex) => entryIndex !== index) } : current); setSaveMessage(null); }
   /**
    * Computes toggle citation for the surrounding workflow.
    * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
    */
-  function toggleCitation(citation: string) {
-    setFormData((current) => {
-      if (!current) return current;
-      const regulatoryCitations = current.regulatoryCitations.includes(citation)
-        ? current.regulatoryCitations.filter((item) => item !== citation)
-        : [...current.regulatoryCitations, citation];
-      return { ...current, regulatoryCitations };
-    });
-    setSaveMessage(null);
-  }
+  function toggleCitation(citation: string) { setFormData((current) => { if (!current) return current; const regulatoryCitations = current.regulatoryCitations.includes(citation) ? current.regulatoryCitations.filter((item) => item !== citation) : [...current.regulatoryCitations, citation]; return { ...current, regulatoryCitations }; }); setSaveMessage(null); }
   /**
    * Renders the toggle form array field interface and coordinates its user interactions.
    * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
    */
-  function toggleFormArrayField(
-    field:
-      | "runoffContaminants"
-      | "communicationMethods"
-      | "environmentalConcernCategories",
-    value: string,
-  ) {
-    setFormData((current) => {
-      if (!current) return current;
-      const values = current[field].includes(value)
-        ? current[field].filter((item) => item !== value)
-        : [...current[field], value];
-      return { ...current, [field]: values };
-    });
-    setSaveMessage(null);
-  }
+  function toggleFormArrayField(field: 'runoffContaminants' | 'communicationMethods' | 'environmentalConcernCategories', value: string) { setFormData((current) => { if (!current) return current; const values = current[field].includes(value) ? current[field].filter((item) => item !== value) : [...current[field], value]; return { ...current, [field]: values }; }); setSaveMessage(null); }
   /**
    * Computes toggle ppe for the surrounding workflow.
    * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
    */
-  function togglePpe(option: string) {
-    setFormData((current) =>
-      current
-        ? {
-            ...current,
-            ppeRequirements: {
-              ...current.ppeRequirements,
-              [option]: !current.ppeRequirements[option],
-            },
-          }
-        : current,
-    );
-    setSaveMessage(null);
-  }
+  function togglePpe(option: string) { setFormData((current) => current ? { ...current, ppeRequirements: { ...current.ppeRequirements, [option]: !current.ppeRequirements[option] } } : current); setSaveMessage(null); }
   /**
    * Handles upload hazard photo while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
-  async function handleUploadHazardPhoto(
-    entry: HazardEntry,
-    file: File,
-    options: HazardPhotoUploadOptions,
-  ) {
-    if (!job) return;
-    setUploadingHazardId(entry.id);
-    setPhotoError(null);
-    const uploadedPaths: string[] = [];
-    try {
-      await validateImageUpload(file);
-      const { data: userData, error: userError } =
-        await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!userData.user)
-        throw new Error("You must be signed in to upload evidence photos.");
-      const optimized = await optimizeImage(
-        file,
-        maxEvidencePhotoWidth,
-        evidencePhotoQuality,
-      );
-      const thumbnail = await optimizeImage(file, thumbnailWidth, 0.76);
-      const safeName = createSafeStorageName();
-      const basePath = `${job.organization_id}/${job.id}/${entry.id}`;
-      const photoPath = `${basePath}/${safeName}.jpg`;
-      const thumbnailPath = `${basePath}/${safeName}-thumb.jpg`;
-      const { error: uploadError } = await supabase.storage
-        .from(evidencePhotosBucket)
-        .upload(photoPath, optimized.blob, {
-          contentType: optimized.contentType,
-          upsert: false,
-        });
-      if (uploadError) throw uploadError;
-      uploadedPaths.push(photoPath);
-      const { error: thumbnailError } = await supabase.storage
-        .from(evidencePhotosBucket)
-        .upload(thumbnailPath, thumbnail.blob, {
-          contentType: thumbnail.contentType,
-          upsert: false,
-        });
-      if (thumbnailError) throw thumbnailError;
-      uploadedPaths.push(thumbnailPath);
-      const hazardIndex =
-        formData?.hazardEntries.findIndex((hazard) => hazard.id === entry.id) ??
-        -1;
-      const hazardName =
-        entry.description.trim() || `Hazard ${hazardIndex + 1}`;
-      const { data, error } = await supabase
-        .from("job_hazard_photos")
-        .insert({
-          organization_id: job.organization_id,
-          job_id: job.id,
-          hazard_id: entry.id,
-          hazard_name: hazardName,
-          photo_url: photoPath,
-          thumbnail_url: thumbnailPath,
-          caption: options.caption.trim() || null,
-          include_in_packet: options.includeInPacket,
-          uploaded_by: userData.user.id,
-        })
-        .select(
-          "id, organization_id, job_id, hazard_id, hazard_name, photo_url, thumbnail_url, caption, include_in_packet, uploaded_by, created_at, deleted_at",
-        )
-        .single();
-      if (error) throw error;
-      uploadedPaths.length = 0;
-      const [signedPhoto] = await attachDisplayUrls([data as JobHazardPhoto]);
-      setPhotosByHazardId((current) => ({
-        ...current,
-        [entry.id]: [signedPhoto, ...(current[entry.id] ?? [])],
-      }));
-      setSaveMessage("Evidence photo uploaded.");
-    } catch (error) {
-      if (uploadedPaths.length)
-        await supabase.storage.from(evidencePhotosBucket).remove(uploadedPaths);
-      setPhotoError(getErrorMessage(error));
-    } finally {
-      setUploadingHazardId(null);
-    }
-  }
+  async function handleUploadHazardPhoto(entry: HazardEntry, file: File, options: HazardPhotoUploadOptions) { if (!job) return; setUploadingHazardId(entry.id); setPhotoError(null); try { const { data: userData, error: userError } = await supabase.auth.getUser(); if (userError) throw userError; if (!userData.user) throw new Error('You must be signed in to upload evidence photos.'); const optimized = await optimizeImage(file, maxEvidencePhotoWidth, evidencePhotoQuality); const thumbnail = await optimizeImage(file, thumbnailWidth, 0.76); const safeName = createSafeStorageName(); const basePath = `${job.organization_id}/${job.id}/${entry.id}`; const photoPath = `${basePath}/${safeName}.jpg`; const thumbnailPath = `${basePath}/${safeName}-thumb.jpg`; const { error: uploadError } = await supabase.storage.from(evidencePhotosBucket).upload(photoPath, optimized.blob, { contentType: optimized.contentType, upsert: false }); if (uploadError) throw uploadError; const { error: thumbnailError } = await supabase.storage.from(evidencePhotosBucket).upload(thumbnailPath, thumbnail.blob, { contentType: thumbnail.contentType, upsert: false }); if (thumbnailError) throw thumbnailError; const hazardIndex = formData?.hazardEntries.findIndex((hazard) => hazard.id === entry.id) ?? -1; const hazardName = entry.description.trim() || `Hazard ${hazardIndex + 1}`; const { data, error } = await supabase.from('job_hazard_photos').insert({ organization_id: job.organization_id, job_id: job.id, hazard_id: entry.id, hazard_name: hazardName, photo_url: photoPath, thumbnail_url: thumbnailPath, caption: options.caption.trim() || null, include_in_packet: options.includeInPacket, uploaded_by: userData.user.id }).select('*').single(); if (error) throw error; const [signedPhoto] = await attachDisplayUrls([data as JobHazardPhoto]); setPhotosByHazardId((current) => ({ ...current, [entry.id]: [signedPhoto, ...(current[entry.id] ?? [])] })); setSaveMessage('Evidence photo uploaded.'); } catch (error) { setPhotoError(getErrorMessage(error)); } finally { setUploadingHazardId(null); } }
   /**
    * Handles update hazard photo while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
-  async function handleUpdateHazardPhoto(
-    photo: JobHazardPhoto,
-    updates: HazardPhotoUpdate,
-  ) {
-    setPhotoError(null);
-    const previousPhotos = photosByHazardId;
-    const nextPhoto = { ...photo, ...updates };
-    setPhotosByHazardId((current) => {
-      const withoutPhoto = Object.fromEntries(
-        Object.entries(current).map(([key, items]) => [
-          key,
-          items.filter((item) => item.id !== photo.id),
-        ]),
-      );
-      const key = nextPhoto.hazard_id ?? "none";
-      return {
-        ...withoutPhoto,
-        [key]: [nextPhoto, ...(withoutPhoto[key] ?? [])],
-      };
-    });
-    const { error } = await supabase
-      .from("job_hazard_photos")
-      .update(updates)
-      .eq("id", photo.id);
-    if (error) {
-      setPhotosByHazardId(previousPhotos);
-      setPhotoError(getErrorMessage(error));
-    }
-  }
+  async function handleUpdateHazardPhoto(photo: JobHazardPhoto, updates: HazardPhotoUpdate) { setPhotoError(null); const previousPhotos = photosByHazardId; const nextPhoto = { ...photo, ...updates }; setPhotosByHazardId((current) => { const withoutPhoto = Object.fromEntries(Object.entries(current).map(([key, items]) => [key, items.filter((item) => item.id !== photo.id)])); const key = nextPhoto.hazard_id ?? 'none'; return { ...withoutPhoto, [key]: [nextPhoto, ...(withoutPhoto[key] ?? [])] }; }); const { error } = await supabase.from('job_hazard_photos').update(updates).eq('id', photo.id); if (error) { setPhotosByHazardId(previousPhotos); setPhotoError(getErrorMessage(error)); } }
   /**
    * Handles remove hazard photo while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
-  async function handleRemoveHazardPhoto(photo: JobHazardPhoto) {
-    setPhotoError(null);
-    const previousPhotos = photosByHazardId;
-    setPhotosByHazardId((current) => ({
-      ...current,
-      [photo.hazard_id ?? "none"]: (
-        current[photo.hazard_id ?? "none"] ?? []
-      ).filter((item) => item.id !== photo.id),
-    }));
-    const { error } = await supabase
-      .from("job_hazard_photos")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", photo.id);
-    if (error) {
-      setPhotosByHazardId(previousPhotos);
-      setPhotoError(getErrorMessage(error));
-    }
-  }
-  function validateForm(requireCompletion: boolean) {
-    if (!formData) return "Unable to save this JHA.";
-    if (!requireCompletion) return null;
-    if (!getEffectiveGroundSurface(formData))
-      return "Ground / Staging Surface is required.";
-    if (!getEffectiveWorkSurface(formData))
-      return "Work Surface / Structure Type is required.";
-    if (!formData.windSpeed.trim()) return "Wind speed is required.";
-    if (!formData.weather) return "Weather is required.";
-    if (!formData.visibility) return "Visibility is required.";
-    if (!formData.faaAirspaceClass && !formData.laancRequired)
-      return "Airspace class or LAANC status is required.";
-    if (
-      formData.siteAccessConstraints.includes("Other") &&
-      !formData.siteAccessOther.trim()
-    )
-      return "Describe the other site access or operational constraint.";
-    if (formData.runoffRisk && formData.runoffContaminants.length === 0)
-      return "Select at least one potential runoff contaminant.";
-    if (
-      formData.runoffContaminants.includes("Other") &&
-      !formData.runoffContaminantOther.trim()
-    )
-      return "Describe the other potential runoff contaminant.";
-    if (
-      formData.runoffContaminants.includes("Chemical product used") &&
-      !formData.chemicalType.trim()
-    )
-      return "Chemical type is required when a chemical product is used.";
-    if (formData.runoffRisk && !formData.containmentPlan.trim())
-      return "Containment plan is required when runoff planning is needed.";
-    const completeHazards = formData.hazardEntries.filter(
-      (entry) => entry.description.trim() || entry.mitigation.trim(),
-    );
-    if (completeHazards.length === 0)
-      return "Select or add at least one hazard.";
-    if (
-      completeHazards.some(
-        (entry) =>
-          !entry.description.trim() ||
-          !entry.category.trim() ||
-          !entry.mitigation.trim(),
-      )
-    )
-      return "Each hazard needs a description, category, and mitigation.";
-    if (
-      formData.publicPresence &&
-      formData.exclusionZonePlanned &&
-      !formData.exclusionZoneDescription.trim()
-    )
-      return "Describe the planned exclusion zone.";
-    const permitPlanningError = getPermitPlanningValidationMessage(
-      formData,
-      requireCompletion,
-    );
-    if (permitPlanningError) return permitPlanningError;
-    if (formData.status === "Complete") {
-      if (
-        formData.communicationMethods.includes("Other") &&
-        !formData.communicationMethodOther.trim()
-      )
-        return "Describe the other communication method.";
-      const completionMessages = getOperationalCompletionMessages({
-        crewBriefed: formData.crewBriefed,
-        controlsInPlace: formData.controlsInPlace,
-        ...attestations,
-      });
-      if (completionMessages.length) return completionMessages.join(" ");
-    }
-    return null;
-  }
-  async function saveAssessment(
-    options: { requireCompletion?: boolean; message?: string } = {},
-  ) {
-    if (!job || !formData) return false;
-    const validationError = validateForm(Boolean(options.requireCompletion));
-    if (validationError) {
-      setSaveError(validationError);
-      setSaveMessage(null);
-      return false;
-    }
-    setIsSaving(true);
-    setSaveError(null);
-    setSaveMessage(null);
-    try {
-      const { data: userData, error: userError } =
-        await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!userData.user)
-        throw new Error("You must be signed in to save a JHA.");
-      const ppeRequirements = {
-        ...formData.ppeRequirements,
-        __workSurfaceType: getEffectiveWorkSurface(formData),
-        __siteAccessConstraints: formData.siteAccessConstraints,
-        __siteAccessOther: formData.siteAccessOther.trim(),
-        __siteAccessNotes: formData.siteAccessNotes.trim(),
-        __environmentalConcern: formData.environmentalConcern,
-        __environmentalConcernCategories:
-          formData.environmentalConcernCategories,
-        __environmentalConcernOther: formData.environmentalConcernOther.trim(),
-        __runoffContaminants: formData.runoffContaminants,
-        __runoffContaminantOther: formData.runoffContaminantOther.trim(),
-        __chemicalSdsReviewed: formData.chemicalSdsReviewed,
-        __hazComCommunicationRequired: formData.hazComCommunicationRequired,
-        __communicationMethods: formData.communicationMethods,
-        __communicationMethodOther: formData.communicationMethodOther.trim(),
-        __radioChannel: formData.radioChannel.trim(),
-        __communicationPlanReviewed: formData.communicationPlanReviewed,
-        __lostCommunicationProcedureReviewed:
-          formData.lostCommunicationProcedureReviewed,
-      };
-      const siteAccessSummary = [
-        ...formData.siteAccessConstraints.filter(
-          (constraint) => constraint !== "Other",
-        ),
-        formData.siteAccessConstraints.includes("Other")
-          ? formData.siteAccessOther.trim()
-          : "",
-        formData.siteAccessNotes.trim(),
-      ]
-        .filter(Boolean)
-        .join("; ");
-      const { data, error } = await supabase
-        .from("jha_assessments")
-        .upsert(
-          {
-            job_id: job.id,
-            organization_id: job.organization_id,
-            user_id: userData.user.id,
-            operator_company: formData.operatorCompany.trim() || null,
-            jha_number: formData.jhaNumber.trim() || null,
-            remote_pilot_in_command:
-              formData.remotePilotInCommand.trim() || null,
-            date_prepared: formData.datePrepared || null,
-            client_property_owner: formData.clientPropertyOwner.trim() || null,
-            job_date: formData.jobDate || null,
-            site_address: formData.siteAddress.trim() || null,
-            drone_platform: formData.dronePlatform.trim() || null,
-            job_type_scope: formData.jobTypeScope.trim() || null,
-            crew_members: formData.crewMembers.trim() || null,
-            weather_conditions: formData.weatherConditions.trim() || null,
-            faa_airspace_class: formData.faaAirspaceClass || null,
-            surface_type: getEffectiveGroundSurface(formData) || null,
-            building_height: parseNullableNumber(formData.buildingHeight),
-            site_access: siteAccessSummary || null,
-            wind_speed: parseNullableNumber(formData.windSpeed),
-            weather: formData.weather,
-            visibility: formData.visibility,
-            public_presence: formData.publicPresence,
-            exclusion_zone_planned: formData.exclusionZonePlanned,
-            exclusion_zone_description:
-              formData.exclusionZoneDescription.trim() || null,
-            public_right_of_way_restriction_required:
-              formData.publicRightOfWayRestrictionRequired === "Yes"
-                ? true
-                : formData.publicRightOfWayRestrictionRequired === "No"
-                  ? false
-                  : null,
-            permit_authorization_required:
-              formData.publicRightOfWayRestrictionRequired === "Yes"
-                ? formData.permitAuthorizationRequired === "Yes"
-                  ? true
-                  : formData.permitAuthorizationRequired === "No"
-                    ? false
-                    : null
-                : null,
-            permit_issuing_authority:
-              formData.publicRightOfWayRestrictionRequired === "Yes" &&
-              formData.permitAuthorizationRequired === "Yes"
-                ? formData.permitIssuingAuthority.trim() || null
-                : null,
-            permit_authorization_number:
-              formData.publicRightOfWayRestrictionRequired === "Yes" &&
-              formData.permitAuthorizationRequired === "Yes"
-                ? formData.permitAuthorizationNumber.trim() || null
-                : null,
-            permit_authorization_status:
-              formData.publicRightOfWayRestrictionRequired === "Yes" &&
-              formData.permitAuthorizationRequired === "Yes"
-                ? formData.permitAuthorizationStatus || null
-                : null,
-            permit_approval_date:
-              formData.publicRightOfWayRestrictionRequired === "Yes" &&
-              formData.permitAuthorizationRequired === "Yes"
-                ? formData.permitApprovalDate || null
-                : null,
-            permit_expiration_date:
-              formData.publicRightOfWayRestrictionRequired === "Yes" &&
-              formData.permitAuthorizationRequired === "Yes"
-                ? formData.permitExpirationDate || null
-                : null,
-            runoff_risk: formData.runoffRisk,
-            chemical_type: formData.runoffContaminants.includes(
-              "Chemical product used",
-            )
-              ? formData.chemicalType.trim() || null
-              : null,
-            containment_plan: formData.containmentPlan.trim() || null,
-            regulatory_citations: formData.regulatoryCitations,
-            water_body_proximity: formData.waterBodyProximity,
-            water_body_distance: parseNullableNumber(
-              formData.waterBodyDistance,
-            ),
-            water_body_type: formData.waterBodyType || null,
-            secondary_containment_in_place:
-              formData.secondaryContainmentInPlace,
-            reclamation_method: formData.reclamationMethod || null,
-            reclamation_volume_estimate: parseNullableNumber(
-              formData.reclamationVolumeEstimate,
-            ),
-            disposal_vendor_name_contact:
-              formData.disposalVendorNameContact.trim() || null,
-            laanc_required: formData.laancRequired,
-            relevant_airport_heliport:
-              formData.relevantAirportHeliport.trim() || null,
-            known_airspace_restrictions:
-              formData.knownAirspaceRestrictions.trim() || null,
-            additional_authorization_required:
-              formData.additionalAuthorizationRequired,
-            hazard_entries: formData.hazardEntries,
-            ppe_requirements: ppeRequirements,
-            nearest_hospital: formData.nearestHospital.trim() || null,
-            emergency_facility_address:
-              formData.emergencyFacilityAddress.trim() || null,
-            emergency_contact: formData.emergencyContact.trim() || null,
-            drone_incident_procedure:
-              formData.droneIncidentProcedure.trim() || null,
-            crew_briefed: formData.crewBriefed,
-            controls_in_place: formData.controlsInPlace,
-            stop_work_authority_acknowledged:
-              formData.stopWorkAuthorityAcknowledged,
-            certified_at:
-              formData.status === "Complete" ? new Date().toISOString() : null,
-            status: formData.status,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "job_id" },
-        )
-        .select(
-          "status, safety_manager_name, safety_manager_role_label, safety_manager_reviewed_at, safety_manager_review_stale, rpic_name, rpic_role_label, rpic_accepted_at, rpic_acceptance_stale",
-        )
-        .single();
-      if (error) throw error;
-      const savedAssessment = data as JhaAssessment;
-      setAttestations({
-        safetyManagerReviewedAt:
-          savedAssessment.safety_manager_reviewed_at ?? null,
-        safetyManagerName: savedAssessment.safety_manager_name ?? null,
-        safetyManagerRoleLabel:
-          savedAssessment.safety_manager_role_label ?? null,
-        safetyManagerReviewStale: Boolean(
-          savedAssessment.safety_manager_review_stale,
-        ),
-        rpicAcceptedAt: savedAssessment.rpic_accepted_at ?? null,
-        rpicName: savedAssessment.rpic_name ?? null,
-        rpicRoleLabel: savedAssessment.rpic_role_label ?? null,
-        rpicAcceptanceStale: Boolean(savedAssessment.rpic_acceptance_stale),
-      });
-      if (savedAssessment.status !== formData.status)
-        setFormData((current) =>
-          current ? { ...current, status: savedAssessment.status } : current,
-        );
-      const reviewInvalidated =
-        savedAssessment.safety_manager_review_stale ||
-        savedAssessment.rpic_acceptance_stale;
-      setSaveMessage(
-        reviewInvalidated
-          ? "Material JHA changes saved. Safety Manager re-review and RPIC re-acceptance are required."
-          : (options.message ?? "Progress saved."),
-      );
-      return true;
-    } catch (error) {
-      setSaveError(getErrorMessage(error));
-      return false;
-    } finally {
-      setIsSaving(false);
-    }
-  }
-  async function performAttestation(kind: "safety-manager" | "rpic") {
+  async function handleRemoveHazardPhoto(photo: JobHazardPhoto) { setPhotoError(null); const previousPhotos = photosByHazardId; setPhotosByHazardId((current) => ({ ...current, [photo.hazard_id ?? 'none']: (current[photo.hazard_id ?? 'none'] ?? []).filter((item) => item.id !== photo.id) })); const { error } = await supabase.from('job_hazard_photos').update({ deleted_at: new Date().toISOString() }).eq('id', photo.id); if (error) { setPhotosByHazardId(previousPhotos); setPhotoError(getErrorMessage(error)); } }
+  function validateForm(requireCompletion: boolean) { if (!formData) return 'Unable to save this JHA.'; if (!requireCompletion) return null; if (!getEffectiveGroundSurface(formData)) return 'Ground / Staging Surface is required.'; if (!getEffectiveWorkSurface(formData)) return 'Work Surface / Structure Type is required.'; if (!formData.windSpeed.trim()) return 'Wind speed is required.'; if (!formData.weather) return 'Weather is required.'; if (!formData.visibility) return 'Visibility is required.'; if (!formData.faaAirspaceClass && !formData.laancRequired) return 'Airspace class or LAANC status is required.'; if (formData.siteAccessConstraints.includes('Other') && !formData.siteAccessOther.trim()) return 'Describe the other site access or operational constraint.'; if (formData.runoffRisk && formData.runoffContaminants.length === 0) return 'Select at least one potential runoff contaminant.'; if (formData.runoffContaminants.includes('Other') && !formData.runoffContaminantOther.trim()) return 'Describe the other potential runoff contaminant.'; if (formData.runoffContaminants.includes('Chemical product used') && !formData.chemicalType.trim()) return 'Chemical type is required when a chemical product is used.'; if (formData.runoffRisk && !formData.containmentPlan.trim()) return 'Containment plan is required when runoff planning is needed.'; const completeHazards = formData.hazardEntries.filter((entry) => entry.description.trim() || entry.mitigation.trim()); if (completeHazards.length === 0) return 'Select or add at least one hazard.'; if (completeHazards.some((entry) => !entry.description.trim() || !entry.category.trim() || !entry.mitigation.trim())) return 'Each hazard needs a description, category, and mitigation.'; if (formData.publicPresence && formData.exclusionZonePlanned && !formData.exclusionZoneDescription.trim()) return 'Describe the planned exclusion zone.'; const permitPlanningError = getPermitPlanningValidationMessage(formData, requireCompletion); if (permitPlanningError) return permitPlanningError; if (formData.status === 'Complete') { if (formData.communicationMethods.includes('Other') && !formData.communicationMethodOther.trim()) return 'Describe the other communication method.'; const completionMessages = getOperationalCompletionMessages({ crewBriefed: formData.crewBriefed, controlsInPlace: formData.controlsInPlace, ...attestations }); if (completionMessages.length) return completionMessages.join(' '); } return null; }
+  async function saveAssessment(options: { requireCompletion?: boolean; message?: string; announceUnchanged?: boolean } = {}) { if (!job || !formData) return false; const validationError = validateForm(Boolean(options.requireCompletion)); if (validationError) { setSaveError(validationError); setSaveMessage(null); return false; } /* Only the final Save JHA marks Complete with validation. Other saves (Next, Back, Save Progress, attestation) keep a Complete selection only when it already passes, otherwise they save as Draft. */ const completionProblem = !options.requireCompletion && formData.status === 'Complete' ? validateForm(true) : null; const formToSave = completionProblem ? { ...formData, status: 'Draft' } : formData; const record = buildAssessmentRecord(formToSave); if (assessmentRecordMatchesStored(record, persistedAssessment)) { setSaveError(null); if (completionProblem) { setFormData((current) => current ? { ...current, status: 'Draft' } : current); setSaveMessage(`Still a Draft. Before marking the JHA Complete: ${completionProblem}`); return true; } setSaveMessage(options.announceUnchanged ? 'No changes to save.' : null); return true; } setIsSaving(true); setSaveError(null); setSaveMessage(null); try { const { data: userData, error: userError } = await supabase.auth.getUser(); if (userError) throw userError; if (!userData.user) throw new Error('You must be signed in to save a JHA.'); const { data, error } = await supabase.from('jha_assessments').upsert({ job_id: job.id, organization_id: job.organization_id, user_id: userData.user.id, ...record, certified_at: formToSave.status === 'Complete' ? new Date().toISOString() : null, updated_at: new Date().toISOString() }, { onConflict: 'job_id' }).select('*').single(); if (error) throw error; const savedAssessment = data as JhaAssessment; setAttestations({ safetyManagerReviewedAt: savedAssessment.safety_manager_reviewed_at ?? null, safetyManagerName: savedAssessment.safety_manager_name ?? null, safetyManagerRoleLabel: savedAssessment.safety_manager_role_label ?? null, safetyManagerReviewStale: Boolean(savedAssessment.safety_manager_review_stale), rpicAcceptedAt: savedAssessment.rpic_accepted_at ?? null, rpicName: savedAssessment.rpic_name ?? null, rpicRoleLabel: savedAssessment.rpic_role_label ?? null, rpicAcceptanceStale: Boolean(savedAssessment.rpic_acceptance_stale) }); if (savedAssessment.status !== formData.status) setFormData((current) => current ? { ...current, status: savedAssessment.status } : current); setPersistedAssessment(savedAssessment); const reviewInvalidated = savedAssessment.safety_manager_review_stale || savedAssessment.rpic_acceptance_stale; setSaveMessage(reviewInvalidated ? 'Material JHA changes saved. Safety Manager re-review and RPIC re-acceptance are required.' : completionProblem ? `Saved as Draft. Before marking the JHA Complete: ${completionProblem}` : options.message ?? 'Progress saved.'); return true; } catch (error) { setSaveError(getErrorMessage(error)); return false; } finally { setIsSaving(false); } }
+  async function performAttestation(kind: 'safety-manager' | 'rpic') {
     if (!job) return;
-    const saved = await saveAssessment({
-      message: "JHA saved for attestation.",
-    });
+    const saved = await saveAssessment({ message: 'JHA saved for attestation.' });
     if (!saved) return;
-    setIsSaving(true);
-    setSaveError(null);
-    setSaveMessage(null);
+    setIsSaving(true); setSaveError(null); setSaveMessage(null);
     try {
-      const functionName =
-        kind === "safety-manager"
-          ? "review_operational_jha_as_safety_manager"
-          : "accept_operational_jha_as_rpic";
-      const { data, error } = await supabase
-        .rpc(functionName, { p_job_id: job.id })
-        .single();
+      const functionName = kind === 'safety-manager' ? 'review_operational_jha_as_safety_manager' : 'accept_operational_jha_as_rpic';
+      const { data, error } = await supabase.rpc(functionName, { p_job_id: job.id }).single();
       if (error) throw error;
       const assessment = data as JhaAssessment;
-      setAttestations({
-        safetyManagerReviewedAt: assessment.safety_manager_reviewed_at ?? null,
-        safetyManagerName: assessment.safety_manager_name ?? null,
-        safetyManagerRoleLabel: assessment.safety_manager_role_label ?? null,
-        safetyManagerReviewStale: Boolean(
-          assessment.safety_manager_review_stale,
-        ),
-        rpicAcceptedAt: assessment.rpic_accepted_at ?? null,
-        rpicName: assessment.rpic_name ?? null,
-        rpicRoleLabel: assessment.rpic_role_label ?? null,
-        rpicAcceptanceStale: Boolean(assessment.rpic_acceptance_stale),
-      });
-      setSaveMessage(
-        kind === "safety-manager"
-          ? "Safety Manager Review recorded."
-          : "RPIC Acceptance recorded.",
-      );
-    } catch (error) {
-      setSaveError(getErrorMessage(error));
-    } finally {
-      setIsSaving(false);
-    }
+      setPersistedAssessment(assessment);
+      setAttestations({ safetyManagerReviewedAt: assessment.safety_manager_reviewed_at ?? null, safetyManagerName: assessment.safety_manager_name ?? null, safetyManagerRoleLabel: assessment.safety_manager_role_label ?? null, safetyManagerReviewStale: Boolean(assessment.safety_manager_review_stale), rpicAcceptedAt: assessment.rpic_accepted_at ?? null, rpicName: assessment.rpic_name ?? null, rpicRoleLabel: assessment.rpic_role_label ?? null, rpicAcceptanceStale: Boolean(assessment.rpic_acceptance_stale) });
+      setSaveMessage(kind === 'safety-manager' ? 'Safety Manager Review recorded.' : 'RPIC Acceptance recorded.');
+    } catch (error) { setSaveError(getErrorMessage(error)); } finally { setIsSaving(false); }
   }
   /**
    * Renders the go to step interface and coordinates its user interactions.
    * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
    */
-  async function goToStep(stepIndex: number) {
-    if (stepIndex === activeStep || isSaving) return;
-    const saved = await saveAssessment({ message: "Progress saved." });
-    if (saved) setActiveStep(stepIndex);
-  }
+  async function goToStep(stepIndex: number) { if (stepIndex === activeStep || isSaving) return; const saved = await saveAssessment({ message: 'Progress saved.' }); if (saved) setActiveStep(stepIndex); }
   /**
    * Handles go next while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
-  async function goNext() {
-    if (activeStep >= steps.length - 1) return;
-    const saved = await saveAssessment({ message: "Progress saved." });
-    if (saved)
-      setActiveStep((current) => Math.min(current + 1, steps.length - 1));
-  }
+  async function goNext() { if (activeStep >= steps.length - 1) return; const saved = await saveAssessment({ message: 'Progress saved.' }); if (saved) setActiveStep((current) => Math.min(current + 1, steps.length - 1)); }
   /**
    * Handles go back while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
-  async function goBack() {
-    if (activeStep <= 0) return;
-    const saved = await saveAssessment({ message: "Progress saved." });
-    if (saved) setActiveStep((current) => Math.max(current - 1, 0));
-  }
+  async function goBack() { if (activeStep <= 0) return; const saved = await saveAssessment({ message: 'Progress saved.' }); if (saved) setActiveStep((current) => Math.max(current - 1, 0)); }
   /**
    * Handles submit while keeping the feature state consistent.
    * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
    */
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await saveAssessment({ requireCompletion: true, message: "JHA saved." });
-  }
-  if (isLoading)
-    return (
-      <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-        Loading job hazard analysis...
-      </section>
-    );
-  if (loadError || !job || !formData)
-    return (
-      <section className="space-y-4">
-        <Link
-          className="text-sm font-medium text-brand-700 hover:text-brand-900"
-          to={jobId ? `/jobs/${jobId}/hub` : "/jobs"}
-        >
-          Back to Job File
-        </Link>
-        <div
-          className="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm"
-          role="alert"
-        >
-          <h1 className="text-base font-semibold text-red-800">
-            Unable to load JHA
-          </h1>
-          <p className="mt-2 text-sm text-red-700">
-            {loadError ?? "Please try again."}
-          </p>
-        </div>
-      </section>
-    );
+  /**
+   * Saves progress and returns to the Job File so a finished JHA does not strand the user on the last step.
+   */
+  async function returnToJobFile() { if (!job || isSaving) return; const saved = await saveAssessment({ message: 'Progress saved.' }); if (saved) navigate(`/jobs/${job.id}/hub`); }
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); await saveAssessment({ requireCompletion: true, message: 'JHA saved.' }); }
+  if (isLoading) return <section className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">Loading job hazard analysis...</section>;
+  if (loadError || !job || !formData) return <section className="space-y-4"><Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to={jobId ? `/jobs/${jobId}/hub` : '/jobs'}>Back to Job File</Link><div className="rounded-xl border border-red-200 bg-red-50 p-4 shadow-sm" role="alert"><h1 className="text-base font-semibold text-red-800">Unable to load JHA</h1><p className="mt-2 text-sm text-red-700">{loadError ?? 'Please try again.'}</p></div></section>;
   const stepCompletion = getStepCompletion(formData);
-  return (
-    <section className="space-y-4">
-      <Link
-        className="text-sm font-medium text-brand-700 hover:text-brand-900"
-        to={`/jobs/${job.id}/hub`}
-      >
-        Back to Job File
-      </Link>
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">
-              Operational Safety Documentation
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold text-brand-900">
-              Job Hazard Analysis
-            </h1>
-            <p className="mt-2 text-sm text-slate-600">
-              {job.name} - {job.service_type} - {formatDate(job.planned_date)}
-            </p>
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            <span className="font-medium text-slate-900">
-              Hazards documented:
-            </span>{" "}
-            {formData.hazardEntries.length}
-          </div>
-        </div>
-      </div>
-      <ProgressIndicator
-        activeStep={activeStep}
-        completedSteps={stepCompletion}
-        onStepClick={goToStep}
-        disabled={isSaving}
-      />
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-          <div className="mb-5 flex flex-col gap-1">
-            <p className="text-sm font-medium text-slate-500">
-              Step {activeStep + 1} of {steps.length}
-            </p>
-            <h2 className="text-xl font-semibold text-brand-900">
-              {steps[activeStep]}
-            </h2>
-          </div>
-          {activeStep === 0 ? (
-            <MissionBasicsStep
-              formData={formData}
-              updateField={updateField}
-              isSaving={isSaving}
-              jobId={job.id}
-            />
-          ) : null}
-          {activeStep === 1 ? (
-            <SiteConditionsStep
-              formData={formData}
-              updateField={updateField}
-              isSaving={isSaving}
-            />
-          ) : null}
-          {activeStep === 2 ? (
-            <AirspaceStep
-              formData={formData}
-              updateField={updateField}
-              isSaving={isSaving}
-            />
-          ) : null}
-          {activeStep === 3 ? (
-            <EnvironmentalStep
-              serviceType={job.service_type}
-              formData={formData}
-              updateField={updateField}
-              toggleFormArrayField={toggleFormArrayField}
-              toggleCitation={toggleCitation}
-              isSaving={isSaving}
-            />
-          ) : null}
-          {activeStep === 4 ? (
-            <HazardsStep
-              personnelAssignments={personnelAssignments}
-              formData={formData}
-              hazardLibrary={hazardLibrary}
-              serviceType={job.service_type}
-              photosByHazardId={photosByHazardId}
-              uploadingHazardId={uploadingHazardId}
-              addHazardFromSuggestion={addHazardFromSuggestion}
-              addCustomHazard={addCustomHazard}
-              updateHazard={updateHazard}
-              removeHazard={removeHazard}
-              onUploadPhoto={handleUploadHazardPhoto}
-              onUpdatePhoto={handleUpdateHazardPhoto}
-              onRemovePhoto={handleRemoveHazardPhoto}
-              isSaving={isSaving}
-            />
-          ) : null}
-          {activeStep === 5 ? (
-            <CertificationStep
-              formData={formData}
-              updateField={updateField}
-              togglePpe={togglePpe}
-              toggleFormArrayField={toggleFormArrayField}
-              isSaving={isSaving}
-              jobId={job.id}
-              safetyDesignation={safetyDesignation}
-              rpic={
-                personnelAssignments.find(
-                  (assignment) => assignment.assigned_role === "RPIC",
-                )?.personnel ?? null
-              }
-              currentUserId={currentUserId}
-              attestations={attestations}
-              onAttest={performAttestation}
-            />
-          ) : null}
-        </div>
-        {saveError ? (
-          <p
-            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-            role="alert"
-          >
-            {saveError}
-          </p>
-        ) : null}
-        {photoError ? (
-          <p
-            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-            role="alert"
-          >
-            {photoError}
-          </p>
-        ) : null}
-        {saveMessage ? (
-          <p
-            className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700"
-            role="status"
-          >
-            {saveMessage}
-          </p>
-        ) : null}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
-            className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:py-2"
-            onClick={goBack}
-            disabled={isSaving || activeStep === 0}
-          >
-            Back
-          </button>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 sm:py-2"
-              onClick={() => saveAssessment({ message: "Progress saved." })}
-              disabled={isSaving}
-            >
-              {isSaving ? "Saving..." : "Save Progress"}
-            </button>
-            {activeStep < steps.length - 1 ? (
-              <button
-                type="button"
-                className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-                onClick={goNext}
-                disabled={isSaving}
-              >
-                {isSaving ? "Saving..." : "Next"}
-              </button>
-            ) : (
-              <button
-                type="submit"
-                className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2"
-                disabled={isSaving}
-              >
-                {isSaving ? "Saving..." : "Save JHA"}
-              </button>
-            )}
-          </div>
-        </div>
-      </form>
-    </section>
-  );
+  return <section className="space-y-4"><Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to={`/jobs/${job.id}/hub`}>Back to Job File</Link><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><p className="text-sm font-medium text-slate-500">Operational Safety Documentation</p><h1 className="mt-1 text-2xl font-semibold text-brand-900">Job Hazard Analysis</h1><p className="mt-2 text-sm text-slate-600">{job.name} - {job.service_type} - {formatDate(job.planned_date)}</p></div><div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"><span className="font-medium text-slate-900">Hazards documented:</span> {formData.hazardEntries.length}</div></div></div><ProgressIndicator activeStep={activeStep} completedSteps={stepCompletion} onStepClick={goToStep} disabled={isSaving} /><form className="space-y-4" onSubmit={handleSubmit}><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6"><div className="mb-5 flex flex-col gap-1"><p className="text-sm font-medium text-slate-500">Step {activeStep + 1} of {steps.length}</p><h2 className="text-xl font-semibold text-brand-900">{steps[activeStep]}</h2></div>{activeStep === 0 ? <MissionBasicsStep formData={formData} updateField={updateField} isSaving={isSaving} jobId={job.id} /> : null}{activeStep === 1 ? <SiteConditionsStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}{activeStep === 2 ? <AirspaceStep formData={formData} updateField={updateField} isSaving={isSaving} /> : null}{activeStep === 3 ? <EnvironmentalStep serviceType={job.service_type} formData={formData} updateField={updateField} toggleFormArrayField={toggleFormArrayField} toggleCitation={toggleCitation} isSaving={isSaving} /> : null}{activeStep === 4 ? <HazardsStep personnelAssignments={personnelAssignments} formData={formData} hazardLibrary={hazardLibrary} serviceType={job.service_type} photosByHazardId={photosByHazardId} uploadingHazardId={uploadingHazardId} addHazardFromSuggestion={addHazardFromSuggestion} addCustomHazard={addCustomHazard} updateHazard={updateHazard} removeHazard={removeHazard} onUploadPhoto={handleUploadHazardPhoto} onUpdatePhoto={handleUpdateHazardPhoto} onRemovePhoto={handleRemoveHazardPhoto} isSaving={isSaving} /> : null}{activeStep === 5 ? <CertificationStep formData={formData} updateField={updateField} togglePpe={togglePpe} toggleFormArrayField={toggleFormArrayField} isSaving={isSaving} jobId={job.id} safetyDesignation={safetyDesignation} rpic={personnelAssignments.find((assignment) => assignment.assigned_role === 'RPIC')?.personnel ?? null} currentUserId={currentUserId} attestations={attestations} onAttest={performAttestation} /> : null}</div>{saveError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{saveError}</p> : null}{photoError ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{photoError}</p> : null}{saveMessage ? <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700" role="status">{saveMessage}</p> : null}<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:py-2" onClick={goBack} disabled={isSaving || activeStep === 0}>Back</button><div className="flex flex-col gap-2 sm:flex-row">{activeStep === steps.length - 1 ? <button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 sm:py-2" onClick={returnToJobFile} disabled={isSaving}>Back to Job File</button> : null}<button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 sm:py-2" onClick={() => saveAssessment({ message: 'Progress saved.', announceUnchanged: true })} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Progress'}</button>{activeStep < steps.length - 1 ? <button type="button" className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2" onClick={goNext} disabled={isSaving}>{isSaving ? 'Saving...' : 'Next'}</button> : <button type="submit" className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-medium text-white transition hover:bg-brand-900 disabled:cursor-not-allowed disabled:bg-slate-400 sm:py-2" disabled={isSaving}>{isSaving ? 'Saving...' : 'Save JHA'}</button>}</div></div></form></section>;
 }
 
 /**
  * Renders the progress indicator interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function ProgressIndicator({
-  activeStep,
-  completedSteps,
-  onStepClick,
-  disabled,
-}: {
-  activeStep: number;
-  completedSteps: boolean[];
-  onStepClick: (step: number) => void;
-  disabled: boolean;
-}) {
-  return (
-    <nav
-      className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
-      aria-label="JHA progress"
-    >
-      <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-        {steps.map((step, index) => (
-          <li key={step}>
-            <button
-              type="button"
-              className={`min-h-11 w-full rounded-lg border px-3 py-2 text-left text-sm transition ${index === activeStep ? "border-brand-700 bg-brand-50 text-brand-900" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
-              onClick={() => onStepClick(index)}
-              disabled={disabled}
-            >
-              <span className="block text-xs font-semibold uppercase text-slate-500">
-                Step {index + 1}
-              </span>
-              <span className="mt-1 block font-semibold">{step}</span>
-              <span className="mt-1 block text-xs">
-                {completedSteps[index] ? "Started" : "Not started"}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ol>
-    </nav>
-  );
-}
+function ProgressIndicator({ activeStep, completedSteps, onStepClick, disabled }: { activeStep: number; completedSteps: boolean[]; onStepClick: (step: number) => void; disabled: boolean }) { return <nav className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="JHA progress"><ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">{steps.map((step, index) => <li key={step}><button type="button" className={`min-h-11 w-full rounded-lg border px-3 py-2 text-left text-sm transition ${index === activeStep ? 'border-brand-700 bg-brand-50 text-brand-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`} onClick={() => onStepClick(index)} disabled={disabled}><span className="block text-xs font-semibold uppercase text-slate-500">Step {index + 1}</span><span className="mt-1 block font-semibold">{step}</span><span className="mt-1 block text-xs">{completedSteps[index] ? 'Started' : 'Not started'}</span></button></li>)}</ol></nav>; }
 /**
  * Purpose: Defines the input contract accepted by the step component.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type StepProps = {
-  formData: JhaFormState;
-  updateField: <T extends keyof JhaFormState>(
-    field: T,
-    value: JhaFormState[T],
-  ) => void;
-  isSaving: boolean;
-};
+type StepProps = { formData: JhaFormState; updateField: <T extends keyof JhaFormState>(field: T, value: JhaFormState[T]) => void; isSaving: boolean };
 /**
  * Purpose: Defines the input contract accepted by the mission basics step component.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
@@ -2282,12 +632,7 @@ type MissionBasicsStepProps = StepProps & { jobId: string };
  * Renders the mission basics step interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function MissionBasicsStep({
-  formData,
-  updateField,
-  isSaving,
-  jobId,
-}: MissionBasicsStepProps) {
+function MissionBasicsStep({ formData, updateField, isSaving, jobId }: MissionBasicsStepProps) {
   const jobFileLink = `/jobs/${jobId}`;
   const crewLink = `/jobs/${jobId}/hub#crew-assignment`;
   const equipmentLink = `/jobs/${jobId}/hub#equipment-assignment`;
@@ -2295,660 +640,30 @@ function MissionBasicsStep({
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
-        Mission Basics verifies information already controlled by the Job File
-        and organization records. Use the source edit links below when
-        auto-filled values need to change.
+        Mission Basics verifies information already controlled by the Job File and organization records. Use the source edit links below when auto-filled values need to change.
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <LockedField
-          label="Operator / Company"
-          value={formData.operatorCompany}
-          helperText="Pulled from Settings"
-          editHref="/settings"
-          editLabel="Edit Settings"
-        />
-        <TextInput
-          label="JHA Number"
-          value={formData.jhaNumber}
-          onChange={(value) => updateField("jhaNumber", value)}
-          disabled={isSaving}
-        />
-        <LockedField
-          label="Remote Pilot in Command"
-          value={formData.remotePilotInCommand}
-          helperText="Pulled from Crew Assignment"
-          editHref={crewLink}
-          editLabel="Edit Crew Assignment"
-        />
-        <TextInput
-          label="Date Prepared"
-          type="date"
-          value={formData.datePrepared}
-          onChange={(value) => updateField("datePrepared", value)}
-          disabled={isSaving}
-        />
-        <LockedField
-          label="Client / Property Owner"
-          value={formData.clientPropertyOwner}
-          helperText="Pulled from Job File"
-          editHref={jobFileLink}
-          editLabel="Edit Job File"
-        />
-        <LockedField
-          label="Job Date"
-          value={formData.jobDate}
-          type="date"
-          helperText="Pulled from Job File"
-          editHref={jobFileLink}
-          editLabel="Edit Job File"
-        />
-        <LockedField
-          label="Site Address"
-          value={formData.siteAddress}
-          helperText="Pulled from Job File"
-          editHref={jobFileLink}
-          editLabel="Edit Job File"
-        />
-        <LockedField
-          label="Drone Platform"
-          value={formData.dronePlatform}
-          helperText="Pulled from Equipment"
-          editHref={equipmentLink}
-          editLabel="Edit Equipment Assignment"
-        />
-        <LockedField
-          label="Job Type / Scope"
-          value={formData.jobTypeScope}
-          helperText="Pulled from Job File"
-          editHref={jobFileLink}
-          editLabel="Edit Job File"
-        />
-        <LockedField
-          label="Crew Members"
-          value={formData.crewMembers}
-          helperText="Pulled from Crew Assignment"
-          editHref={crewLink}
-          editLabel="Edit Crew Assignment"
-        />
+        <LockedField label="Operator / Company" value={formData.operatorCompany} helperText="Pulled from Settings" editHref="/settings" editLabel="Edit Settings" />
+        <TextInput label="JHA Number" value={formData.jhaNumber} onChange={(value) => updateField('jhaNumber', value)} disabled={isSaving} />
+        <LockedField label="Remote Pilot in Command" value={formData.remotePilotInCommand} helperText="Pulled from Crew Assignment" editHref={crewLink} editLabel="Edit Crew Assignment" />
+        <TextInput label="Date Prepared" type="date" value={formData.datePrepared} onChange={(value) => updateField('datePrepared', value)} disabled={isSaving} />
+        <LockedField label="Client / Property Owner" value={formData.clientPropertyOwner} helperText="Pulled from Job File" editHref={jobFileLink} editLabel="Edit Job File" />
+        <LockedField label="Job Date" value={formData.jobDate} type="date" helperText="Pulled from Job File" editHref={jobFileLink} editLabel="Edit Job File" />
+        <LockedField label="Site Address" value={formData.siteAddress} helperText="Pulled from Job File" editHref={jobFileLink} editLabel="Edit Job File" />
+        <LockedField label="Drone Platform" value={formData.dronePlatform} helperText="Pulled from Equipment" editHref={equipmentLink} editLabel="Edit Equipment Assignment" />
+        <LockedField label="Job Type / Scope" value={formData.jobTypeScope} helperText="Pulled from Job File" editHref={jobFileLink} editLabel="Edit Job File" />
+        <LockedField label="Crew Members" value={formData.crewMembers} helperText="Pulled from Crew Assignment" editHref={crewLink} editLabel="Edit Crew Assignment" />
       </div>
     </div>
   );
 }
-function SiteConditionsStep({ formData, updateField, isSaving }: StepProps) {
-  function toggleConstraint(constraint: string) {
-    const constraints = formData.siteAccessConstraints.includes(constraint)
-      ? formData.siteAccessConstraints.filter((item) => item !== constraint)
-      : [...formData.siteAccessConstraints, constraint];
-    updateField("siteAccessConstraints", constraints);
-  }
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <SelectInput
-          label="Ground / Staging Surface"
-          value={formData.surfaceType}
-          options={["", ...groundSurfaceOptions]}
-          onChange={(value) => updateField("surfaceType", value)}
-          disabled={isSaving}
-          required
-        />
-        {formData.surfaceType === "Other" ? (
-          <TextInput
-            label="Custom ground / staging surface"
-            value={formData.surfaceTypeOther}
-            onChange={(value) => updateField("surfaceTypeOther", value)}
-            disabled={isSaving}
-            required
-          />
-        ) : null}
-        <SelectInput
-          label="Work Surface / Structure Type"
-          value={formData.workSurfaceType}
-          options={["", ...workSurfaceOptions]}
-          onChange={(value) => updateField("workSurfaceType", value)}
-          disabled={isSaving}
-          required
-        />
-        {formData.workSurfaceType === "Other" ? (
-          <TextInput
-            label="Custom work surface / structure type"
-            value={formData.workSurfaceTypeOther}
-            onChange={(value) => updateField("workSurfaceTypeOther", value)}
-            disabled={isSaving}
-            required
-          />
-        ) : null}
-        <TextInput
-          label="Building height (feet)"
-          type="number"
-          value={formData.buildingHeight}
-          onChange={(value) => updateField("buildingHeight", value)}
-          disabled={isSaving}
-        />
-        <TextInput
-          label="Wind speed (MPH)"
-          type="number"
-          value={formData.windSpeed}
-          onChange={(value) => updateField("windSpeed", value)}
-          disabled={isSaving}
-          required
-        />
-        <SelectInput
-          label="Weather"
-          value={formData.weather}
-          options={weatherOptions}
-          onChange={(value) => updateField("weather", value)}
-          disabled={isSaving}
-        />
-        <SelectInput
-          label="Visibility"
-          value={formData.visibility}
-          options={visibilityOptions}
-          onChange={(value) => updateField("visibility", value)}
-          disabled={isSaving}
-        />
-        <TextInput
-          label="Weather Conditions"
-          value={formData.weatherConditions}
-          onChange={(value) => updateField("weatherConditions", value)}
-          disabled={isSaving}
-        />
-      </div>
-      <fieldset className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <legend className="px-1 text-sm font-medium text-slate-700">
-          Site Access / Operational Constraints
-        </legend>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {siteConstraintOptions.map((constraint) => (
-            <Checkbox
-              key={constraint}
-              label={constraint}
-              checked={formData.siteAccessConstraints.includes(constraint)}
-              onChange={() => toggleConstraint(constraint)}
-              disabled={isSaving}
-            />
-          ))}
-        </div>
-        {formData.siteAccessConstraints.includes("Other") ? (
-          <div className="mt-3">
-            <TextInput
-              label="Custom site access / operational constraint"
-              value={formData.siteAccessOther}
-              onChange={(value) => updateField("siteAccessOther", value)}
-              disabled={isSaving}
-            />
-          </div>
-        ) : null}
-        <div className="mt-3">
-          <TextArea
-            label="Additional site access / operational notes"
-            value={formData.siteAccessNotes}
-            onChange={(value) => updateField("siteAccessNotes", value)}
-            disabled={isSaving}
-          />
-        </div>
-      </fieldset>
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <Checkbox
-          label="Public presence"
-          checked={formData.publicPresence}
-          onChange={(checked) => updateField("publicPresence", checked)}
-          disabled={isSaving}
-        />
-        {formData.publicPresence ? (
-          <div className="mt-3 space-y-3">
-            <Checkbox
-              label="Exclusion zone planned"
-              checked={formData.exclusionZonePlanned}
-              onChange={(checked) =>
-                updateField("exclusionZonePlanned", checked)
-              }
-              disabled={isSaving}
-            />
-            {formData.exclusionZonePlanned ? (
-              <TextArea
-                label="Exclusion zone description"
-                value={formData.exclusionZoneDescription}
-                onChange={(value) =>
-                  updateField("exclusionZoneDescription", value)
-                }
-                disabled={isSaving}
-              />
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
-        <SelectInput
-          label="Will maintaining the required exclusion zone require closing or restricting a public sidewalk, street, or other public right-of-way?"
-          value={formData.publicRightOfWayRestrictionRequired}
-          options={["", "Yes", "No"]}
-          onChange={(value) =>
-            updateField("publicRightOfWayRestrictionRequired", value)
-          }
-          disabled={isSaving}
-        />
-        {formData.publicRightOfWayRestrictionRequired === "Yes" ? (
-          <>
-            <SelectInput
-              label="Will a permit or authorization be required?"
-              value={formData.permitAuthorizationRequired}
-              options={["", "Yes", "No"]}
-              onChange={(value) =>
-                updateField("permitAuthorizationRequired", value)
-              }
-              disabled={isSaving}
-            />
-            <p className="text-xs text-slate-500">
-              Record the operator's determination. DroneSMS does not determine
-              whether a permit is legally required.
-            </p>
-            {formData.permitAuthorizationRequired === "Yes" ? (
-              <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2">
-                <TextInput
-                  label="Issuing authority"
-                  value={formData.permitIssuingAuthority}
-                  onChange={(value) =>
-                    updateField("permitIssuingAuthority", value)
-                  }
-                  disabled={isSaving}
-                />
-                <TextInput
-                  label="Permit / authorization number"
-                  value={formData.permitAuthorizationNumber}
-                  onChange={(value) =>
-                    updateField("permitAuthorizationNumber", value)
-                  }
-                  disabled={isSaving}
-                />
-                <SelectInput
-                  label="Permit status"
-                  value={formData.permitAuthorizationStatus}
-                  options={["Pending", "Approved"]}
-                  onChange={(value) =>
-                    updateField("permitAuthorizationStatus", value)
-                  }
-                  disabled={isSaving}
-                />
-                <TextInput
-                  label="Approval date (optional)"
-                  type="date"
-                  value={formData.permitApprovalDate}
-                  onChange={(value) => updateField("permitApprovalDate", value)}
-                  disabled={isSaving}
-                />
-                <TextInput
-                  label="Expiration date (optional)"
-                  type="date"
-                  value={formData.permitExpirationDate}
-                  onChange={(value) =>
-                    updateField("permitExpirationDate", value)
-                  }
-                  disabled={isSaving}
-                />
-              </div>
-            ) : null}
-          </>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-function AirspaceStep({ formData, updateField, isSaving }: StepProps) {
-  return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <SelectInput
-        label="FAA Airspace Class"
-        value={formData.faaAirspaceClass}
-        options={["", ...airspaceOptions]}
-        onChange={(value) => updateField("faaAirspaceClass", value)}
-        disabled={isSaving}
-      />
-      <SelectInput
-        label="LAANC Required"
-        value={formData.laancRequired}
-        options={laancOptions}
-        onChange={(value) => updateField("laancRequired", value)}
-        disabled={isSaving}
-      />
-      <div className="sm:col-span-2">
-        <TextInput
-          label="Relevant Airport / Heliport"
-          value={formData.relevantAirportHeliport}
-          onChange={(value) => updateField("relevantAirportHeliport", value)}
-          placeholder="Airport or heliport name, identifier, or “None identified”"
-          disabled={isSaving}
-        />
-      </div>
-      <SelectInput
-        label="Additional Authorization Required"
-        value={formData.additionalAuthorizationRequired}
-        options={laancOptions}
-        onChange={(value) =>
-          updateField("additionalAuthorizationRequired", value)
-        }
-        disabled={isSaving}
-      />
-      <div className="sm:col-span-2">
-        <TextInput
-          label="Known Airspace Restrictions / TFR Considerations"
-          value={formData.knownAirspaceRestrictions}
-          onChange={(value) => updateField("knownAirspaceRestrictions", value)}
-          placeholder="Operational restrictions, TFR considerations, or None identified"
-          disabled={isSaving}
-        />
-      </div>
-      {formData.laancRequired === "Yes" ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:col-span-2">
-          Keep LAANC authorization documentation in the job file before
-          operations begin.
-        </div>
-      ) : null}
-    </div>
-  );
-}
+function SiteConditionsStep({ formData, updateField, isSaving }: StepProps) { function toggleConstraint(constraint: string) { const constraints = formData.siteAccessConstraints.includes(constraint) ? formData.siteAccessConstraints.filter((item) => item !== constraint) : [...formData.siteAccessConstraints, constraint]; updateField('siteAccessConstraints', constraints); } return <div className="space-y-4"><div className="grid gap-4 sm:grid-cols-2"><SelectInput label="Ground / Staging Surface" value={formData.surfaceType} options={['', ...groundSurfaceOptions]} onChange={(value) => updateField('surfaceType', value)} disabled={isSaving} required />{formData.surfaceType === 'Other' ? <TextInput label="Custom ground / staging surface" value={formData.surfaceTypeOther} onChange={(value) => updateField('surfaceTypeOther', value)} disabled={isSaving} required /> : null}<SelectInput label="Work Surface / Structure Type" value={formData.workSurfaceType} options={['', ...workSurfaceOptions]} onChange={(value) => updateField('workSurfaceType', value)} disabled={isSaving} required />{formData.workSurfaceType === 'Other' ? <TextInput label="Custom work surface / structure type" value={formData.workSurfaceTypeOther} onChange={(value) => updateField('workSurfaceTypeOther', value)} disabled={isSaving} required /> : null}<TextInput label="Building height (feet)" type="number" value={formData.buildingHeight} onChange={(value) => updateField('buildingHeight', value)} disabled={isSaving} /><TextInput label="Wind speed (MPH)" type="number" value={formData.windSpeed} onChange={(value) => updateField('windSpeed', value)} disabled={isSaving} required /><SelectInput label="Weather" value={formData.weather} options={weatherOptions} onChange={(value) => updateField('weather', value)} disabled={isSaving} /><SelectInput label="Visibility" value={formData.visibility} options={visibilityOptions} onChange={(value) => updateField('visibility', value)} disabled={isSaving} /><TextInput label="Weather Conditions" value={formData.weatherConditions} onChange={(value) => updateField('weatherConditions', value)} disabled={isSaving} /></div><fieldset className="rounded-lg border border-slate-200 bg-slate-50 p-3"><legend className="px-1 text-sm font-medium text-slate-700">Site Access / Operational Constraints</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{siteConstraintOptions.map((constraint) => <Checkbox key={constraint} label={constraint} checked={formData.siteAccessConstraints.includes(constraint)} onChange={() => toggleConstraint(constraint)} disabled={isSaving} />)}</div>{formData.siteAccessConstraints.includes('Other') ? <div className="mt-3"><TextInput label="Custom site access / operational constraint" value={formData.siteAccessOther} onChange={(value) => updateField('siteAccessOther', value)} disabled={isSaving} /></div> : null}<div className="mt-3"><TextArea label="Additional site access / operational notes" value={formData.siteAccessNotes} onChange={(value) => updateField('siteAccessNotes', value)} disabled={isSaving} /></div></fieldset><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Public presence" checked={formData.publicPresence} onChange={(checked) => updateField('publicPresence', checked)} disabled={isSaving} />{formData.publicPresence ? <div className="mt-3 space-y-3"><Checkbox label="Exclusion zone planned" checked={formData.exclusionZonePlanned} onChange={(checked) => updateField('exclusionZonePlanned', checked)} disabled={isSaving} />{formData.exclusionZonePlanned ? <TextArea label="Exclusion zone description" value={formData.exclusionZoneDescription} onChange={(value) => updateField('exclusionZoneDescription', value)} disabled={isSaving} /> : null}</div> : null}</div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3"><SelectInput label="Will maintaining the required exclusion zone require closing or restricting a public sidewalk, street, or other public right-of-way?" value={formData.publicRightOfWayRestrictionRequired} options={['', 'Yes', 'No']} onChange={(value) => updateField('publicRightOfWayRestrictionRequired', value)} disabled={isSaving} />{formData.publicRightOfWayRestrictionRequired === 'Yes' ? <><SelectInput label="Will a permit or authorization be required?" value={formData.permitAuthorizationRequired} options={['', 'Yes', 'No']} onChange={(value) => updateField('permitAuthorizationRequired', value)} disabled={isSaving} /><p className="text-xs text-slate-500">Record the operator's determination. DroneSMS does not determine whether a permit is legally required.</p>{formData.permitAuthorizationRequired === 'Yes' ? <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2"><TextInput label="Issuing authority" value={formData.permitIssuingAuthority} onChange={(value) => updateField('permitIssuingAuthority', value)} disabled={isSaving} /><TextInput label="Permit / authorization number" value={formData.permitAuthorizationNumber} onChange={(value) => updateField('permitAuthorizationNumber', value)} disabled={isSaving} /><SelectInput label="Permit status" value={formData.permitAuthorizationStatus} options={['Pending', 'Approved']} onChange={(value) => updateField('permitAuthorizationStatus', value)} disabled={isSaving} /><TextInput label="Approval date (optional)" type="date" value={formData.permitApprovalDate} onChange={(value) => updateField('permitApprovalDate', value)} disabled={isSaving} /><TextInput label="Expiration date (optional)" type="date" value={formData.permitExpirationDate} onChange={(value) => updateField('permitExpirationDate', value)} disabled={isSaving} /></div> : null}</> : null}</div></div>; }
+function AirspaceStep({ formData, updateField, isSaving }: StepProps) { return <div className="grid gap-4 sm:grid-cols-2"><SelectInput label="FAA Airspace Class" value={formData.faaAirspaceClass} options={['', ...airspaceOptions]} onChange={(value) => updateField('faaAirspaceClass', value)} disabled={isSaving} /><SelectInput label="LAANC Required" value={formData.laancRequired} options={laancOptions} onChange={(value) => updateField('laancRequired', value)} disabled={isSaving} /><div className="sm:col-span-2"><TextInput label="Relevant Airport / Heliport" value={formData.relevantAirportHeliport} onChange={(value) => updateField('relevantAirportHeliport', value)} placeholder="Airport or heliport name, identifier, or “None identified”" disabled={isSaving} /></div><SelectInput label="Additional Authorization Required" value={formData.additionalAuthorizationRequired} options={laancOptions} onChange={(value) => updateField('additionalAuthorizationRequired', value)} disabled={isSaving} /><div className="sm:col-span-2"><TextInput label="Known Airspace Restrictions / TFR Considerations" value={formData.knownAirspaceRestrictions} onChange={(value) => updateField('knownAirspaceRestrictions', value)} placeholder="Operational restrictions, TFR considerations, or None identified" disabled={isSaving} /></div>{formData.laancRequired === 'Yes' ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:col-span-2">Keep LAANC authorization documentation in the job file before operations begin.</div> : null}</div>; }
 /**
  * Renders the environmental step interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function EnvironmentalStep({
-  serviceType,
-  formData,
-  updateField,
-  toggleFormArrayField,
-  toggleCitation,
-  isSaving,
-}: StepProps & {
-  serviceType: string;
-  toggleFormArrayField: (
-    field:
-      | "runoffContaminants"
-      | "communicationMethods"
-      | "environmentalConcernCategories",
-    value: string,
-  ) => void;
-  toggleCitation: (citation: string) => void;
-}) {
-  const appliedMaterialMission = serviceUsesAppliedMaterials(serviceType);
-  const hasHistoricalAppliedData =
-    formData.runoffRisk ||
-    formData.waterBodyProximity ||
-    Boolean(formData.containmentPlan);
-  const showMissionConcerns =
-    appliedMaterialMission ||
-    formData.environmentalConcern ||
-    hasHistoricalAppliedData;
-  const showAppliedControls =
-    appliedMaterialMission ||
-    formData.environmentalConcernCategories.some((category) =>
-      [
-        "Water body / wetland",
-        "Runoff",
-        "Applied material / chemical",
-        "Spill / release concern",
-      ].includes(category),
-    ) ||
-    hasHistoricalAppliedData;
-  const showEnvironmentalControls =
-    formData.runoffRisk || formData.waterBodyProximity;
-  const chemicalProductUsed = formData.runoffContaminants.includes(
-    "Chemical product used",
-  );
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <Checkbox
-          label="Are there environmental conditions or sensitive resources that could be affected by this operation?"
-          checked={
-            formData.environmentalConcern ||
-            appliedMaterialMission ||
-            hasHistoricalAppliedData
-          }
-          onChange={(checked) => updateField("environmentalConcern", checked)}
-          disabled={
-            isSaving || appliedMaterialMission || hasHistoricalAppliedData
-          }
-        />
-        <p className="mt-2 text-xs text-slate-500">
-          {appliedMaterialMission
-            ? `Environmental controls are shown because ${serviceType} may involve liquids or applied materials.`
-            : "Select this only when the mission has an environmental consideration. No environmental hazard is required when none applies."}
-        </p>
-      </div>
-      {showMissionConcerns ? (
-        <fieldset>
-          <legend className="text-sm font-medium text-slate-700">
-            Relevant environmental considerations
-          </legend>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {environmentalConcernCategories.map((category) => (
-              <Checkbox
-                key={category}
-                label={category}
-                checked={formData.environmentalConcernCategories.includes(
-                  category,
-                )}
-                onChange={() =>
-                  toggleFormArrayField(
-                    "environmentalConcernCategories",
-                    category,
-                  )
-                }
-                disabled={isSaving}
-              />
-            ))}
-          </div>
-          {formData.environmentalConcernCategories.includes("Other") ? (
-            <div className="mt-3">
-              <TextInput
-                label="Other mission-specific environmental condition"
-                value={formData.environmentalConcernOther}
-                onChange={(value) =>
-                  updateField("environmentalConcernOther", value)
-                }
-                disabled={isSaving}
-              />
-            </div>
-          ) : null}
-        </fieldset>
-      ) : null}
-      {showAppliedControls ? (
-        <>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <Checkbox
-              label="Runoff planning needed"
-              checked={formData.runoffRisk}
-              onChange={(checked) => updateField("runoffRisk", checked)}
-              disabled={isSaving}
-            />
-            {formData.runoffRisk ? (
-              <div className="mt-3 space-y-4">
-                <p className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700">
-                  {environmentalRunoffHelperText}
-                </p>
-                <fieldset>
-                  <legend className="text-sm font-medium text-slate-700">
-                    Potential runoff contaminants
-                  </legend>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                    {runoffContaminantOptions.map((option) => (
-                      <Checkbox
-                        key={option}
-                        label={option}
-                        checked={formData.runoffContaminants.includes(option)}
-                        onChange={() =>
-                          toggleFormArrayField("runoffContaminants", option)
-                        }
-                        disabled={isSaving}
-                      />
-                    ))}
-                  </div>
-                </fieldset>
-                {formData.runoffContaminants.includes("Other") ? (
-                  <TextInput
-                    label="Other potential runoff contaminant"
-                    value={formData.runoffContaminantOther}
-                    onChange={(value) =>
-                      updateField("runoffContaminantOther", value)
-                    }
-                    disabled={isSaving}
-                  />
-                ) : null}
-                {chemicalProductUsed ? (
-                  <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <TextInput
-                        label="Chemical type / product"
-                        value={formData.chemicalType}
-                        onChange={(value) => updateField("chemicalType", value)}
-                        disabled={isSaving}
-                      />
-                      <TextInput
-                        label="Containment plan"
-                        value={formData.containmentPlan}
-                        onChange={(value) =>
-                          updateField("containmentPlan", value)
-                        }
-                        disabled={isSaving}
-                      />
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <Checkbox
-                        label="SDS reviewed"
-                        checked={formData.chemicalSdsReviewed}
-                        onChange={(checked) =>
-                          updateField("chemicalSdsReviewed", checked)
-                        }
-                        disabled={isSaving}
-                      />
-                      <Checkbox
-                        label="HazCom / PPE communication reviewed"
-                        checked={formData.hazComCommunicationRequired}
-                        onChange={(checked) =>
-                          updateField("hazComCommunicationRequired", checked)
-                        }
-                        disabled={isSaving}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <TextInput
-                    label="Containment plan"
-                    value={formData.containmentPlan}
-                    onChange={(value) => updateField("containmentPlan", value)}
-                    disabled={isSaving}
-                  />
-                )}
-              </div>
-            ) : null}
-          </div>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <Checkbox
-              label="Water body proximity"
-              checked={formData.waterBodyProximity}
-              onChange={(checked) => updateField("waterBodyProximity", checked)}
-              disabled={isSaving}
-            />
-            {formData.waterBodyProximity ? (
-              <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                <TextInput
-                  label="Water body distance (feet)"
-                  type="number"
-                  value={formData.waterBodyDistance}
-                  onChange={(value) => updateField("waterBodyDistance", value)}
-                  disabled={isSaving}
-                />
-                <SelectInput
-                  label="Water body type"
-                  value={formData.waterBodyType}
-                  options={waterBodyTypeOptions}
-                  onChange={(value) => updateField("waterBodyType", value)}
-                  disabled={isSaving}
-                />
-              </div>
-            ) : null}
-          </div>
-          {showEnvironmentalControls ? (
-            <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-3">
-              <Checkbox
-                label="Secondary containment in place"
-                checked={formData.secondaryContainmentInPlace}
-                onChange={(checked) =>
-                  updateField("secondaryContainmentInPlace", checked)
-                }
-                disabled={isSaving}
-              />
-              <div className="grid gap-4 sm:grid-cols-2">
-                <SelectInput
-                  label="Reclamation method"
-                  value={formData.reclamationMethod}
-                  options={reclamationMethodOptions}
-                  onChange={(value) => updateField("reclamationMethod", value)}
-                  disabled={isSaving}
-                />
-                <TextInput
-                  label="Reclamation volume estimate (gallons)"
-                  type="number"
-                  value={formData.reclamationVolumeEstimate}
-                  onChange={(value) =>
-                    updateField("reclamationVolumeEstimate", value)
-                  }
-                  disabled={isSaving}
-                />
-                {formData.reclamationMethod === "Third Party Vendor" ? (
-                  <TextInput
-                    label="Disposal vendor name and contact"
-                    value={formData.disposalVendorNameContact}
-                    onChange={(value) =>
-                      updateField("disposalVendorNameContact", value)
-                    }
-                    disabled={isSaving}
-                  />
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-          {showEnvironmentalControls ? (
-            <fieldset>
-              <legend className="text-sm font-medium text-slate-700">
-                Regulatory citations
-              </legend>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {citationOptions.map((citation) => (
-                  <label
-                    key={citation}
-                    className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700"
-                  >
-                    <span className="flex items-start gap-3 font-medium">
-                      <input
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700"
-                        type="checkbox"
-                        checked={formData.regulatoryCitations.includes(
-                          citation,
-                        )}
-                        onChange={() => toggleCitation(citation)}
-                        disabled={isSaving}
-                      />
-                      <span>{citation}</span>
-                    </span>
-                    <span className="mt-2 block text-xs leading-5 text-slate-500">
-                      {citationGuidance[citation]}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          ) : (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-              Advanced regulatory fields appear when runoff planning or water
-              body proximity is selected.
-            </div>
-          )}
-        </>
-      ) : null}
-    </div>
-  );
-}
+function EnvironmentalStep({ serviceType, formData, updateField, toggleFormArrayField, toggleCitation, isSaving }: StepProps & { serviceType: string; toggleFormArrayField: (field: 'runoffContaminants' | 'communicationMethods' | 'environmentalConcernCategories', value: string) => void; toggleCitation: (citation: string) => void }) { const appliedMaterialMission = serviceUsesAppliedMaterials(serviceType); const hasHistoricalAppliedData = formData.runoffRisk || formData.waterBodyProximity || Boolean(formData.containmentPlan); const showMissionConcerns = appliedMaterialMission || formData.environmentalConcern || hasHistoricalAppliedData; const showAppliedControls = appliedMaterialMission || formData.environmentalConcernCategories.some((category) => ['Water body / wetland', 'Runoff', 'Applied material / chemical', 'Spill / release concern'].includes(category)) || hasHistoricalAppliedData; const showEnvironmentalControls = formData.runoffRisk || formData.waterBodyProximity; const chemicalProductUsed = formData.runoffContaminants.includes('Chemical product used'); return <div className="space-y-4"><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Are there environmental conditions or sensitive resources that could be affected by this operation?" checked={formData.environmentalConcern || appliedMaterialMission || hasHistoricalAppliedData} onChange={(checked) => updateField('environmentalConcern', checked)} disabled={isSaving || appliedMaterialMission || hasHistoricalAppliedData} /><p className="mt-2 text-xs text-slate-500">{appliedMaterialMission ? `Environmental controls are shown because ${serviceType} may involve liquids or applied materials.` : 'Select this only when the mission has an environmental consideration. No environmental hazard is required when none applies.'}</p></div>{showMissionConcerns ? <fieldset><legend className="text-sm font-medium text-slate-700">Relevant environmental considerations</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{environmentalConcernCategories.map((category) => <Checkbox key={category} label={category} checked={formData.environmentalConcernCategories.includes(category)} onChange={() => toggleFormArrayField('environmentalConcernCategories', category)} disabled={isSaving} />)}</div>{formData.environmentalConcernCategories.includes('Other') ? <div className="mt-3"><TextInput label="Other mission-specific environmental condition" value={formData.environmentalConcernOther} onChange={(value) => updateField('environmentalConcernOther', value)} disabled={isSaving} /></div> : null}</fieldset> : null}{showAppliedControls ? <><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Runoff planning needed" checked={formData.runoffRisk} onChange={(checked) => updateField('runoffRisk', checked)} disabled={isSaving} />{formData.runoffRisk ? <div className="mt-3 space-y-4"><p className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700">{environmentalRunoffHelperText}</p><fieldset><legend className="text-sm font-medium text-slate-700">Potential runoff contaminants</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{runoffContaminantOptions.map((option) => <Checkbox key={option} label={option} checked={formData.runoffContaminants.includes(option)} onChange={() => toggleFormArrayField('runoffContaminants', option)} disabled={isSaving} />)}</div></fieldset>{formData.runoffContaminants.includes('Other') ? <TextInput label="Other potential runoff contaminant" value={formData.runoffContaminantOther} onChange={(value) => updateField('runoffContaminantOther', value)} disabled={isSaving} /> : null}{chemicalProductUsed ? <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3"><div className="grid gap-4 sm:grid-cols-2"><TextInput label="Chemical type / product" value={formData.chemicalType} onChange={(value) => updateField('chemicalType', value)} disabled={isSaving} /><TextInput label="Containment plan" value={formData.containmentPlan} onChange={(value) => updateField('containmentPlan', value)} disabled={isSaving} /></div><div className="grid gap-2 sm:grid-cols-2"><Checkbox label="SDS reviewed" checked={formData.chemicalSdsReviewed} onChange={(checked) => updateField('chemicalSdsReviewed', checked)} disabled={isSaving} /><Checkbox label="HazCom / PPE communication reviewed" checked={formData.hazComCommunicationRequired} onChange={(checked) => updateField('hazComCommunicationRequired', checked)} disabled={isSaving} /></div></div> : <TextInput label="Containment plan" value={formData.containmentPlan} onChange={(value) => updateField('containmentPlan', value)} disabled={isSaving} />}</div> : null}</div><div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><Checkbox label="Water body proximity" checked={formData.waterBodyProximity} onChange={(checked) => updateField('waterBodyProximity', checked)} disabled={isSaving} />{formData.waterBodyProximity ? <div className="mt-3 grid gap-4 sm:grid-cols-2"><TextInput label="Water body distance (feet)" type="number" value={formData.waterBodyDistance} onChange={(value) => updateField('waterBodyDistance', value)} disabled={isSaving} /><SelectInput label="Water body type" value={formData.waterBodyType} options={waterBodyTypeOptions} onChange={(value) => updateField('waterBodyType', value)} disabled={isSaving} /></div> : null}</div>{showEnvironmentalControls ? <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-3"><Checkbox label="Secondary containment in place" checked={formData.secondaryContainmentInPlace} onChange={(checked) => updateField('secondaryContainmentInPlace', checked)} disabled={isSaving} /><div className="grid gap-4 sm:grid-cols-2"><SelectInput label="Reclamation method" value={formData.reclamationMethod} options={reclamationMethodOptions} onChange={(value) => updateField('reclamationMethod', value)} disabled={isSaving} /><TextInput label="Reclamation volume estimate (gallons)" type="number" value={formData.reclamationVolumeEstimate} onChange={(value) => updateField('reclamationVolumeEstimate', value)} disabled={isSaving} />{formData.reclamationMethod === 'Third Party Vendor' ? <TextInput label="Disposal vendor name and contact" value={formData.disposalVendorNameContact} onChange={(value) => updateField('disposalVendorNameContact', value)} disabled={isSaving} /> : null}</div></div> : null}{showEnvironmentalControls ? <fieldset><legend className="text-sm font-medium text-slate-700">Regulatory citations</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{citationOptions.map((citation) => <label key={citation} className="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700"><span className="flex items-start gap-3 font-medium"><input className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700" type="checkbox" checked={formData.regulatoryCitations.includes(citation)} onChange={() => toggleCitation(citation)} disabled={isSaving} /><span>{citation}</span></span><span className="mt-2 block text-xs leading-5 text-slate-500">{citationGuidance[citation]}</span></label>)}</div></fieldset> : <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Advanced regulatory fields appear when runoff planning or water body proximity is selected.</div>}</> : null}</div>; }
 /**
  * Purpose: Defines the hazard photo handlers data contract used by the job hazard analysis page module.
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
@@ -2957,15 +672,8 @@ function EnvironmentalStep({
 type HazardPhotoHandlers = {
   photosByHazardId: Record<string, JobHazardPhoto[]>;
   uploadingHazardId: string | null;
-  onUploadPhoto: (
-    entry: HazardEntry,
-    file: File,
-    options: HazardPhotoUploadOptions,
-  ) => Promise<void>;
-  onUpdatePhoto: (
-    photo: JobHazardPhoto,
-    updates: HazardPhotoUpdate,
-  ) => Promise<void>;
+  onUploadPhoto: (entry: HazardEntry, file: File, options: HazardPhotoUploadOptions) => Promise<void>;
+  onUpdatePhoto: (photo: JobHazardPhoto, updates: HazardPhotoUpdate) => Promise<void>;
   onRemovePhoto: (photo: JobHazardPhoto) => Promise<void>;
 };
 
@@ -2973,853 +681,109 @@ type HazardPhotoHandlers = {
  * Renders the hazards step interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function HazardsStep({
-  personnelAssignments,
-  formData,
-  hazardLibrary,
-  serviceType,
-  photosByHazardId,
-  uploadingHazardId,
-  updateHazard,
-  addHazardFromSuggestion,
-  addCustomHazard,
-  removeHazard,
-  onUploadPhoto,
-  onUpdatePhoto,
-  onRemovePhoto,
-  isSaving,
-}: {
-  personnelAssignments: JobPersonnelAssignment[];
-  formData: JhaFormState;
-  hazardLibrary: HazardLibraryEntry[];
-  serviceType: string;
-  updateHazard: (
-    index: number,
-    field: keyof HazardEntry,
-    value: string,
-  ) => void;
-  addHazardFromSuggestion: (
-    hazard: (typeof commonHazards)[number] | HazardLibraryEntry,
-  ) => void;
-  addCustomHazard: () => void;
-  removeHazard: (index: number) => void;
-  isSaving: boolean;
-} & HazardPhotoHandlers) {
-  const [libraryView, setLibraryView] = useState<"relevant" | "all">(
-    "relevant",
-  );
-  const [searchQuery, setSearchQuery] = useState("");
-  const availableHazards = useMemo(
-    () => getVisibleHazards(hazardLibrary, serviceType, libraryView),
-    [hazardLibrary, serviceType, libraryView],
-  );
-  const displayedHazards = useMemo(
-    () =>
-      searchQuery.trim()
-        ? searchHazards(availableHazards, searchQuery)
-        : availableHazards,
-    [availableHazards, searchQuery],
-  );
-  const runoffHazard = commonHazards.find(
-    (hazard) =>
-      hazard[0] === "Contaminated runoff entering storm drains or waterways",
-  );
+function HazardsStep({ personnelAssignments, formData, hazardLibrary, serviceType, photosByHazardId, uploadingHazardId, updateHazard, addHazardFromSuggestion, addCustomHazard, removeHazard, onUploadPhoto, onUpdatePhoto, onRemovePhoto, isSaving }: { personnelAssignments: JobPersonnelAssignment[]; formData: JhaFormState; hazardLibrary: HazardLibraryEntry[]; serviceType: string; updateHazard: (index: number, field: keyof HazardEntry, value: string) => void; addHazardFromSuggestion: (hazard: (typeof commonHazards)[number] | HazardLibraryEntry) => void; addCustomHazard: () => void; removeHazard: (index: number) => void; isSaving: boolean } & HazardPhotoHandlers) {
+  const [libraryView, setLibraryView] = useState<'relevant' | 'all'>('relevant');
+  const [searchQuery, setSearchQuery] = useState('');
+  const availableHazards = useMemo(() => getVisibleHazards(hazardLibrary, serviceType, libraryView), [hazardLibrary, serviceType, libraryView]);
+  const displayedHazards = useMemo(() => searchQuery.trim() ? searchHazards(availableHazards, searchQuery) : availableHazards, [availableHazards, searchQuery]);
+  const runoffHazard = commonHazards.find((hazard) => hazard[0] === 'Contaminated runoff entering storm drains or waterways');
   const runoffHazardAdded = hasRunoffHazard(formData);
+  // View-only state for the documented hazard list. Cards stay mounted while collapsed or filtered out so
+  // local evidence inputs (next-photo caption, packet choice, uncommitted photo captions) are never discarded.
+  const [hazardListQuery, setHazardListQuery] = useState('');
+  // Matches are taken when the query changes, not on every edit, so editing a hazard never hides the card being edited.
+  const [hazardListMatches, setHazardListMatches] = useState<ReadonlySet<string> | null>(null);
+  const [initialHazardIds] = useState(() => new Set(formData.hazardEntries.map((entry) => entry.id)));
+  const [expansionOverrides, setExpansionOverrides] = useState<HazardExpansionOverrides>({});
+  const visibleHazardIds = formData.hazardEntries.filter((entry) => !hazardListMatches || hazardListMatches.has(entry.id)).map((entry) => entry.id);
+  const hiddenIncompleteCount = formData.hazardEntries.filter((entry) => !visibleHazardIds.includes(entry.id) && getMissingRequiredHazardFields(entry).length > 0).length;
+  const visiblePositions = new Map(visibleHazardIds.map((id, position) => [id, position]));
+  function searchHazardList(query: string) { setHazardListQuery(query); setHazardListMatches(query.trim() ? new Set(formData.hazardEntries.filter((entry) => hazardMatchesSearch(entry, query)).map((entry) => entry.id)) : null); }
+  // Adding a hazard clears the list search so the new (expanded) card is not hidden by the filter.
+  function addSuggestedHazard(hazard: (typeof commonHazards)[number] | HazardLibraryEntry) { searchHazardList(''); addHazardFromSuggestion(hazard); }
+  function addCustomHazardCard() { searchHazardList(''); addCustomHazard(); }
+  function removeHazardCard(index: number) { const id = formData.hazardEntries[index]?.id; removeHazard(index); if (id) setExpansionOverrides((current) => withoutHazardExpansion(current, id)); }
 
-  return (
-    <div className="space-y-5">
-      <div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-brand-900">
-              Hazard Library
-            </h3>
-            <p className="mt-1 text-sm text-slate-600">
-              Suggestions are optional. Only hazards you add become part of this
-              JHA.
-            </p>
-          </div>
-          <div
-            className="inline-flex rounded-lg border border-slate-300 bg-white p-1"
-            aria-label="Hazard library view"
-          >
-            {(["relevant", "all"] as const).map((view) => (
-              <button
-                key={view}
-                type="button"
-                className={`min-h-10 rounded-md px-3 py-2 text-sm font-medium ${libraryView === view ? "bg-brand-700 text-white" : "text-slate-700 hover:bg-slate-50"}`}
-                onClick={() => setLibraryView(view)}
-                disabled={isSaving}
-                aria-pressed={libraryView === view}
-              >
-                {view === "relevant" ? "Relevant Hazards" : "All Hazards"}
-              </button>
-            ))}
-          </div>
-        </div>
-        <p className="mt-2 text-xs text-slate-600">
-          {libraryView === "relevant"
-            ? `Universal and ${serviceType} hazards are shown.`
-            : "The complete available library is shown. Viewing it does not add hazards."}
-        </p>
-        <input
-          className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
-          type="search"
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder={`Search ${libraryView === "relevant" ? "relevant hazards" : "all hazards"}…`}
-          disabled={isSaving}
-        />
-        <div className="mt-3 grid max-h-96 gap-2 overflow-y-auto sm:grid-cols-2">
-          {displayedHazards.map((hazard) => {
-            const selected = formData.hazardEntries.some(
-              (entry) =>
-                entry.description.toLowerCase() ===
-                hazard.hazard_name.toLowerCase(),
-            );
-            return (
-              <button
-                key={hazard.id}
-                type="button"
-                className={`rounded-lg border p-3 text-left text-sm transition ${selected ? "border-brand-700 bg-brand-50 text-brand-900" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
-                onClick={() => addHazardFromSuggestion(hazard)}
-                disabled={isSaving || selected}
-              >
-                <span className="block font-semibold">
-                  {hazard.hazard_name}
-                </span>
-                <span className="mt-1 block text-xs uppercase tracking-wide text-slate-500">
-                  {hazard.category}
-                </span>
-              </button>
-            );
-          })}
-          {!displayedHazards.length ? (
-            <p className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-600">
-              No hazards match this view.
-            </p>
-          ) : null}
+  return <div className="space-y-5">
+    <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div><h3 className="text-base font-semibold text-brand-900">Hazard Library</h3><p className="mt-1 text-sm text-slate-600">Suggestions are optional. Only hazards you add become part of this JHA.</p></div>
+        <div className="inline-flex rounded-lg border border-slate-300 bg-white p-1" aria-label="Hazard library view">
+          {(['relevant', 'all'] as const).map((view) => <button key={view} type="button" className={`min-h-10 rounded-md px-3 py-2 text-sm font-medium ${libraryView === view ? 'bg-brand-700 text-white' : 'text-slate-700 hover:bg-slate-50'}`} onClick={() => setLibraryView(view)} disabled={isSaving} aria-pressed={libraryView === view}>{view === 'relevant' ? 'Relevant Hazards' : 'All Hazards'}</button>)}
         </div>
       </div>
-      {formData.runoffRisk && runoffHazard && !runoffHazardAdded ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          <p className="font-medium">
-            Runoff planning was identified in Environmental.
-          </p>
-          <button
-            type="button"
-            className="mt-3 min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white"
-            onClick={() => addHazardFromSuggestion(runoffHazard)}
-            disabled={isSaving}
-          >
-            Add Contaminated Runoff Hazard
-          </button>
-        </div>
-      ) : null}
-      <button
-        type="button"
-        className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:py-2"
-        onClick={addCustomHazard}
-        disabled={isSaving}
-      >
-        Add Custom Hazard
-      </button>
-      {formData.hazardEntries.length === 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-          Select a library hazard or add a custom hazard to begin documentation.
-        </div>
-      ) : null}
-      {formData.hazardEntries.map((entry, index) => (
-        <HazardCard
-          key={entry.id}
-          entry={entry}
-          index={index}
-          personnelAssignments={personnelAssignments}
-          photos={photosByHazardId[entry.id] ?? []}
-          hazardOptions={formData.hazardEntries}
-          isUploadingPhoto={uploadingHazardId === entry.id}
-          updateHazard={updateHazard}
-          removeHazard={removeHazard}
-          onUploadPhoto={onUploadPhoto}
-          onUpdatePhoto={onUpdatePhoto}
-          onRemovePhoto={onRemovePhoto}
-          disabled={isSaving}
-        />
-      ))}
-      {(photosByHazardId.none ?? []).length > 0 ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <h3 className="text-sm font-semibold text-brand-900">
-            General Photo Documentation
-          </h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {(photosByHazardId.none ?? []).map((photo) => (
-              <HazardPhotoCard
-                key={photo.id}
-                photo={photo}
-                hazardOptions={formData.hazardEntries}
-                disabled={isSaving}
-                onUpdatePhoto={onUpdatePhoto}
-                onRemovePhoto={onRemovePhoto}
-              />
-            ))}
-          </div>
-        </div>
-      ) : null}
+      <p className="mt-2 text-xs text-slate-600">{libraryView === 'relevant' ? `Universal and ${serviceType} hazards are shown.` : 'The complete available library is shown. Viewing it does not add hazards.'}</p>
+      <input className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm" type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={`Search ${libraryView === 'relevant' ? 'relevant hazards' : 'all hazards'}…`} disabled={isSaving} />
+      <div className="mt-3 grid max-h-96 gap-2 overflow-y-auto sm:grid-cols-2">
+        {displayedHazards.map((hazard) => { const selected = formData.hazardEntries.some((entry) => entry.description.toLowerCase() === hazard.hazard_name.toLowerCase()); return <button key={hazard.id} type="button" className={`rounded-lg border p-3 text-left text-sm transition ${selected ? 'border-brand-700 bg-brand-50 text-brand-900' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`} onClick={() => addSuggestedHazard(hazard)} disabled={isSaving || selected}><span className="block font-semibold">{hazard.hazard_name}</span><span className="mt-1 block text-xs uppercase tracking-wide text-slate-500">{hazard.category}</span></button>; })}
+        {!displayedHazards.length ? <p className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-600">No hazards match this view.</p> : null}
+      </div>
     </div>
-  );
+    {formData.runoffRisk && runoffHazard && !runoffHazardAdded ? <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-medium">Runoff planning was identified in Environmental.</p><button type="button" className="mt-3 min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-medium text-white" onClick={() => addSuggestedHazard(runoffHazard)} disabled={isSaving}>Add Contaminated Runoff Hazard</button></div> : null}
+    <button type="button" className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:py-2" onClick={addCustomHazardCard} disabled={isSaving}>Add Custom Hazard</button>
+    {formData.hazardEntries.length === 0 ? <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Select a library hazard or add a custom hazard to begin documentation.</div> : null}
+    {formData.hazardEntries.length > 0 ? <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <label className="block flex-1 text-sm font-medium text-slate-700">Search documented hazards<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm" type="search" value={hazardListQuery} onChange={(event) => searchHazardList(event.target.value)} placeholder="Name, category, or mitigation" /></label>
+      <div className="flex gap-2">
+        <button type="button" className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:flex-none sm:py-2" onClick={() => setExpansionOverrides((current) => setHazardsExpanded(current, visibleHazardIds, true))} disabled={visibleHazardIds.length === 0}>Expand All</button>
+        <button type="button" className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:flex-none sm:py-2" onClick={() => setExpansionOverrides((current) => setHazardsExpanded(current, visibleHazardIds, false))} disabled={visibleHazardIds.length === 0}>Collapse All</button>
+      </div>
+    </div> : null}
+    {hazardListMatches && visibleHazardIds.length > 0 && visibleHazardIds.length < formData.hazardEntries.length ? <p className="text-xs text-slate-600" role="status">Showing {visibleHazardIds.length} of {formData.hazardEntries.length} hazards. Clear the search to review every hazard.</p> : null}
+    {hiddenIncompleteCount > 0 ? <p className="text-xs font-medium text-amber-900" role="status">{hiddenIncompleteCount} hidden hazard{hiddenIncompleteCount === 1 ? ' is' : 's are'} missing required fields.</p> : null}
+    {formData.hazardEntries.length > 0 && visibleHazardIds.length === 0 ? <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600" role="status">No hazards match your search.</p> : null}
+    {formData.hazardEntries.map((entry, index) => <HazardCard key={entry.id} entry={entry} index={index} visiblePosition={visiblePositions.get(entry.id) ?? null} expanded={isHazardExpanded(entry.id, expansionOverrides, initialHazardIds)} onToggleExpanded={() => setExpansionOverrides((current) => ({ ...current, [entry.id]: !isHazardExpanded(entry.id, current, initialHazardIds) }))} personnelAssignments={personnelAssignments} photos={photosByHazardId[entry.id] ?? []} hazardOptions={formData.hazardEntries} isUploadingPhoto={uploadingHazardId === entry.id} updateHazard={updateHazard} removeHazard={removeHazardCard} onUploadPhoto={onUploadPhoto} onUpdatePhoto={onUpdatePhoto} onRemovePhoto={onRemovePhoto} disabled={isSaving} />)}
+    {(photosByHazardId.none ?? []).length > 0 ? <div className="rounded-lg border border-slate-200 bg-white p-3"><h3 className="text-sm font-semibold text-brand-900">General Photo Documentation</h3><div className="mt-4 grid gap-3 sm:grid-cols-2">{(photosByHazardId.none ?? []).map((photo) => <HazardPhotoCard key={photo.id} photo={photo} hazardOptions={formData.hazardEntries} disabled={isSaving} onUpdatePhoto={onUpdatePhoto} onRemovePhoto={onRemovePhoto} />)}</div></div> : null}
+  </div>;
 }
 /**
  * Renders the hazard card interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function HazardCard({
-  entry,
-  index,
-  personnelAssignments,
-  photos,
-  hazardOptions,
-  isUploadingPhoto,
-  updateHazard,
-  removeHazard,
-  onUploadPhoto,
-  onUpdatePhoto,
-  onRemovePhoto,
-  disabled,
-}: {
-  entry: HazardEntry;
-  index: number;
-  personnelAssignments: JobPersonnelAssignment[];
-  photos: JobHazardPhoto[];
-  hazardOptions: HazardEntry[];
-  isUploadingPhoto: boolean;
-  updateHazard: (
-    index: number,
-    field: keyof HazardEntry,
-    value: string,
-  ) => void;
-  removeHazard: (index: number) => void;
-  disabled: boolean;
-} & Pick<
-  HazardPhotoHandlers,
-  "onUploadPhoto" | "onUpdatePhoto" | "onRemovePhoto"
->) {
-  const ownerOptions = personnelAssignments.flatMap((assignment) =>
-    assignment.personnel
-      ? [`${assignment.personnel.full_name} — ${assignment.assigned_role}`]
-      : [],
-  );
-  if (personnelAssignments.length > 1) ownerOptions.push("All Crew");
-  if (entry.owner && !ownerOptions.includes(entry.owner))
-    ownerOptions.push(`${entry.owner} (previously recorded)`);
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="text-sm font-semibold text-brand-900">
-          Hazard {index + 1}
-        </h3>
-        <button
-          type="button"
-          className="text-sm font-medium text-red-700 disabled:text-slate-400"
-          onClick={() => removeHazard(index)}
-          disabled={disabled}
-        >
-          Remove
-        </button>
-      </div>
-      <div className="mt-3 grid gap-4 sm:grid-cols-2">
-        <TextArea
-          label="Hazard name / description"
-          value={entry.description}
-          onChange={(value) => updateHazard(index, "description", value)}
-          disabled={disabled}
-        />
-        <TextInput
-          label="Category"
-          value={entry.category}
-          onChange={(value) => updateHazard(index, "category", value)}
-          disabled={disabled}
-        />
-        <div className="sm:col-span-2">
-          <TextArea
-            label="Controls / Mitigation Measures"
-            value={entry.mitigation}
-            onChange={(value) => updateHazard(index, "mitigation", value)}
-            disabled={disabled}
-          />
-        </div>
-        <label className="block text-sm font-medium text-slate-700">
-          Control Owner
-          <select
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
-            value={
-              entry.owner
-                ? ownerOptions.includes(entry.owner)
-                  ? entry.owner
-                  : `${entry.owner} (previously recorded)`
-                : ""
-            }
-            onChange={(event) =>
-              updateHazard(
-                index,
-                "owner",
-                event.target.value.replace(/ \(previously recorded\)$/, ""),
-              )
-            }
-            disabled={disabled}
-          >
-            <option value="">Select assigned personnel</option>
-            {ownerOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-          <span className="mt-1 block text-xs text-slate-500">
-            Responsible for implementing, maintaining, or monitoring this
-            control.
-          </span>
-        </label>
-      </div>
-      <HazardPhotoEvidence
-        entry={entry}
-        photos={photos}
-        hazardOptions={hazardOptions}
-        isUploading={isUploadingPhoto}
-        disabled={disabled}
-        onUploadPhoto={onUploadPhoto}
-        onUpdatePhoto={onUpdatePhoto}
-        onRemovePhoto={onRemovePhoto}
-      />
-    </div>
-  );
+function HazardCard({ entry, index, visiblePosition, expanded, onToggleExpanded, personnelAssignments, photos, hazardOptions, isUploadingPhoto, updateHazard, removeHazard, onUploadPhoto, onUpdatePhoto, onRemovePhoto, disabled }: { entry: HazardEntry; index: number; visiblePosition: number | null; expanded: boolean; onToggleExpanded: () => void; personnelAssignments: JobPersonnelAssignment[]; photos: JobHazardPhoto[]; hazardOptions: HazardEntry[]; isUploadingPhoto: boolean; updateHazard: (index: number, field: keyof HazardEntry, value: string) => void; removeHazard: (index: number) => void; disabled: boolean } & Pick<HazardPhotoHandlers, 'onUploadPhoto' | 'onUpdatePhoto' | 'onRemovePhoto'>) {
+  const ownerOptions = personnelAssignments.flatMap((assignment) => assignment.personnel ? [`${assignment.personnel.full_name} — ${assignment.assigned_role}`] : []);
+  if (personnelAssignments.length > 1) ownerOptions.push('All Crew');
+  if (entry.owner && !ownerOptions.includes(entry.owner)) ownerOptions.push(`${entry.owner} (previously recorded)`);
+  const ownerValue = entry.owner ? (ownerOptions.includes(entry.owner) ? entry.owner : `${entry.owner} (previously recorded)`) : '';
+  const detailsId = `hazard-${entry.id}-details`;
+  const missingFields = getMissingRequiredHazardFields(entry);
+  // Collapsed and filtered-out cards are hidden, not unmounted, so field and evidence state is preserved.
+  return <div className={`rounded-lg border border-slate-200 p-3 ${visiblePosition !== null && visiblePosition % 2 === 1 ? 'bg-[#F3F8FF]' : 'bg-white'}`} hidden={visiblePosition === null}><div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><h3 className="min-w-0 flex-1 text-sm font-semibold text-brand-900"><button type="button" className="flex w-full items-start gap-2 rounded-md text-left" onClick={onToggleExpanded} aria-expanded={expanded} aria-controls={detailsId}><svg className={`mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition-transform ${expanded ? 'rotate-90' : ''}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.17 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clipRule="evenodd" /></svg><span className="min-w-0 flex-1"><span className="block break-words">Hazard {index + 1}: {entry.description.trim() || <span className="font-normal italic text-slate-500">No hazard description entered.</span>}</span><span className="mt-1 block break-words text-xs font-medium uppercase tracking-wide text-slate-500">{entry.category.trim() || 'No category entered'}</span></span></button></h3><button type="button" className="self-start text-sm font-medium text-red-700 disabled:text-slate-400" onClick={() => removeHazard(index)} disabled={disabled}>Remove</button></div>{expanded ? null : <div className="mt-2 space-y-2 pl-6 text-sm">{entry.mitigation.trim() ? <p className="line-clamp-2 break-words text-slate-700">{entry.mitigation}</p> : <p className="italic text-slate-500">No mitigation measures entered.</p>}<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">{missingFields.length ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-900">Missing: {missingFields.join(', ')}</span> : null}{ownerValue ? <span className="break-words"><span className="font-medium text-slate-700">Control Owner:</span> {ownerValue}</span> : <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-medium text-amber-900">Owner Unassigned</span>}<span>{photos.length} evidence photo{photos.length === 1 ? '' : 's'}{isUploadingPhoto ? ' (uploading...)' : ''}</span></div>{photos.length ? <button type="button" className="flex flex-wrap items-center gap-2 rounded-md text-left" onClick={onToggleExpanded} aria-label={`Show ${photos.length} evidence photo${photos.length === 1 ? '' : 's'} for hazard ${index + 1}`}>{photos.slice(0, maxCollapsedPhotoThumbnails).map((photo) => <img key={photo.id} className="h-14 w-14 rounded-md border border-slate-200 bg-slate-100 object-cover" src={getPhotoThumbnailSrc(photo)} alt="" />)}{photos.length > maxCollapsedPhotoThumbnails ? <span className="flex h-14 w-14 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-xs font-medium text-slate-600">+{photos.length - maxCollapsedPhotoThumbnails}</span> : null}</button> : null}</div>}<div id={detailsId} hidden={!expanded}><div className="mt-3 grid gap-4 sm:grid-cols-2"><TextArea label="Hazard name / description" value={entry.description} onChange={(value) => updateHazard(index, 'description', value)} disabled={disabled} /><TextInput label="Category" value={entry.category} onChange={(value) => updateHazard(index, 'category', value)} disabled={disabled} /><div className="sm:col-span-2"><TextArea label="Controls / Mitigation Measures" value={entry.mitigation} onChange={(value) => updateHazard(index, 'mitigation', value)} disabled={disabled} /></div><label className="block text-sm font-medium text-slate-700">Control Owner<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm" value={ownerValue} onChange={(event) => updateHazard(index, 'owner', event.target.value.replace(/ \(previously recorded\)$/, ''))} disabled={disabled}><option value="">Select assigned personnel</option>{ownerOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select><span className="mt-1 block text-xs text-slate-500">Responsible for implementing, maintaining, or monitoring this control.</span></label></div><HazardPhotoEvidence entry={entry} photos={photos} hazardOptions={hazardOptions} isUploading={isUploadingPhoto} disabled={disabled} onUploadPhoto={onUploadPhoto} onUpdatePhoto={onUpdatePhoto} onRemovePhoto={onRemovePhoto} /></div></div>;
 }
 /**
  * Renders the hazard photo evidence interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function HazardPhotoEvidence({
-  entry,
-  photos,
-  hazardOptions,
-  isUploading,
-  disabled,
-  onUploadPhoto,
-  onUpdatePhoto,
-  onRemovePhoto,
-}: {
-  entry: HazardEntry;
-  photos: JobHazardPhoto[];
-  hazardOptions: HazardEntry[];
-  isUploading: boolean;
-  disabled: boolean;
-} & Pick<
-  HazardPhotoHandlers,
-  "onUploadPhoto" | "onUpdatePhoto" | "onRemovePhoto"
->) {
-  const [caption, setCaption] = useState("");
-  const [includeInPacket, setIncludeInPacket] = useState(true);
-  const uploadInputId = `hazard-${entry.id}-upload`;
-  const cameraInputId = `hazard-${entry.id}-camera`;
-  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    await onUploadPhoto(entry, file, { caption, includeInPacket });
-    setCaption("");
-    setIncludeInPacket(true);
-  }
-  return (
-    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h4 className="text-sm font-semibold text-brand-900">
-            Add Photo Evidence
-          </h4>
-          <p className="mt-1 text-xs text-slate-500">
-            Attach proof that controls were implemented for this hazard.
-          </p>
-        </div>
-        <span className="text-xs font-medium text-slate-500">
-          {photos.length} photo{photos.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <TextInput
-          label="Caption / notes for next photo"
-          value={caption}
-          onChange={setCaption}
-          disabled={disabled || isUploading}
-        />
-        <div className="flex items-end">
-          <Checkbox
-            label="Include in Packet"
-            checked={includeInPacket}
-            onChange={setIncludeInPacket}
-            disabled={disabled || isUploading}
-          />
-        </div>
-      </div>
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-        <input
-          id={uploadInputId}
-          className="hidden"
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
-          disabled={disabled || isUploading}
-        />
-        <input
-          id={cameraInputId}
-          className="hidden"
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handleFileChange}
-          disabled={disabled || isUploading}
-        />
-        <label
-          htmlFor={uploadInputId}
-          className={`min-h-11 cursor-pointer rounded-lg border border-slate-300 bg-white px-4 py-3 text-center text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:py-2 ${disabled || isUploading ? "pointer-events-none opacity-50" : ""}`}
-        >
-          Upload File
-        </label>
-        <label
-          htmlFor={cameraInputId}
-          className={`min-h-11 cursor-pointer rounded-lg bg-brand-700 px-4 py-3 text-center text-sm font-medium text-white transition hover:bg-brand-900 sm:py-2 ${disabled || isUploading ? "pointer-events-none opacity-50" : ""}`}
-        >
-          {isUploading ? "Optimizing & Uploading..." : "Take Photo"}
-        </label>
-      </div>
-      {photos.length > 0 ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {photos.map((photo) => (
-            <HazardPhotoCard
-              key={photo.id}
-              photo={photo}
-              hazardOptions={hazardOptions}
-              disabled={disabled}
-              onUpdatePhoto={onUpdatePhoto}
-              onRemovePhoto={onRemovePhoto}
-            />
-          ))}
-        </div>
-      ) : (
-        <p className="mt-3 rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">
-          No evidence photos attached to this hazard yet.
-        </p>
-      )}
-    </div>
-  );
-}
+function HazardPhotoEvidence({ entry, photos, hazardOptions, isUploading, disabled, onUploadPhoto, onUpdatePhoto, onRemovePhoto }: { entry: HazardEntry; photos: JobHazardPhoto[]; hazardOptions: HazardEntry[]; isUploading: boolean; disabled: boolean } & Pick<HazardPhotoHandlers, 'onUploadPhoto' | 'onUpdatePhoto' | 'onRemovePhoto'>) { const [caption, setCaption] = useState(''); const [includeInPacket, setIncludeInPacket] = useState(true); const uploadInputId = `hazard-${entry.id}-upload`; const cameraInputId = `hazard-${entry.id}-camera`; async function handleFileChange(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; event.target.value = ''; if (!file) return; await onUploadPhoto(entry, file, { caption, includeInPacket }); setCaption(''); setIncludeInPacket(true); } return <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3"><div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><div><h4 className="text-sm font-semibold text-brand-900">Add Photo Evidence</h4><p className="mt-1 text-xs text-slate-500">Attach proof that controls were implemented for this hazard.</p></div><span className="text-xs font-medium text-slate-500">{photos.length} photo{photos.length === 1 ? '' : 's'}</span></div><div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]"><TextInput label="Caption / notes for next photo" value={caption} onChange={setCaption} disabled={disabled || isUploading} /><div className="flex items-end"><Checkbox label="Include in Packet" checked={includeInPacket} onChange={setIncludeInPacket} disabled={disabled || isUploading} /></div></div><div className="mt-3 flex flex-col gap-2 sm:flex-row"><input id={uploadInputId} className="hidden" type="file" accept="image/*" onChange={handleFileChange} disabled={disabled || isUploading} /><input id={cameraInputId} className="hidden" type="file" accept="image/*" capture="environment" onChange={handleFileChange} disabled={disabled || isUploading} /><label htmlFor={uploadInputId} className={`min-h-11 cursor-pointer rounded-lg border border-slate-300 bg-white px-4 py-3 text-center text-sm font-medium text-slate-700 transition hover:bg-slate-50 sm:py-2 ${disabled || isUploading ? 'pointer-events-none opacity-50' : ''}`}>Upload File</label><label htmlFor={cameraInputId} className={`min-h-11 cursor-pointer rounded-lg bg-brand-700 px-4 py-3 text-center text-sm font-medium text-white transition hover:bg-brand-900 sm:py-2 ${disabled || isUploading ? 'pointer-events-none opacity-50' : ''}`}>{isUploading ? 'Optimizing & Uploading...' : 'Take Photo'}</label></div>{photos.length > 0 ? <div className="mt-4 grid gap-3 sm:grid-cols-2">{photos.map((photo) => <HazardPhotoCard key={photo.id} photo={photo} hazardOptions={hazardOptions} disabled={disabled} onUpdatePhoto={onUpdatePhoto} onRemovePhoto={onRemovePhoto} />)}</div> : <p className="mt-3 rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No evidence photos attached to this hazard yet.</p>}</div>; }
 /**
  * Renders the hazard photo card interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function HazardPhotoCard({
-  photo,
-  hazardOptions,
-  disabled,
-  onUpdatePhoto,
-  onRemovePhoto,
-}: {
-  photo: JobHazardPhoto;
-  hazardOptions: HazardEntry[];
-  disabled: boolean;
-} & Pick<HazardPhotoHandlers, "onUpdatePhoto" | "onRemovePhoto">) {
-  return (
-    <article className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-      {photo.thumbnail_display_url || photo.display_url ? (
-        <img
-          className="h-40 w-full object-cover"
-          src={photo.thumbnail_display_url ?? photo.display_url ?? ""}
-          alt={photo.caption || `${photo.hazard_name} evidence photo`}
-        />
-      ) : (
-        <div className="flex h-40 items-center justify-center bg-slate-100 px-4 text-center text-sm text-slate-500">
-          Private photo preview is temporarily unavailable.
-        </div>
-      )}
-      <div className="space-y-3 p-3">
-        <label className="block text-sm font-medium text-slate-700">
-          Caption
-          <input
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100"
-            defaultValue={photo.caption ?? ""}
-            onBlur={(event) =>
-              void onUpdatePhoto(photo, {
-                caption: event.target.value.trim() || null,
-                include_in_packet: photo.include_in_packet,
-              })
-            }
-            disabled={disabled}
-          />
-        </label>
-        <p className="text-xs text-slate-500">
-          Uploaded{" "}
-          {photo.created_at
-            ? new Date(photo.created_at).toLocaleString()
-            : "just now"}
-        </p>
-        <label className="block text-sm font-medium text-slate-700">
-          Related Hazard
-          <select
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100"
-            value={photo.hazard_id ?? "none"}
-            onChange={(event) => {
-              const selected = hazardOptions.find(
-                (hazard) => hazard.id === event.target.value,
-              );
-              void onUpdatePhoto(photo, {
-                caption: photo.caption,
-                include_in_packet: photo.include_in_packet,
-                hazard_id: selected?.id ?? null,
-                hazard_name: selected?.description || "None",
-              });
-            }}
-            disabled={disabled}
-          >
-            <option value="none">None</option>
-            {hazardOptions.map((hazard) => (
-              <option key={hazard.id} value={hazard.id}>
-                {hazard.description || "Documented hazard"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Checkbox
-          label="Include in Packet"
-          checked={photo.include_in_packet}
-          onChange={(checked) =>
-            void onUpdatePhoto(photo, {
-              caption: photo.caption,
-              include_in_packet: checked,
-            })
-          }
-          disabled={disabled}
-        />
-        <button
-          type="button"
-          className="min-h-11 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:text-slate-400"
-          onClick={() => void onRemovePhoto(photo)}
-          disabled={disabled}
-        >
-          Remove Photo
-        </button>
-      </div>
-    </article>
-  );
-}
+function HazardPhotoCard({ photo, hazardOptions, disabled, onUpdatePhoto, onRemovePhoto }: { photo: JobHazardPhoto; hazardOptions: HazardEntry[]; disabled: boolean } & Pick<HazardPhotoHandlers, 'onUpdatePhoto' | 'onRemovePhoto'>) { return <article className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"><img className="h-40 w-full object-cover" src={getPhotoThumbnailSrc(photo)} alt={photo.caption || `${photo.hazard_name} evidence photo`} /><div className="space-y-3 p-3"><label className="block text-sm font-medium text-slate-700">Caption<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100" defaultValue={photo.caption ?? ''} onBlur={(event) => void onUpdatePhoto(photo, { caption: event.target.value.trim() || null, include_in_packet: photo.include_in_packet })} disabled={disabled} /></label><p className="text-xs text-slate-500">Uploaded {photo.created_at ? new Date(photo.created_at).toLocaleString() : 'just now'}</p><label className="block text-sm font-medium text-slate-700">Related Hazard<select className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100" value={photo.hazard_id ?? 'none'} onChange={(event) => { const selected = hazardOptions.find((hazard) => hazard.id === event.target.value); void onUpdatePhoto(photo, { caption: photo.caption, include_in_packet: photo.include_in_packet, hazard_id: selected?.id ?? null, hazard_name: selected?.description || 'None' }); }} disabled={disabled}><option value="none">None</option>{hazardOptions.map((hazard) => <option key={hazard.id} value={hazard.id}>{hazard.description || 'Documented hazard'}</option>)}</select></label><Checkbox label="Include in Packet" checked={photo.include_in_packet} onChange={(checked) => void onUpdatePhoto(photo, { caption: photo.caption, include_in_packet: checked })} disabled={disabled} /><button type="button" className="min-h-11 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:text-slate-400" onClick={() => void onRemovePhoto(photo)} disabled={disabled}>Remove Photo</button></div></article>; }
 /**
  * Renders the certification step interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function CertificationStep({
-  formData,
-  updateField,
-  togglePpe,
-  toggleFormArrayField,
-  isSaving,
-  jobId,
-  safetyDesignation,
-  rpic,
-  currentUserId,
-  attestations,
-  onAttest,
-}: StepProps & {
-  togglePpe: (option: string) => void;
-  toggleFormArrayField: (
-    field: "runoffContaminants" | "communicationMethods",
-    value: string,
-  ) => void;
-  jobId: string;
-  safetyDesignation: SafetyDesignation;
-  rpic: RolePerson | null;
-  currentUserId: string;
-  attestations: JhaAttestations;
-  onAttest: (kind: "safety-manager" | "rpic") => Promise<void>;
-}) {
+function CertificationStep({ formData, updateField, togglePpe, toggleFormArrayField, isSaving, jobId, safetyDesignation, rpic, currentUserId, attestations, onAttest }: StepProps & { togglePpe: (option: string) => void; toggleFormArrayField: (field: 'runoffContaminants' | 'communicationMethods', value: string) => void; jobId: string; safetyDesignation: SafetyDesignation; rpic: RolePerson | null; currentUserId: string; attestations: JhaAttestations; onAttest: (kind: 'safety-manager' | 'rpic') => Promise<void> }) {
   const safetyManager = safetyDesignation?.personnel ?? null;
-  const dualRole = Boolean(
-    safetyManager && rpic && safetyManager.id === rpic.id,
-  );
+  const dualRole = Boolean(safetyManager && rpic && safetyManager.id === rpic.id);
   /**
    * Computes format attestation time for the surrounding workflow.
    * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
    */
-  const formatAttestationTime = (value: string | null) =>
-    value ? new Date(value).toLocaleString() : "Pending";
-  return (
-    <div className="space-y-5">
-      <fieldset>
-        <legend className="text-sm font-medium text-slate-700">
-          PPE Requirements
-        </legend>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {ppeOptions.map((option) => (
-            <Checkbox
-              key={option}
-              label={option}
-              checked={Boolean(formData.ppeRequirements[option])}
-              onChange={() => togglePpe(option)}
-              disabled={isSaving}
-            />
-          ))}
-        </div>
-      </fieldset>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextInput
-          label="Nearest Hospital / Emergency Facility"
-          value={formData.nearestHospital}
-          onChange={(value) => updateField("nearestHospital", value)}
-          placeholder="Hospital, emergency department, or appropriate emergency medical facility"
-          disabled={isSaving}
-        />
-        <TextInput
-          label="Emergency Facility Address"
-          value={formData.emergencyFacilityAddress}
-          onChange={(value) => updateField("emergencyFacilityAddress", value)}
-          disabled={isSaving}
-        />
-        <TextInput
-          label="Emergency Contact"
-          value={formData.emergencyContact}
-          onChange={(value) => updateField("emergencyContact", value)}
-          disabled={isSaving}
-        />
-        <div className="sm:col-span-2">
-          <TextArea
-            label="Drone Incident Procedure"
-            value={formData.droneIncidentProcedure}
-            onChange={(value) => updateField("droneIncidentProcedure", value)}
-            disabled={isSaving}
-          />
-        </div>
-      </div>
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <h3 className="text-base font-semibold text-brand-900">
-          Communications
-        </h3>
-        <fieldset className="mt-3">
-          <legend className="text-sm font-medium text-slate-700">
-            Communication Method
-          </legend>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {communicationOptions.map((option) => (
-              <Checkbox
-                key={option}
-                label={option}
-                checked={formData.communicationMethods.includes(option)}
-                onChange={() =>
-                  toggleFormArrayField("communicationMethods", option)
-                }
-                disabled={isSaving}
-              />
-            ))}
-          </div>
-        </fieldset>
-        {formData.communicationMethods.includes("Other") ? (
-          <div className="mt-3">
-            <TextInput
-              label="Other communication method"
-              value={formData.communicationMethodOther}
-              onChange={(value) =>
-                updateField("communicationMethodOther", value)
-              }
-              disabled={isSaving}
-            />
-          </div>
-        ) : null}
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <TextInput
-            label="Radio frequency/channel assigned or discussed"
-            value={formData.radioChannel}
-            onChange={(value) => updateField("radioChannel", value)}
-            disabled={isSaving}
-          />
-          <div className="space-y-3 sm:pt-7">
-            <Checkbox
-              label="Communication plan reviewed"
-              checked={formData.communicationPlanReviewed}
-              onChange={(checked) =>
-                updateField("communicationPlanReviewed", checked)
-              }
-              disabled={isSaving}
-            />
-            <Checkbox
-              label="Lost communication procedure reviewed"
-              checked={formData.lostCommunicationProcedureReviewed}
-              onChange={(checked) =>
-                updateField("lostCommunicationProcedureReviewed", checked)
-              }
-              disabled={isSaving}
-            />
-          </div>
-        </div>
-      </div>
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <p className="text-sm text-slate-600">
-          Record the factual crew and operational conditions confirmed before
-          operations begin. Stop-work authority remains part of the crew
-          briefing and RPIC Acceptance.
-        </p>
-        <div className="mt-4 space-y-3">
-          <Checkbox
-            label="Crew briefed on hazards, controls, PPE, emergency procedures, communications, and stop-work authority"
-            checked={formData.crewBriefed}
-            onChange={(checked) => updateField("crewBriefed", checked)}
-            disabled={isSaving}
-          />
-          <Checkbox
-            label="Controls are in place before operations begin"
-            checked={formData.controlsInPlace}
-            onChange={(checked) => updateField("controlsInPlace", checked)}
-            disabled={isSaving}
-          />
-        </div>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="rounded-lg border border-slate-200 bg-white p-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-900">
-            Safety Manager Review
-          </h3>
-          {safetyManager ? (
-            <>
-              <p className="mt-2 font-semibold text-slate-900">
-                {attestations.safetyManagerName ?? safetyManager.full_name} —{" "}
-                {attestations.safetyManagerRoleLabel ??
-                  operationalRoleLabel(true, dualRole)}
-              </p>
-              <p className="mt-3 text-sm text-slate-600">
-                I have reviewed this Operational JHA, including the identified
-                hazards, controls, crew briefing information, and applicable
-                operational safety considerations.
-              </p>
-              <p className="mt-3 text-xs font-medium text-slate-500">
-                Status:{" "}
-                {attestations.safetyManagerReviewStale
-                  ? `Re-review required (previously reviewed by ${attestations.safetyManagerName ?? safetyManager.full_name} on ${formatAttestationTime(attestations.safetyManagerReviewedAt!)})`
-                  : attestations.safetyManagerReviewedAt
-                    ? `Reviewed by ${attestations.safetyManagerName ?? safetyManager.full_name} on ${formatAttestationTime(attestations.safetyManagerReviewedAt)}`
-                    : operationalAttestationStatus(
-                        null,
-                        false,
-                        "Reviewed",
-                        "Re-review required",
-                        "Pending review",
-                      )}
-              </p>
-              <button
-                type="button"
-                className="mt-4 min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400"
-                onClick={() => void onAttest("safety-manager")}
-                disabled={isSaving || currentUserId !== safetyManager.user_id}
-              >
-                {attestations.safetyManagerReviewStale
-                  ? "Complete Required Re-review"
-                  : attestations.safetyManagerReviewedAt
-                    ? "Review Again"
-                    : "Complete Safety Manager Review"}
-              </button>
-              {currentUserId !== safetyManager.user_id ? (
-                <p className="mt-2 text-xs text-slate-500">
-                  Only the designated Safety Manager can complete this review
-                  while signed in.
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <p>
-                Safety Manager not designated. Configure a Safety Manager in
-                SMS.
-              </p>
-              <Link
-                className="mt-2 inline-block font-semibold text-brand-700"
-                to="/sms"
-              >
-                Configure Safety Manager
-              </Link>
-            </div>
-          )}
-        </section>
-        <section className="rounded-lg border border-slate-200 bg-white p-4">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-900">
-            RPIC Acceptance
-          </h3>
-          {rpic ? (
-            <>
-              <p className="mt-2 font-semibold text-slate-900">
-                {attestations.rpicName ?? rpic.full_name} —{" "}
-                {attestations.rpicRoleLabel ??
-                  operationalRoleLabel(dualRole, true)}
-              </p>
-              <p className="mt-3 text-sm text-slate-600">
-                I have reviewed the Operational JHA, hazards, controls, crew
-                briefing, emergency and communication information, and accept
-                responsibility for conducting the operation under the
-                established controls.
-              </p>
-              <p className="mt-3 text-xs font-medium text-slate-500">
-                Status:{" "}
-                {attestations.rpicAcceptanceStale
-                  ? `Re-acceptance required (previously accepted by ${attestations.rpicName ?? rpic.full_name} on ${formatAttestationTime(attestations.rpicAcceptedAt!)})`
-                  : attestations.rpicAcceptedAt
-                    ? `Accepted by ${attestations.rpicName ?? rpic.full_name} on ${formatAttestationTime(attestations.rpicAcceptedAt)}`
-                    : operationalAttestationStatus(
-                        null,
-                        false,
-                        "Accepted",
-                        "Re-acceptance required",
-                        "Pending acceptance",
-                      )}
-              </p>
-              <button
-                type="button"
-                className="mt-4 min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400"
-                onClick={() => void onAttest("rpic")}
-                disabled={isSaving || currentUserId !== rpic.user_id}
-              >
-                {attestations.rpicAcceptanceStale
-                  ? "Complete Required Re-acceptance"
-                  : attestations.rpicAcceptedAt
-                    ? "Accept Again"
-                    : "Accept as RPIC"}
-              </button>
-              {currentUserId !== rpic.user_id ? (
-                <p className="mt-2 text-xs text-slate-500">
-                  Only the assigned RPIC can complete this acceptance while
-                  signed in.
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              <p>RPIC not assigned to this job.</p>
-              <Link
-                className="mt-2 inline-block font-semibold text-brand-700"
-                to={`/jobs/${jobId}/hub#crew-assignment`}
-              >
-                Assign RPIC
-              </Link>
-            </div>
-          )}
-        </section>
-      </div>
-      {dualRole ? (
-        <p className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
-          This person holds both roles. Safety Manager Review and RPIC
-          Acceptance remain separate required actions.
-        </p>
-      ) : null}
-      <SelectInput
-        label="Status"
-        value={formData.status}
-        options={statusOptions}
-        onChange={(value) => updateField("status", value)}
-        disabled={isSaving}
-      />
+  const formatAttestationTime = (value: string | null) => value ? new Date(value).toLocaleString() : 'Pending';
+  return <div className="space-y-5">
+    <fieldset><legend className="text-sm font-medium text-slate-700">PPE Requirements</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{ppeOptions.map((option) => <Checkbox key={option} label={option} checked={Boolean(formData.ppeRequirements[option])} onChange={() => togglePpe(option)} disabled={isSaving} />)}</div></fieldset>
+    <div className="grid gap-4 sm:grid-cols-2"><TextInput label="Nearest Hospital / Emergency Facility" value={formData.nearestHospital} onChange={(value) => updateField('nearestHospital', value)} placeholder="Hospital, emergency department, or appropriate emergency medical facility" disabled={isSaving} /><TextInput label="Emergency Facility Address" value={formData.emergencyFacilityAddress} onChange={(value) => updateField('emergencyFacilityAddress', value)} disabled={isSaving} /><TextInput label="Emergency Contact" value={formData.emergencyContact} onChange={(value) => updateField('emergencyContact', value)} disabled={isSaving} /><div className="sm:col-span-2"><TextArea label="Drone Incident Procedure" value={formData.droneIncidentProcedure} onChange={(value) => updateField('droneIncidentProcedure', value)} disabled={isSaving} /></div></div>
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><h3 className="text-base font-semibold text-brand-900">Communications</h3><fieldset className="mt-3"><legend className="text-sm font-medium text-slate-700">Communication Method</legend><div className="mt-2 grid gap-2 sm:grid-cols-2">{communicationOptions.map((option) => <Checkbox key={option} label={option} checked={formData.communicationMethods.includes(option)} onChange={() => toggleFormArrayField('communicationMethods', option)} disabled={isSaving} />)}</div></fieldset>{formData.communicationMethods.includes('Other') ? <div className="mt-3"><TextInput label="Other communication method" value={formData.communicationMethodOther} onChange={(value) => updateField('communicationMethodOther', value)} disabled={isSaving} /></div> : null}<div className="mt-4 grid gap-4 sm:grid-cols-2"><TextInput label="Radio frequency/channel assigned or discussed" value={formData.radioChannel} onChange={(value) => updateField('radioChannel', value)} disabled={isSaving} /><div className="space-y-3 sm:pt-7"><Checkbox label="Communication plan reviewed" checked={formData.communicationPlanReviewed} onChange={(checked) => updateField('communicationPlanReviewed', checked)} disabled={isSaving} /><Checkbox label="Lost communication procedure reviewed" checked={formData.lostCommunicationProcedureReviewed} onChange={(checked) => updateField('lostCommunicationProcedureReviewed', checked)} disabled={isSaving} /></div></div></div>
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3"><p className="text-sm text-slate-600">Record the factual crew and operational conditions confirmed before operations begin. Stop-work authority remains part of the crew briefing and RPIC Acceptance.</p><div className="mt-4 space-y-3"><Checkbox label="Crew briefed on hazards, controls, PPE, emergency procedures, communications, and stop-work authority" checked={formData.crewBriefed} onChange={(checked) => updateField('crewBriefed', checked)} disabled={isSaving} /><Checkbox label="Controls are in place before operations begin" checked={formData.controlsInPlace} onChange={(checked) => updateField('controlsInPlace', checked)} disabled={isSaving} /></div></div>
+    <div className="grid gap-4 lg:grid-cols-2">
+      <section className="rounded-lg border border-slate-200 bg-white p-4"><h3 className="text-sm font-semibold uppercase tracking-wide text-brand-900">Safety Manager Review</h3>{safetyManager ? <><p className="mt-2 font-semibold text-slate-900">{attestations.safetyManagerName ?? safetyManager.full_name} — {attestations.safetyManagerRoleLabel ?? operationalRoleLabel(true, dualRole)}</p><p className="mt-3 text-sm text-slate-600">I have reviewed this Operational JHA, including the identified hazards, controls, crew briefing information, and applicable operational safety considerations.</p><p className="mt-3 text-xs font-medium text-slate-500">Status: {attestations.safetyManagerReviewStale ? `Re-review required (previously reviewed by ${attestations.safetyManagerName ?? safetyManager.full_name} on ${formatAttestationTime(attestations.safetyManagerReviewedAt!)})` : attestations.safetyManagerReviewedAt ? `Reviewed by ${attestations.safetyManagerName ?? safetyManager.full_name} on ${formatAttestationTime(attestations.safetyManagerReviewedAt)}` : operationalAttestationStatus(null, false, 'Reviewed', 'Re-review required', 'Pending review')}</p><button type="button" className="mt-4 min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" onClick={() => void onAttest('safety-manager')} disabled={isSaving || currentUserId !== safetyManager.user_id}>{attestations.safetyManagerReviewStale ? 'Complete Required Re-review' : attestations.safetyManagerReviewedAt ? 'Review Again' : 'Complete Safety Manager Review'}</button>{currentUserId !== safetyManager.user_id ? <p className="mt-2 text-xs text-slate-500">Only the designated Safety Manager can complete this review while signed in.</p> : null}</> : <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p>Safety Manager not designated. Configure a Safety Manager in SMS.</p><Link className="mt-2 inline-block font-semibold text-brand-700" to="/sms">Configure Safety Manager</Link></div>}</section>
+      <section className="rounded-lg border border-slate-200 bg-white p-4"><h3 className="text-sm font-semibold uppercase tracking-wide text-brand-900">RPIC Acceptance</h3>{rpic ? <><p className="mt-2 font-semibold text-slate-900">{attestations.rpicName ?? rpic.full_name} — {attestations.rpicRoleLabel ?? operationalRoleLabel(dualRole, true)}</p><p className="mt-3 text-sm text-slate-600">I have reviewed the Operational JHA, hazards, controls, crew briefing, emergency and communication information, and accept responsibility for conducting the operation under the established controls.</p><p className="mt-3 text-xs font-medium text-slate-500">Status: {attestations.rpicAcceptanceStale ? `Re-acceptance required (previously accepted by ${attestations.rpicName ?? rpic.full_name} on ${formatAttestationTime(attestations.rpicAcceptedAt!)})` : attestations.rpicAcceptedAt ? `Accepted by ${attestations.rpicName ?? rpic.full_name} on ${formatAttestationTime(attestations.rpicAcceptedAt)}` : operationalAttestationStatus(null, false, 'Accepted', 'Re-acceptance required', 'Pending acceptance')}</p><button type="button" className="mt-4 min-h-11 rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" onClick={() => void onAttest('rpic')} disabled={isSaving || currentUserId !== rpic.user_id}>{attestations.rpicAcceptanceStale ? 'Complete Required Re-acceptance' : attestations.rpicAcceptedAt ? 'Accept Again' : 'Accept as RPIC'}</button>{currentUserId !== rpic.user_id ? <p className="mt-2 text-xs text-slate-500">Only the assigned RPIC can complete this acceptance while signed in.</p> : null}</> : <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p>RPIC not assigned to this job.</p><Link className="mt-2 inline-block font-semibold text-brand-700" to={`/jobs/${jobId}/hub#crew-assignment`}>Assign RPIC</Link></div>}</section>
     </div>
-  );
+    {dualRole ? <p className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">This person holds both roles. Safety Manager Review and RPIC Acceptance remain separate required actions.</p> : null}
+    <SelectInput label="Status" value={formData.status} options={statusOptions} onChange={(value) => updateField('status', value)} disabled={isSaving} />
+  </div>;
 }
 
 /**
@@ -3827,51 +791,19 @@ function CertificationStep({
  * Fallback/error behavior: This declaration is compile-time only; nullable and optional fields are handled by the owning loader, normalizer, or UI fallback.
  * Known limitation: TypeScript does not generate runtime validation from this declaration, so untrusted service data still requires explicit normalization.
  */
-type FieldProps = {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  disabled?: boolean;
-  required?: boolean;
-  placeholder?: string;
-};
+type FieldProps = { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; required?: boolean; placeholder?: string };
 /**
  * Renders the locked field interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function LockedField({
-  label,
-  value,
-  helperText,
-  editHref,
-  editLabel,
-  type = "text",
-}: {
-  label: string;
-  value: string;
-  helperText: string;
-  editHref: string;
-  editLabel: string;
-  type?: string;
-}) {
+function LockedField({ label, value, helperText, editHref, editLabel, type = 'text' }: { label: string; value: string; helperText: string; editHref: string; editLabel: string; type?: string }) {
   return (
     <label className="block text-sm font-medium text-slate-700">
       {label}
-      <input
-        className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-3 text-base text-slate-700 outline-none sm:py-2 sm:text-sm"
-        type={type}
-        value={value}
-        readOnly
-        aria-readonly="true"
-      />
+      <input className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-100 px-3 py-3 text-base text-slate-700 outline-none sm:py-2 sm:text-sm" type={type} value={value} readOnly aria-readonly="true" />
       <span className="mt-1 flex flex-col gap-1 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
         <span>{helperText}</span>
-        <Link
-          className="font-semibold text-brand-700 hover:text-brand-900"
-          to={editHref}
-        >
-          {editLabel}
-        </Link>
+        <Link className="font-semibold text-brand-700 hover:text-brand-900" to={editHref}>{editLabel}</Link>
       </span>
     </label>
   );
@@ -3880,103 +812,19 @@ function LockedField({
  * Renders the text input interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function TextInput({
-  label,
-  value,
-  onChange,
-  disabled,
-  required,
-  placeholder,
-  type = "text",
-}: FieldProps & { type?: string }) {
-  return (
-    <label className="block text-sm font-medium text-slate-700">
-      {label}
-      {required ? <span className="text-red-600"> *</span> : null}
-      <input
-        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-      />
-    </label>
-  );
-}
+function TextInput({ label, value, onChange, disabled, required, placeholder, type = 'text' }: FieldProps & { type?: string }) { return <label className="block text-sm font-medium text-slate-700">{label}{required ? <span className="text-red-600"> *</span> : null}<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm" type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} disabled={disabled} /></label>; }
 /**
  * Implements text area for this module.
  * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
  */
-function TextArea({ label, value, onChange, disabled }: FieldProps) {
-  return (
-    <label className="block text-sm font-medium text-slate-700">
-      {label}
-      <textarea
-        className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-      />
-    </label>
-  );
-}
+function TextArea({ label, value, onChange, disabled }: FieldProps) { return <label className="block text-sm font-medium text-slate-700">{label}<textarea className="mt-1 min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:text-sm" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} /></label>; }
 /**
  * Renders the select input interface and coordinates its user interactions.
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
-function SelectInput({
-  label,
-  value,
-  options,
-  onChange,
-  disabled,
-  required,
-}: FieldProps & { options: string[] }) {
-  return (
-    <label className="block text-sm font-medium text-slate-700">
-      {label}
-      {required ? <span className="text-red-600"> *</span> : null}
-      <select
-        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-      >
-        {options.map((option) => (
-          <option key={option || "blank"} value={option}>
-            {option || "Select one"}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
+function SelectInput({ label, value, options, onChange, disabled, required }: FieldProps & { options: string[] }) { return <label className="block text-sm font-medium text-slate-700">{label}{required ? <span className="text-red-600"> *</span> : null}<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>{options.map((option) => <option key={option || 'blank'} value={option}>{option || 'Select one'}</option>)}</select></label>; }
 /**
  * Implements checkbox for this module.
  * Fallback/error behavior: Invalid state is handled by the surrounding validation/error path; unexpected failures propagate to the caller.
  */
-function Checkbox({
-  label,
-  checked,
-  onChange,
-  disabled,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <label className="flex items-start gap-3 text-sm font-medium text-slate-700">
-      <input
-        className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700"
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        disabled={disabled}
-      />
-      <span>{label}</span>
-    </label>
-  );
-}
+function Checkbox({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) { return <label className="flex items-start gap-3 text-sm font-medium text-slate-700"><input className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-700" type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} disabled={disabled} /><span>{label}</span></label>; }

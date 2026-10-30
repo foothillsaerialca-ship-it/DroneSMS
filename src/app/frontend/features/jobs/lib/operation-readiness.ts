@@ -85,6 +85,12 @@ export function isApprovalCurrent(record: OperationReadinessRecord | null, assig
     && record?.rpic_personnel_id === assignedRpicId;
 }
 
+/** A Ready to Operate approval only covers the day it was given, in the viewer's local time. */
+export function isApprovalForToday(record: OperationReadinessRecord | null, now = new Date()) {
+  if (!record?.approved_at) return false;
+  return new Date(record.approved_at).toDateString() === now.toDateString();
+}
+
 export function buildReadinessPacketRows(record: (OperationReadinessRecord & { rpic_name?: string | null; approved_by_name?: string | null; approved_by_user_id?: string | null }) | null, formatTimestamp = (value: string) => value): Array<[string, string]> {
   if (!record) return [['Ready to Operate', 'Not recorded (legacy or not yet approved)'], ['Fitness for Duty', 'Not confirmed']];
   const status = getOperationReadinessStatus(record);
@@ -96,4 +102,145 @@ export function buildReadinessPacketRows(record: (OperationReadinessRecord & { r
     ['Approval Timestamp', record.approved_at ? formatTimestamp(record.approved_at) : 'Not recorded'],
     ['Current for Operation', status === 'Ready to Operate' ? 'Yes' : 'No'],
   ];
+}
+
+/** Operations closed out without flying do not need a Ready to Operate approval. */
+export const resultsAllowedWithoutReadiness = new Set(['Aborted', 'Delayed']);
+
+/** Equipment statuses that mean the item is not available to fly. */
+export const unavailableEquipmentStatuses = new Set(['Maintenance', 'Inactive', 'Retired']);
+
+export function closeoutRequiresReadiness(operationResult: string) {
+  return !resultsAllowedWithoutReadiness.has(operationResult);
+}
+
+export type ReadinessCrewMember = {
+  personnelId: string;
+  name: string;
+  assignedRole: string;
+  part107CertificateNumber: string | null;
+  part107ExpirationDate: string | null;
+  trainingExpirationDate: string | null;
+};
+
+export type ReadinessEquipmentItem = {
+  equipmentId: string;
+  name: string;
+  equipmentType: string | null;
+  status: string | null;
+  faaRegistrationNumber: string | null;
+  maintenanceDueDate: string | null;
+};
+
+export type ReadinessOverrideType = 'maintenance_overdue' | 'training_expired';
+
+export type ReadinessOverrideRecord = {
+  item_type: ReadinessOverrideType;
+  item_id: string;
+  item_date: string;
+  item_name: string;
+  reason: string;
+  approved_by_name: string;
+  approved_at: string;
+};
+
+export type OverridableReadinessIssue = {
+  itemType: ReadinessOverrideType;
+  itemId: string;
+  itemName: string;
+  itemDate: string;
+  label: string;
+  override: ReadinessOverrideRecord | null;
+};
+
+/**
+ * Mirrors the crew and equipment checks in confirm_job_ready_to_operate. Blocking issues cannot be
+ * overridden; overridable issues need a Safety Manager override that matches the record's current date.
+ * Dates are ISO yyyy-mm-dd strings compared against `today` in UTC, matching the database's current_date.
+ */
+export function getResourceReadinessIssues(
+  crew: ReadinessCrewMember[],
+  equipment: ReadinessEquipmentItem[],
+  overrides: ReadinessOverrideRecord[],
+  today: string,
+) {
+  const blocking: string[] = [];
+  const overridable: OverridableReadinessIssue[] = [];
+  const findOverride = (itemType: ReadinessOverrideType, itemId: string, itemDate: string) =>
+    overrides.find((record) => record.item_type === itemType && record.item_id === itemId && record.item_date === itemDate) ?? null;
+
+  for (const member of crew) {
+    if (member.assignedRole === 'RPIC' && (!member.part107CertificateNumber?.trim() || !member.part107ExpirationDate || member.part107ExpirationDate < today)) {
+      blocking.push(`${member.name} (RPIC) needs a current Part 107 certificate number and expiration date in Personnel.`);
+    }
+  }
+  for (const item of equipment) {
+    if (item.status && unavailableEquipmentStatuses.has(item.status)) {
+      blocking.push(`${item.name} is marked ${item.status}. Remove it from the job or update its status.`);
+    }
+    if (item.equipmentType === 'Drone' && !item.faaRegistrationNumber?.trim()) {
+      blocking.push(`${item.name} needs an FAA registration number in Equipment.`);
+    }
+  }
+
+  // Overdue maintenance is a reminder for the crew, not a gate.
+  const reminders = equipment
+    .filter((item) => item.maintenanceDueDate && item.maintenanceDueDate < today)
+    .map((item) => `${item.name} is overdue for maintenance (due ${item.maintenanceDueDate}). Confirm it is airworthy before flight.`);
+  const seenPeople = new Set<string>();
+  for (const member of crew) {
+    if (seenPeople.has(member.personnelId)) continue;
+    seenPeople.add(member.personnelId);
+    if (member.trainingExpirationDate && member.trainingExpirationDate < today) {
+      overridable.push({ itemType: 'training_expired', itemId: member.personnelId, itemName: member.name, itemDate: member.trainingExpirationDate,
+        label: `${member.name}'s training expired on ${member.trainingExpirationDate}.`, override: findOverride('training_expired', member.personnelId, member.trainingExpirationDate) });
+    }
+  }
+
+  return {
+    blocking,
+    reminders,
+    overridable,
+    pendingOverrideReasons: overridable.filter((issue) => !issue.override).map((issue) => `${issue.label} A Safety Manager override is required.`),
+  };
+}
+
+export type CrewCredentialRecord = {
+  part_107_certificate_number?: string | null;
+  part_107_expiration_date: string | null;
+  training_expiration_date: string | null;
+};
+
+/** Picker suffix for equipment past its maintenance due date. */
+export function getEquipmentMaintenanceLabel(maintenanceDueDate: string | null | undefined, today: string) {
+  return maintenanceDueDate && maintenanceDueDate < today ? ' (maintenance overdue)' : '';
+}
+
+/** Short picker suffix, such as " (Part 107 expired)", for a person whose credentials have lapsed. */
+export function getCrewCredentialLabel(person: CrewCredentialRecord, today: string) {
+  const lapsed = [
+    person.part_107_expiration_date && person.part_107_expiration_date < today ? 'Part 107 expired' : null,
+    person.training_expiration_date && person.training_expiration_date < today ? 'training expired' : null,
+  ].filter(Boolean);
+  return lapsed.length ? ` (${lapsed.join(', ')})` : '';
+}
+
+/**
+ * Planning-stage warnings that match the Ready to Operate rules: an RPIC without a current Part 107 is
+ * blocked, and expired training needs a Safety Manager override. These warn and never block selection.
+ */
+export function getCrewCredentialWarnings(person: CrewCredentialRecord, role: string, today: string, formatDate = (value: string) => value) {
+  const warnings: string[] = [];
+  if (role === 'RPIC') {
+    const expiration = person.part_107_expiration_date;
+    if (expiration && expiration < today) {
+      warnings.push(`Part 107 expired on ${formatDate(expiration)}. Ready to Operate will be blocked until it's renewed in Personnel.`);
+    } else if (!person.part_107_certificate_number?.trim() || !expiration) {
+      warnings.push('No Part 107 certificate number and expiration date on file. Ready to Operate will be blocked until they are added in Personnel.');
+    }
+  }
+  if (person.training_expiration_date && person.training_expiration_date < today) {
+    warnings.push(`Training expired on ${formatDate(person.training_expiration_date)}. The Safety Manager will need to record an override before Ready to Operate.`);
+  }
+  return warnings;
 }

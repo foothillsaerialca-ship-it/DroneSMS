@@ -1,5 +1,5 @@
 begin;
-select plan(16);
+select plan(17);
 
 insert into auth.users(id,email,aud,role) values
   ('10000000-0000-0000-0000-000000000001','owner-a@example.test','authenticated','authenticated'),
@@ -50,11 +50,14 @@ select ok(has_function_privilege('service_role','public.claim_storage_cleanup_ba
 
 insert into public.storage_cleanup_queue(id,bucket_id,object_path,reason,delete_after,status,attempts,claimed_at)
 values('50000000-0000-0000-0000-000000000001','test-bucket','abandoned.txt','Lease recovery test',now()-interval '1 day','processing',1,now()-interval '20 minutes');
+insert into public.storage_cleanup_queue(id,bucket_id,object_path,reason,delete_after,status,attempts,claimed_at)
+values('50000000-0000-0000-0000-000000000002','test-bucket','exhausted.txt','Lease recovery test',now()-interval '1 day','processing',5,now()-interval '20 minutes');
 set local role service_role;
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 select lives_ok($$select * from public.claim_storage_cleanup_batch(100)$$,'service worker reclaims abandoned cleanup work');
 reset role;
 select is((select attempts from public.storage_cleanup_queue where id='50000000-0000-0000-0000-000000000001'),2,'reclaimed work receives a new fenced attempt number');
+select is((select status from public.storage_cleanup_queue where id='50000000-0000-0000-0000-000000000002'),'failed','exhausted abandoned work is visible for manual reconciliation');
 
 select * from finish();
 rollback;

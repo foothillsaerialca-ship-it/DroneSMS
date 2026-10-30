@@ -3,20 +3,10 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import {
-  type PropsWithChildren,
-  createContext,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import { supabase } from "@frontend/lib/supabase";
-import type {
-  AuthContextValue,
-  AuthStatus,
-  ProfileState,
-} from "../types/auth-context";
+import { type PropsWithChildren, createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { supabase } from '@frontend/lib/supabase';
+import { type ProfileResult, getSessionProfileState } from '../lib/profile-state';
+import type { AuthContextValue, AuthStatus } from '../types/auth-context';
 
 /**
  * Purpose: Stores the shared auth context structure used by the auth provider module.
@@ -30,9 +20,72 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
 function getErrorMessage(error: unknown) {
-  return error instanceof Error
-    ? error.message
-    : "Unable to check company onboarding status.";
+  return error instanceof Error ? error.message : 'Unable to check company onboarding status.';
+}
+
+/**
+ * Looks up whether the user's company onboarding is complete, relinking an owned organization when the profile link is missing.
+ * Fallback/error behavior: Lookup failures are thrown so callers report an error state instead of treating the profile as missing.
+ */
+async function lookUpProfileState(userId: string): Promise<'complete' | 'incomplete'> {
+  const { data: profile, error: profileLookupError } = await supabase
+    .from('profiles')
+    .select('id, company_name, organization_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileLookupError) throw profileLookupError;
+
+  if (profile?.organization_id) {
+    const { data: linkedOrganization, error: linkedOrganizationError } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('id', profile.organization_id)
+      .maybeSingle();
+
+    if (linkedOrganizationError) throw linkedOrganizationError;
+
+    if (linkedOrganization) return 'complete';
+  }
+
+  const { data: ownedOrganizations, error: organizationLookupError } = await supabase
+    .from('organizations')
+    .select('id, name')
+    .eq('owner_user_id', userId)
+    .limit(1);
+
+  if (organizationLookupError) throw organizationLookupError;
+
+  const organization = ownedOrganizations?.[0];
+
+  if (!organization) return 'incomplete';
+
+  const { error: profileUpsertError } = await supabase.from('profiles').upsert(
+    {
+      id: userId,
+      organization_id: organization.id,
+      company_name: profile?.company_name || organization.name,
+      updated_at: new Date().toISOString()
+    },
+    { onConflict: 'id' }
+  );
+
+  if (profileUpsertError) throw profileUpsertError;
+
+  return 'complete';
+}
+
+/**
+ * Asks the database whether the signed-in user is a platform admin.
+ * Fallback/error behavior: Any lookup failure is treated as "not an admin"; the database enforces admin access regardless.
+ */
+async function lookUpPlatformAdmin(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('is_platform_admin');
+    return !error && data === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -40,89 +93,51 @@ function getErrorMessage(error: unknown) {
  * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
  */
 export function AuthProvider({ children }: PropsWithChildren) {
-  const [status, setStatus] = useState<AuthStatus>("loading");
-  const [session, setSession] = useState<AuthContextValue["session"]>(null);
-  const [profileState, setProfileState] = useState<ProfileState>("loading");
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [passwordRecoveryStartedAt, setPasswordRecoveryStartedAt] = useState<
-    number | null
-  >(null);
-  const clearPasswordRecoveryAuthorization = useCallback(
-    () => setPasswordRecoveryStartedAt(null),
-    [],
-  );
+  const [status, setStatus] = useState<AuthStatus>('loading');
+  const [session, setSession] = useState<AuthContextValue['session']>(null);
+  const [passwordRecoveryStartedAt, setPasswordRecoveryStartedAt] = useState<number | null>(null);
+  // The resolved onboarding state is tagged with the user it was resolved for, so a
+  // restored session is never judged by a result that belongs to no user or another user.
+  const [profileResult, setProfileResult] = useState<ProfileResult>({ userId: null, state: 'loading', error: null });
+  const profileRequestId = useRef(0);
+  const [adminResult, setAdminResult] = useState<{ userId: string | null; isAdmin: boolean }>({ userId: null, isAdmin: false });
+  const adminRequestId = useRef(0);
 
   const refreshProfileState = useCallback(async () => {
-    if (!session?.user?.id) {
-      setProfileError(null);
-      setProfileState("missing");
+    const userId = session?.user?.id ?? null;
+    const requestId = ++profileRequestId.current;
+
+    if (!userId) {
+      setProfileResult({ userId: null, state: 'missing', error: null });
       return;
     }
 
-    setProfileError(null);
-    setProfileState("loading");
+    setProfileResult({ userId, state: 'loading', error: null });
 
+    let result: ProfileResult;
     try {
-      const { data: profile, error: profileLookupError } = await supabase
-        .from("profiles")
-        .select("id, company_name, organization_id")
-        .eq("id", session.user.id)
-        .maybeSingle();
-
-      if (profileLookupError) throw profileLookupError;
-
-      if (profile?.organization_id) {
-        const { data: linkedOrganization, error: linkedOrganizationError } =
-          await supabase
-            .from("organizations")
-            .select("id")
-            .eq("id", profile.organization_id)
-            .maybeSingle();
-
-        if (linkedOrganizationError) throw linkedOrganizationError;
-
-        if (linkedOrganization) {
-          setProfileState("complete");
-          return;
-        }
-      }
-
-      const { data: ownedOrganizations, error: organizationLookupError } =
-        await supabase
-          .from("organizations")
-          .select("id, name")
-          .eq("owner_user_id", session.user.id)
-          .limit(1);
-
-      if (organizationLookupError) throw organizationLookupError;
-
-      const organization = ownedOrganizations?.[0];
-
-      if (!organization) {
-        setProfileState("incomplete");
-        return;
-      }
-
-      const { error: profileUpsertError } = await supabase
-        .from("profiles")
-        .upsert(
-          {
-            id: session.user.id,
-            organization_id: organization.id,
-            company_name: profile?.company_name || organization.name,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" },
-        );
-
-      if (profileUpsertError) throw profileUpsertError;
-
-      setProfileState("complete");
+      result = { userId, state: await lookUpProfileState(userId), error: null };
     } catch (error) {
-      setProfileError(getErrorMessage(error));
-      setProfileState("error");
+      result = { userId, state: 'error', error: getErrorMessage(error) };
     }
-  }, [session]);
+
+    // A newer lookup, sign-out, or user change superseded this request.
+    if (requestId !== profileRequestId.current) return;
+    setProfileResult(result);
+  }, [session?.user?.id]);
+
+  const refreshPlatformAdmin = useCallback(async () => {
+    const userId = session?.user?.id ?? null;
+    const requestId = ++adminRequestId.current;
+    const isAdmin = userId ? await lookUpPlatformAdmin() : false;
+    // A newer check, sign-out, or user change superseded this request.
+    if (requestId !== adminRequestId.current) return;
+    setAdminResult({ userId, isAdmin });
+  }, [session?.user?.id]);
+
+  const clearPasswordRecoveryAuthorization = useCallback(() => {
+    setPasswordRecoveryStartedAt(null);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -136,11 +151,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const { data } = await supabase.auth.getSession();
         if (!isMounted) return;
         setSession(data.session);
-        setStatus(data.session ? "authenticated" : "unauthenticated");
+        setStatus(data.session ? 'authenticated' : 'unauthenticated');
       } catch {
         if (!isMounted) return;
         setSession(null);
-        setStatus("unauthenticated");
+        setStatus('unauthenticated');
       }
     }
 
@@ -148,15 +163,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     let authListenerSubscription: { unsubscribe: () => void } | null = null;
     try {
-      const { data: authListener } = supabase.auth.onAuthStateChange(
-        (event, nextSession) => {
-          if (event === "PASSWORD_RECOVERY")
-            setPasswordRecoveryStartedAt(Date.now());
-          if (event === "SIGNED_OUT") setPasswordRecoveryStartedAt(null);
-          setSession(nextSession);
-          setStatus(nextSession ? "authenticated" : "unauthenticated");
-        },
-      );
+      const { data: authListener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          setPasswordRecoveryStartedAt(Date.now());
+        } else if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+          setPasswordRecoveryStartedAt(null);
+        }
+        setSession(nextSession);
+        setStatus(nextSession ? 'authenticated' : 'unauthenticated');
+      });
       authListenerSubscription = authListener.subscription;
     } catch {
       authListenerSubscription = null;
@@ -169,14 +184,31 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    if (status === "authenticated") {
+    if (status === 'authenticated') {
       void refreshProfileState();
       return;
     }
 
-    setProfileError(null);
-    setProfileState("missing");
+    profileRequestId.current += 1;
+    setProfileResult({ userId: null, state: 'missing', error: null });
   }, [status, refreshProfileState]);
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      void refreshPlatformAdmin();
+      return;
+    }
+
+    adminRequestId.current += 1;
+    setAdminResult({ userId: null, isAdmin: false });
+  }, [status, refreshPlatformAdmin]);
+
+  const { profileState, profileError } = getSessionProfileState(status, session?.user?.id ?? null, profileResult);
+
+  // Only a result resolved for the current user counts; until then the check is pending (null).
+  const currentUserId = session?.user?.id ?? null;
+  const isPlatformAdmin =
+    status !== 'authenticated' ? false : currentUserId && adminResult.userId === currentUserId ? adminResult.isAdmin : null;
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -187,6 +219,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       passwordRecoveryStartedAt,
       clearPasswordRecoveryAuthorization,
       refreshProfileState,
+      isPlatformAdmin,
+      refreshPlatformAdmin,
     }),
     [
       status,
@@ -196,7 +230,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       passwordRecoveryStartedAt,
       clearPasswordRecoveryAuthorization,
       refreshProfileState,
-    ],
+      isPlatformAdmin,
+      refreshPlatformAdmin,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

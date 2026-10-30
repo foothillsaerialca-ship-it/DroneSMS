@@ -3,7 +3,7 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { getCurrentOrganizationId } from '@frontend/lib/organization';
@@ -23,7 +23,10 @@ import {
 } from '@frontend/features/safety/lib/preliminary-hazard-library';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
 import { getProposalScopeDefaults, hasCustomizedProposalScope } from '@frontend/features/jobs/lib/proposal-scope';
+import { getCrewCredentialLabel, getCrewCredentialWarnings, getEquipmentMaintenanceLabel } from '@frontend/features/jobs/lib/operation-readiness';
+import { formatIsoDate, todayIsoDate } from '@frontend/lib/date-utils';
 import {
+  applyPrimaryServiceTypeDefault,
   normalizeProposalEquipment,
   normalizeProposalPersonnel,
   resolveProposalRpicBioSnapshot,
@@ -44,7 +47,7 @@ const airspaceClasses = ['Not reviewed', 'Class B', 'Class C', 'Class D', 'Class
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
-const blockedEquipmentStatuses = new Set(['Archived', 'Retired', 'Out-of-Service', 'Out of Service', 'Maintenance']);
+const blockedEquipmentStatuses = new Set(['Archived', 'Retired', 'Out-of-Service', 'Out of Service', 'Maintenance', 'Inactive']);
 
 /**
  * Purpose: Defines the pending service type change data contract used by the new proposal page module.
@@ -168,6 +171,7 @@ type RepositoryEquipment = {
   model: string | null;
   status: string;
   purpose: string | null;
+  maintenance_due_date?: string | null;
 };
 
 /**
@@ -338,6 +342,7 @@ export function NewProposalPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingServiceTypeChange, setPendingServiceTypeChange] = useState<PendingServiceTypeChange | null>(null);
+  const serviceTypeTouched = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -364,6 +369,15 @@ export function NewProposalPage() {
           setOrganizationSettings(settings);
           if (!proposalId && settings?.defaultPaymentTerms) {
             setFormData((current) => current.paymentTerms.trim() ? current : { ...current, paymentTerms: settings.defaultPaymentTerms });
+          }
+          if (!proposalId) {
+            setFormData((current) => {
+              const serviceType = applyPrimaryServiceTypeDefault(current.serviceType, settings?.primaryServiceType, serviceTypeTouched.current);
+              // Only swap scope defaults the operator has not edited yet.
+              if (serviceType === current.serviceType || hasCustomizedProposalScope(current, current.serviceType)) return current;
+              const defaults = getProposalScopeDefaults(serviceType);
+              return { ...current, serviceType, deliverables: defaults.deliverables, exclusions: defaults.exclusions };
+            });
           }
         }
       } catch {
@@ -406,7 +420,7 @@ export function NewProposalPage() {
       try {
         const { data, error: equipmentError } = await supabase
           .from('equipment')
-          .select('id, name, equipment_type, make, model, status, purpose')
+          .select('id, name, equipment_type, make, model, status, purpose, maintenance_due_date')
           .not('status', 'in', '(Archived,Retired,Out-of-Service,"Out of Service")')
           .order('name', { ascending: true });
 
@@ -509,6 +523,7 @@ export function NewProposalPage() {
    * Fallback/error behavior: Loading, empty, validation, and service-error states are delegated to the component UI and its page-level handlers.
    */
   function updateField(field: keyof typeof initialFormState, value: string) {
+    if (field === 'serviceType') serviceTypeTouched.current = true;
     if (field !== 'serviceType') {
       setFormData((current) => ({ ...current, [field]: value }));
       return;
@@ -798,7 +813,7 @@ export function NewProposalPage() {
         if (proposalError) throw proposalError;
       }
 
-      navigate('/jobs?tab=proposals', { replace: true });
+      navigate('/proposals', { replace: true });
     } catch (saveError) {
       setError(getErrorMessage(saveError));
     } finally {
@@ -808,8 +823,8 @@ export function NewProposalPage() {
 
   return (
     <section className="space-y-4">
-      <Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to="/jobs">
-        Back to Jobs
+      <Link className="text-sm font-medium text-brand-700 hover:text-brand-900" to="/proposals">
+        Back to Proposals
       </Link>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -996,6 +1011,7 @@ function ProposedCrewSelection({ personnel, selected, disabled, isLoading, onAdd
   onRoleChange: (id: string, role: string) => void;
 }) {
   const selectedIds = new Set(selected.map((item) => item.personnel_id));
+  const today = todayIsoDate();
   return (
     <fieldset className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
       <legend className="px-1 text-base font-semibold text-brand-900">Proposed Crew</legend>
@@ -1004,17 +1020,22 @@ function ProposedCrewSelection({ personnel, selected, disabled, isLoading, onAdd
         Add from Personnel
         <select className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value="" disabled={disabled} onChange={(event) => onAdd(event.target.value)}>
           <option value="">{isLoading ? 'Loading personnel…' : 'Select a person'}</option>
-          {personnel.filter((person) => !selectedIds.has(person.id)).map((person) => <option key={person.id} value={person.id}>{person.full_name} — {person.role}</option>)}
+          {personnel.filter((person) => !selectedIds.has(person.id)).map((person) => <option key={person.id} value={person.id}>{person.full_name} — {person.role}{getCrewCredentialLabel(person, today)}</option>)}
         </select>
       </label>
       <div className="mt-4 space-y-3">
-        {selected.length === 0 ? <p className="text-sm text-slate-500">No proposed crew selected. This proposal will retain solo wording.</p> : selected.map((assignment) => (
+        {selected.length === 0 ? <p className="text-sm text-slate-500">No proposed crew selected. This proposal will retain solo wording.</p> : selected.map((assignment) => {
+          const person = personnel.find((item) => item.id === assignment.personnel_id);
+          const warnings = person ? getCrewCredentialWarnings(person, assignment.proposed_role, today, (date) => formatIsoDate(date)) : [];
+          return (
           <div key={assignment.personnel_id} className="rounded-lg border border-slate-200 p-3">
             <div className="flex items-start justify-between gap-3"><strong className="text-sm text-brand-900">{assignment.personnel_name}</strong><button type="button" className="text-sm font-medium text-red-700" disabled={disabled} onClick={() => onRemove(assignment.personnel_id)}>Remove</button></div>
             <label className="mt-2 block text-sm text-slate-700">Proposed role<select className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={assignment.proposed_role} disabled={disabled} onChange={(event) => onRoleChange(assignment.personnel_id, event.target.value)}>{proposalPersonnelRoles.map((role) => <option key={role}>{role}</option>)}</select></label>
             <p className="mt-2 text-xs text-slate-500"><span className="font-medium">Qualifications / certifications (read-only):</span> {assignment.qualifications_summary || 'None recorded in Personnel.'}</p>
+            {warnings.length ? <ul className="mt-2 space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900" role="note">{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
           </div>
-        ))}
+          );
+        })}
       </div>
     </fieldset>
   );
@@ -1071,6 +1092,7 @@ function EquipmentSelection({
                     <h3 className="font-semibold text-brand-900">{item.name}</h3>
                     <p className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">{item.equipment_type} {item.make || item.model ? `• ${[item.make, item.model].filter(Boolean).join(' ')}` : ''}</p>
                     <p className="mt-2 text-xs font-semibold text-slate-700">Status: <span className={item.status === 'Available' ? 'text-emerald-700' : 'text-slate-700'}>{item.status}</span></p>
+                    {getEquipmentMaintenanceLabel(item.maintenance_due_date, todayIsoDate()) ? <p className="mt-1 text-xs font-medium text-amber-800">Maintenance overdue (due {formatIsoDate(item.maintenance_due_date)}). This is a reminder only and does not appear on the proposal.</p> : null}
                   </div>
                   <button type="button" className="min-h-11 rounded-lg border border-brand-700 bg-white px-4 py-2 text-sm font-medium text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400" onClick={() => onAddEquipment(item.id)} disabled={disabled || isSelected || !isEquipmentSelectable(item)}>{isSelected ? 'Added' : 'Add'}</button>
                 </div>

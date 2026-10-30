@@ -1,11 +1,12 @@
 /**
  * File purpose: Displays the beta-status badge on public authentication surfaces.
  * Fallback/error behavior: Renders nothing when the beta welcome feature is disabled.
- * Known limitation: Visibility is controlled by the build-time beta feature flag.
+ * Known limitation: Visibility follows the admin-managed beta setting, overridable at build time.
  */
-import { isBetaWelcomeEnabled } from '../features/auth/lib/beta-welcome';
+import { useBetaWelcomeEnabled } from '../features/admin/lib/app-settings';
 
 export function BetaBadge() {
+  const isBetaWelcomeEnabled = useBetaWelcomeEnabled();
   if (!isBetaWelcomeEnabled) return null;
 
   return (

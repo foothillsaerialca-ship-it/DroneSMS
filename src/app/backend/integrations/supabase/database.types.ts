@@ -3,6 +3,7 @@
  * schema artifact from the fully migrated local database; application-owned
  * row contracts remain narrower at each repository/query boundary.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any -- This bootstrap contract stays permissive until CI generates the full schema. */
 type Json =
   | string
   | number

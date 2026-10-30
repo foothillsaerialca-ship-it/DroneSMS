@@ -143,6 +143,12 @@ begin
     raise exception 'Service-role access is required.';
   end if;
 
+  update public.storage_cleanup_queue q
+  set status = 'failed',
+      last_error = coalesce(q.last_error, 'Cleanup attempts exhausted after worker lease expired.')
+  where q.status = 'processing' and q.attempts >= 5
+    and coalesce(q.claimed_at, q.delete_after) <= now() - interval '15 minutes';
+
   return query
     with due as (
       select q.id from public.storage_cleanup_queue q
