@@ -3,16 +3,18 @@
  * Fallback/error behavior: Query and RPC failures are surfaced without discarding the current register state.
  * Known limitation: Filtering and exports operate on records loaded for the current organization and session.
  */
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
+import { downloadXlsx } from "../../../lib/xlsx-writer";
 import {
-  csvCell,
   formatMocName,
   mocChangeTypes,
   mocSources,
   mocStatuses,
 } from "../lib/management-of-change";
+import { buildMocIdentityDirectory, buildMocWorkbook, describeMocRegisterFilters, mocExportFileName, type MocExportRecord, type MocExportScope, type MocIdentityDirectory } from "../lib/moc-export";
+import { loadMocExportContext, loadMocExportData } from "../lib/moc-export-data";
 
 type Moc = {
   id: string;
@@ -61,8 +63,17 @@ export function MocRegisterPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [people, setPeople] = useState<MocIdentityDirectory | null>(null);
   const [hasMore, setHasMore] = useState(false);
   async function load(offset = 0) {
+    if (offset === 0) {
+      try {
+        setPeople(buildMocIdentityDirectory(await loadMocExportContext()));
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Unable to load MOC identities.");
+      }
+    }
     const [m, e] = await Promise.all([
       supabase
         .from("management_of_change")
@@ -85,30 +96,23 @@ export function MocRegisterPage() {
   useEffect(() => {
     void load();
   }, []);
-  const filtered = useMemo(
-    () =>
-      records.filter(
-        (r) =>
-          (!filters.from || r.created_at.slice(0, 10) >= filters.from) &&
-          (!filters.to || r.created_at.slice(0, 10) <= filters.to) &&
-          (filters.source === "All" || r.source === filters.source) &&
-          (filters.type === "All" || r.change_type === filters.type) &&
-          (filters.status === "All" || r.status === filters.status) &&
-          (!filters.capability ||
-            r.operational_capabilities?.name
-              .toLowerCase()
-              .includes(filters.capability.toLowerCase())) &&
-          (!filters.equipment ||
-            r.equipment?.name
-              .toLowerCase()
-              .includes(filters.equipment.toLowerCase())) &&
-          (!filters.person ||
-            [r.initiated_by, r.safety_reviewer_id].some((v) =>
-              v?.toLowerCase().includes(filters.person.toLowerCase()),
-            )),
-      ),
-    [records, filters],
-  );
+  function matchesFilters(record: Moc | MocExportRecord, directory: MocIdentityDirectory | null) {
+    const personQuery = filters.person.toLowerCase();
+    return (!filters.from || record.created_at.slice(0, 10) >= filters.from) &&
+      (!filters.to || record.created_at.slice(0, 10) <= filters.to) &&
+      (filters.source === "All" || record.source === filters.source) &&
+      (filters.type === "All" || record.change_type === filters.type) &&
+      (filters.status === "All" || record.status === filters.status) &&
+      (!filters.capability || Boolean(record.operational_capabilities?.name.toLowerCase().includes(filters.capability.toLowerCase()))) &&
+      (!filters.equipment || Boolean(record.equipment?.name.toLowerCase().includes(filters.equipment.toLowerCase()))) &&
+      (!personQuery || [record.initiated_by, record.safety_reviewer_id].some((userId) => {
+        const person = directory?.user(userId);
+        return [person?.name, person?.email].some((value) => value?.toLowerCase().includes(personQuery));
+      }));
+  }
+  const filtered = records.filter((record) => matchesFilters(record, people));
+  const personName = (userId: string | null) =>
+    userId ? people?.user(userId)?.name || "Unknown user" : "";
   async function start(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -128,54 +132,28 @@ export function MocRegisterPage() {
     navigate(`/sms/moc/${String((data as { id: string }).id)}`);
   }
   async function exportRegister(all = false) {
-    let rows = filtered;
-    if (all) {
-      rows = [];
-      for (let offset = 0; ; offset += 500) {
-        const result = await supabase.from("management_of_change").select(mocProjection).order("created_at", { ascending: false }).range(offset, offset + 499);
-        if (result.error) { setError(result.error.message); return; }
-        const page = (result.data || []) as unknown as Moc[];
-        rows.push(...page);
-        if (page.length < 500) break;
-      }
+    setExporting(true);
+    setError(null);
+    try {
+      const generatedAt = new Date();
+      const scope: MocExportScope = all
+        ? { kind: "all" }
+        : { kind: "filtered", description: describeMocRegisterFilters(filters) };
+      const data = await loadMocExportData();
+      const exportPeople = buildMocIdentityDirectory(data);
+      downloadXlsx(
+        buildMocWorkbook(
+          all ? data : { ...data, mocs: data.mocs.filter((record) => matchesFilters(record, exportPeople)) },
+          scope,
+          generatedAt,
+        ),
+        mocExportFileName(scope, undefined, generatedAt),
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to export Management of Change records.");
+    } finally {
+      setExporting(false);
     }
-    const csv = [
-      [
-        "MOC",
-        "Capability",
-        "Equipment",
-        "Source",
-        "Change type",
-        "Status",
-        "Date opened",
-        "Date approved",
-        "Date completed",
-        "Initiator",
-        "Reviewer",
-      ],
-      ...rows.map((r) => [
-        formatMocName(r.moc_number, r.title),
-        r.operational_capabilities?.name,
-        r.equipment?.name,
-        r.source,
-        r.change_type,
-        r.status,
-        r.created_at,
-        r.approved_at,
-        r.completed_at,
-        r.initiated_by,
-        r.safety_reviewer_id,
-      ]),
-    ]
-      .map((row) => row.map(csvCell).join(","))
-      .join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    a.download = all
-      ? "all-management-of-change-records.csv"
-      : "management-of-change-register.csv";
-    a.click();
-    URL.revokeObjectURL(a.href);
   }
   return (
     <section className="space-y-4">
@@ -344,25 +322,30 @@ export function MocRegisterPage() {
             }
           />
           <input
-            placeholder="Initiator or reviewer ID"
+            placeholder="Initiator or reviewer"
             className="rounded-lg border p-2"
             value={filters.person}
             onChange={(e) => setFilters({ ...filters, person: e.target.value })}
           />
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
+            disabled={exporting}
             onClick={() => void exportRegister()}
-            className="rounded-lg border px-3 py-2 text-sm font-semibold"
+            className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-60"
           >
-            Export MOC register
+            Export MOC register (Excel)
           </button>
           <button
+            disabled={exporting}
             onClick={() => void exportRegister(true)}
-            className="rounded-lg border px-3 py-2 text-sm font-semibold"
+            className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-60"
           >
-            Export all Management of Change records
+            Export all MOC records (Excel)
           </button>
+          <span className="text-xs text-slate-500">
+            {exporting ? "Preparing export…" : "The register export uses the current filters; “Export all” includes every record."}
+          </span>
         </div>
       </article>
       <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
@@ -414,7 +397,8 @@ export function MocRegisterPage() {
                     : "—"}
                 </td>
                 <td className="p-3 text-xs">
-                  {r.safety_reviewer_id || r.initiated_by}
+                  {personName(r.initiated_by)}
+                  {r.safety_reviewer_id ? <span className="block text-slate-500">Reviewer: {personName(r.safety_reviewer_id)}</span> : null}
                 </td>
               </tr>
             ))}

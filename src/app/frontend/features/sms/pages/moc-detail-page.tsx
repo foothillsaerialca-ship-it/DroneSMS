@@ -6,24 +6,16 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "../../../lib/supabase";
+import { downloadXlsx } from "../../../lib/xlsx-writer";
 import {
   canApproveMoc,
   displayUserIdentity,
   formatMocName,
+  mocImpactQuestions,
 } from "../lib/management-of-change";
+import { buildMocWorkbook, mocExportFileName } from "../lib/moc-export";
+import { loadMocExportData } from "../lib/moc-export-data";
 
-const impactQuestions = [
-  "Does this introduce a new operational capability?",
-  "Does it affect aircraft, payloads, equipment, or configuration?",
-  "Does it affect training or familiarization?",
-  "Does it affect an existing hazard or control?",
-  "Does it introduce a new hazard?",
-  "Does it affect emergency preparedness?",
-  "Does it affect operating instructions, manuals, checklists, or established ways of working?",
-  "Does it affect personnel, contractors, customers, or other involved parties?",
-  "Are external approvals or notifications required?",
-  "Is anything required before operational use?",
-];
 type Action = {
   id: string;
   description: string;
@@ -85,6 +77,7 @@ export function MocDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [action, setAction] = useState({
     description: "",
     owner_id: "",
@@ -178,8 +171,9 @@ export function MocDetailPage() {
   }
   async function addAction(e: FormEvent) {
     e.preventDefault();
-    if (!moc) return;
+    if (!moc || !action.description.trim()) return;
     setBusy(true);
+    setError(null);
     const { error } = await supabase
       .from("management_of_change_actions")
       .insert({
@@ -203,6 +197,19 @@ export function MocDetailPage() {
       await load();
     }
   }
+  async function completeAction(actionId: string) {
+    if (!moc || busy) return;
+    setBusy(true);
+    setError(null);
+    const { error } = await supabase
+      .from("management_of_change_actions")
+      .update({ status: "Complete", completion_date: new Date().toISOString().slice(0, 10) })
+      .eq("id", actionId)
+      .eq("moc_id", moc.id);
+    setBusy(false);
+    if (error) setError(error.message);
+    else await load();
+  }
   async function approve() {
     if (!moc) return;
     const role = window.prompt(
@@ -225,29 +232,20 @@ export function MocDetailPage() {
       await load();
     }
   }
-  function exportRecord() {
+  async function exportRecord() {
     if (!moc) return;
-    const supporting = window.confirm(
-      "Include full supporting activity and action records?",
-    );
-    const payload = JSON.stringify(
-      supporting
-        ? moc
-        : {
-            ...moc,
-            management_of_change_activity: undefined,
-            management_of_change_actions: undefined,
-          },
-      null,
-      2,
-    );
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(
-      new Blob([payload], { type: "application/json" }),
-    );
-    a.download = `MOC-${String(moc.moc_number).padStart(3, "0")}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    setExporting(true);
+    setError(null);
+    try {
+      const generatedAt = new Date();
+      const scope = { kind: "single" } as const;
+      const data = await loadMocExportData(moc.id);
+      downloadXlsx(buildMocWorkbook(data, scope, generatedAt), mocExportFileName(scope, moc.moc_number, generatedAt));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to export this MOC record.");
+    } finally {
+      setExporting(false);
+    }
   }
   if (!moc)
     return (
@@ -273,10 +271,11 @@ export function MocDetailPage() {
             </p>
           </div>
           <button
-            onClick={exportRecord}
-            className="rounded-lg border px-3 py-2 text-sm font-semibold"
+            onClick={() => void exportRecord()}
+            disabled={exporting}
+            className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-60"
           >
-            Export selected MOC record
+            {exporting ? "Exporting…" : "Export MOC record (Excel)"}
           </button>
         </div>
       </header>
@@ -344,7 +343,7 @@ export function MocDetailPage() {
           instructions were reviewed; it does not create a procedure library.
         </p>
         <div className="space-y-3">
-          {impactQuestions.map((q, i) => (
+          {mocImpactQuestions.map((q, i) => (
             <label
               key={q}
               className="grid gap-1 text-sm font-medium sm:grid-cols-[1fr_12rem]"
@@ -449,17 +448,9 @@ export function MocDetailPage() {
               </p>
               {!locked && a.status !== "Complete" ? (
                 <button
+                  disabled={busy}
                   className="mt-2 text-sm font-semibold text-brand-700"
-                  onClick={() =>
-                    void supabase
-                      .from("management_of_change_actions")
-                      .update({
-                        status: "Complete",
-                        completion_date: new Date().toISOString().slice(0, 10),
-                      })
-                      .eq("id", a.id)
-                      .then(() => load())
-                  }
+                  onClick={() => void completeAction(a.id)}
                 >
                   Mark complete
                 </button>

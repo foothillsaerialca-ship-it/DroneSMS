@@ -12,7 +12,12 @@ export type CrewBriefingEvidence = {
   status: 'Invited' | 'Sent' | 'Acknowledged' | 'Manual Field Briefing' | 'Superseded' | 'Email Failed';
   acknowledged_at?: string | null;
   field_briefed_at?: string | null;
+  manual_reason?: string | null;
+  manual_reason_detail?: string | null;
+  attested_by_rpic_personnel_id?: string | null;
 };
+
+export const manualFieldBriefingReasons = ['No internet/cellular service', 'Crew member unable to access email', 'Device/access issue', 'Other'] as const;
 
 export type OperationalAssignment = {
   id: string;
@@ -39,17 +44,22 @@ export function crewBriefingStatus(assignment: OperationalAssignment, evidence: 
   if (assignment.assigned_role === 'RPIC') return 'RPIC Accepted';
   const records = evidence.filter((record) => record.assignment_id === assignment.id);
   const current = records.find((record) => record.briefing_version === briefingVersion && (!record.assigned_role || record.assigned_role === assignment.assigned_role) && !['Superseded', 'Email Failed'].includes(record.status));
-  if (current?.status === 'Acknowledged' || current?.status === 'Manual Field Briefing' || current?.status === 'Sent') return current.status;
+  if (current?.status === 'Manual Field Briefing') return 'Manual Field Briefing Recorded';
+  if (current?.status === 'Acknowledged' || current?.status === 'Sent') return current.status;
   if (records.some((record) => record.status === 'Acknowledged' || record.status === 'Manual Field Briefing')) return 'Stale';
   return 'Not Sent';
 }
 
 export function validateManualFieldBriefing(reason: string, otherReason: string, attested: boolean) {
-  const reasons = ['No internet/cellular service', 'Crew member unable to access email', 'Device/access issue', 'Other'];
-  if (!reasons.includes(reason)) return 'Select why electronic acknowledgment was unavailable.';
+  if (!(manualFieldBriefingReasons as readonly string[]).includes(reason)) return 'Select why electronic acknowledgment was unavailable.';
   if (reason === 'Other' && !otherReason.trim()) return 'Enter a short explanation.';
   if (!attested) return 'The RPIC attestation is required.';
   return null;
+}
+
+export function manualFieldBriefingDisplayReason(evidence: CrewBriefingEvidence) {
+  const detail = evidence.manual_reason_detail?.trim();
+  return evidence.manual_reason === 'Other' && detail ? `Other — ${detail}` : evidence.manual_reason ?? '';
 }
 
 export function crewAcknowledgmentSendErrorMessage() {

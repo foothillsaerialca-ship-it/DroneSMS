@@ -3,12 +3,12 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@frontend/lib/supabase';
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { loadOrganizationSettingsForUser, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
-import { serviceTypes } from '@frontend/features/jobs/lib/workflow-types';
+import { applyPrimaryServiceTypeDefault, serviceTypes } from '@frontend/features/jobs/lib/workflow-types';
 
 /**
  * Purpose: Provides the stable default shape for initial form state in the new job page workflow.
@@ -17,7 +17,7 @@ import { serviceTypes } from '@frontend/features/jobs/lib/workflow-types';
  */
 const initialFormState = {
   jobName: '',
-  serviceType: serviceTypes[0],
+  serviceType: serviceTypes[0] as string,
   jobLocation: '',
   plannedDate: '',
   notes: ''
@@ -83,6 +83,7 @@ export function NewJobPage() {
   const [isLoadingOrganization, setIsLoadingOrganization] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const serviceTypeTouched = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -100,7 +101,13 @@ export function NewJobPage() {
 
         const userId = userData.user?.id;
         const settings = userId ? await loadOrganizationSettingsForUser(userId) : null;
-        if (isMounted) setOrganizationSettings(settings);
+        if (isMounted) {
+          setOrganizationSettings(settings);
+          setFormData((current) => ({
+            ...current,
+            serviceType: applyPrimaryServiceTypeDefault(current.serviceType, settings?.primaryServiceType, serviceTypeTouched.current)
+          }));
+        }
       } catch {
         if (isMounted) setOrganizationSettings(null);
       } finally {
@@ -121,6 +128,11 @@ export function NewJobPage() {
    */
   function updateField(field: keyof typeof formData, value: string) {
     setFormData((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateServiceType(value: string) {
+    serviceTypeTouched.current = true;
+    updateField('serviceType', value);
   }
 
   /**
@@ -220,7 +232,7 @@ export function NewJobPage() {
             <select
               className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
               value={formData.serviceType}
-              onChange={(event) => updateField('serviceType', event.target.value)}
+              onChange={(event) => updateServiceType(event.target.value)}
               disabled={isSaving}
             >
               {serviceTypes.map((serviceType) => (

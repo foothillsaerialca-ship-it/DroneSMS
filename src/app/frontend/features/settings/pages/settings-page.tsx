@@ -3,15 +3,13 @@
  * Fallback/error behavior: optional data uses module-defined defaults; service and browser failures are surfaced to callers or page error state.
  * Known issues: see docs/documentation.md for audit findings that affect this module or its verification path.
  */
-import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { supabase } from "../../../lib/supabase";
-import {
-  DEFAULT_SERVICE_COMMITMENT,
-  invalidateOrganizationSettingsCache,
-} from "../lib/organization-settings";
-import { useAuth } from "../../auth/components/use-auth";
-import { validateImageUpload } from "../../../lib/file-validation";
+import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { supabase } from '../../../lib/supabase';
+import { validateImageUpload } from '../../../lib/file-validation';
+import { DEFAULT_SERVICE_COMMITMENT, invalidateOrganizationSettingsCache } from '../lib/organization-settings';
+import { serviceTypes } from '../../jobs/lib/workflow-types';
+import { useAuth } from '../../auth/components/use-auth';
 import {
   DEFAULT_EMERGENCY_PROCEDURES_SUMMARY,
   DEFAULT_HAZARD_REPORTING_STATEMENT,
@@ -60,6 +58,7 @@ type SettingsForm = {
   physicalAddress: string;
   primaryContact: string;
   companyStatement: string;
+  primaryServiceType: string;
   isLicensed: string;
   isInsured: string;
   isBonded: string;
@@ -84,23 +83,26 @@ type SettingsForm = {
  */
 type EditableSection = "organization" | "safety";
 
+const organizationProjection = 'id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, primary_service_type, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url';
+
 /**
  * Purpose: Provides the stable default shape for empty settings form in the settings page workflow.
  * Fallback/error behavior: Empty or missing collections use the owning workflow default; external persisted values are normalized by the consuming function where supported.
  * Known limitation: Persisted values outside this structure may require legacy normalization before they can be selected or displayed.
  */
 const emptySettingsForm: SettingsForm = {
-  companyName: "",
-  phoneNumber: "",
-  emailAddress: "",
-  websiteUrl: "",
-  physicalAddress: "",
-  primaryContact: "",
-  companyStatement: "",
-  isLicensed: "No",
-  isInsured: "No",
-  isBonded: "No",
-  defaultPaymentTerms: "",
+  companyName: '',
+  phoneNumber: '',
+  emailAddress: '',
+  websiteUrl: '',
+  physicalAddress: '',
+  primaryContact: '',
+  companyStatement: '',
+  primaryServiceType: '',
+  isLicensed: 'No',
+  isInsured: 'No',
+  isBonded: 'No',
+  defaultPaymentTerms: '',
   serviceCommitment: DEFAULT_SERVICE_COMMITMENT,
   includePaymentTermsInProposal: "Yes",
   includeServiceCommitmentInProposal: "Yes",
@@ -138,7 +140,6 @@ const organizationFields = [
     type: "email",
     autoComplete: "email",
   },
-  //{ key: 'websiteUrl', label: 'Website', type: 'url', autoComplete: 'url' },
   { key: "websiteUrl", label: "Website", type: "text", autoComplete: "url" },
   {
     key: "physicalAddress",
@@ -188,49 +189,29 @@ function normalizeSettings(
   organization: Record<string, unknown> | null | undefined,
 ): SettingsForm {
   return {
-    companyName: String(organization?.name ?? ""),
-    phoneNumber: String(organization?.phone_number ?? ""),
-    emailAddress: String(organization?.email_address ?? ""),
-    websiteUrl: String(organization?.website_url ?? ""),
-    physicalAddress: String(organization?.physical_address ?? ""),
-    primaryContact: String(organization?.primary_contact ?? ""),
-    companyStatement: String(organization?.company_statement ?? ""),
-    isLicensed: organization?.is_licensed ? "Yes" : "No",
-    isInsured: organization?.is_insured ? "Yes" : "No",
-    isBonded: organization?.is_bonded ? "Yes" : "No",
-    defaultPaymentTerms: String(organization?.default_payment_terms ?? ""),
-    serviceCommitment: String(
-      organization?.service_commitment ??
-        organization?.warranty ??
-        DEFAULT_SERVICE_COMMITMENT,
-    ),
-    includePaymentTermsInProposal:
-      organization?.include_payment_terms_in_proposal === false ? "No" : "Yes",
-    includeServiceCommitmentInProposal:
-      organization?.include_service_commitment_in_proposal === false
-        ? "No"
-        : "Yes",
-    includeCompanyCredentialsInProposal:
-      organization?.include_company_credentials_in_proposal === false
-        ? "No"
-        : "Yes",
-    includeMaterialsUsedInProposal:
-      organization?.include_materials_used_in_proposal === false ? "No" : "Yes",
-    safetyManager: String(organization?.safety_manager ?? ""),
-    stopWorkAuthorityStatement: defaultSmsValue(
-      organization?.stop_work_authority_statement,
-      DEFAULT_STOP_WORK_AUTHORITY_STATEMENT,
-    ),
-    hazardReportingStatement: defaultSmsValue(
-      organization?.hazard_reporting_statement,
-      DEFAULT_HAZARD_REPORTING_STATEMENT,
-    ),
-    emergencyProceduresSummary: defaultSmsValue(
-      organization?.emergency_procedures_summary,
-      DEFAULT_EMERGENCY_PROCEDURES_SUMMARY,
-    ),
-    logoPath: String(organization?.logo_path ?? ""),
-    logoUrl: String(organization?.logo_url ?? ""),
+    companyName: String(organization?.name ?? ''),
+    phoneNumber: String(organization?.phone_number ?? ''),
+    emailAddress: String(organization?.email_address ?? ''),
+    websiteUrl: String(organization?.website_url ?? ''),
+    physicalAddress: String(organization?.physical_address ?? ''),
+    primaryContact: String(organization?.primary_contact ?? ''),
+    companyStatement: String(organization?.company_statement ?? ''),
+    primaryServiceType: String(organization?.primary_service_type ?? ''),
+    isLicensed: organization?.is_licensed ? 'Yes' : 'No',
+    isInsured: organization?.is_insured ? 'Yes' : 'No',
+    isBonded: organization?.is_bonded ? 'Yes' : 'No',
+    defaultPaymentTerms: String(organization?.default_payment_terms ?? ''),
+    serviceCommitment: String(organization?.service_commitment ?? organization?.warranty ?? DEFAULT_SERVICE_COMMITMENT),
+    includePaymentTermsInProposal: organization?.include_payment_terms_in_proposal === false ? 'No' : 'Yes',
+    includeServiceCommitmentInProposal: organization?.include_service_commitment_in_proposal === false ? 'No' : 'Yes',
+    includeCompanyCredentialsInProposal: organization?.include_company_credentials_in_proposal === false ? 'No' : 'Yes',
+    includeMaterialsUsedInProposal: organization?.include_materials_used_in_proposal === false ? 'No' : 'Yes',
+    safetyManager: String(organization?.safety_manager ?? ''),
+    stopWorkAuthorityStatement: defaultSmsValue(organization?.stop_work_authority_statement, DEFAULT_STOP_WORK_AUTHORITY_STATEMENT),
+    hazardReportingStatement: defaultSmsValue(organization?.hazard_reporting_statement, DEFAULT_HAZARD_REPORTING_STATEMENT),
+    emergencyProceduresSummary: defaultSmsValue(organization?.emergency_procedures_summary, DEFAULT_EMERGENCY_PROCEDURES_SUMMARY),
+    logoPath: String(organization?.logo_path ?? ''),
+    logoUrl: String(organization?.logo_url ?? '')
   };
 }
 
@@ -246,14 +227,9 @@ function displayValue(value: string) {
  * Computes build logo path for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function buildLogoPath(organizationId: string, file: File) {
-  const extension =
-    file.name
-      .split(".")
-      .pop()
-      ?.toLowerCase()
-      .replace(/[^a-z0-9]/g, "") || "png";
-  return `${organizationId}/logo-${Date.now()}.${extension}`;
+function buildLogoPath(organizationId: string, mimeType: string) {
+  const extension = mimeType === 'image/jpeg' ? 'jpg' : mimeType === 'image/webp' ? 'webp' : 'png';
+  return `${organizationId}/logo-${crypto.randomUUID()}.${extension}`;
 }
 
 /**
@@ -415,7 +391,7 @@ export function SettingsPage() {
         const { data: organization, error: organizationError } = await supabase
           .from("organizations")
           .select(
-            "id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url",
+            organizationProjection
           )
           .eq("id", profile.organization_id)
           .maybeSingle();
@@ -523,9 +499,10 @@ export function SettingsPage() {
                 physical_address: draft.physicalAddress.trim() || null,
                 primary_contact: draft.primaryContact.trim() || null,
                 company_statement: draft.companyStatement.trim() || null,
-                is_licensed: draft.isLicensed === "Yes",
-                is_insured: draft.isInsured === "Yes",
-                is_bonded: draft.isBonded === "Yes",
+                primary_service_type: draft.primaryServiceType || null,
+                is_licensed: draft.isLicensed === 'Yes',
+                is_insured: draft.isInsured === 'Yes',
+                is_bonded: draft.isBonded === 'Yes',
                 default_payment_terms: draft.defaultPaymentTerms.trim() || null,
                 service_commitment: draft.serviceCommitment.trim() || null,
                 include_payment_terms_in_proposal:
@@ -554,7 +531,7 @@ export function SettingsPage() {
           .update(changes)
           .eq("id", organizationId)
           .select(
-            "id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url",
+            organizationProjection
           )
           .single();
 
@@ -591,16 +568,17 @@ export function SettingsPage() {
 
     let uploadedLogoPath: string | null = null;
     try {
-      await validateImageUpload(file, {
+      const validatedImage = await validateImageUpload(file, {
         maxBytes: 5 * 1024 * 1024,
         maxPixels: 20_000_000,
       });
-      const logoPath = buildLogoPath(organizationId, file);
+      const logoPath = buildLogoPath(organizationId, validatedImage.mimeType);
       const { error: uploadError } = await supabase.storage
         .from("organization-logos")
         .upload(logoPath, file, {
           cacheControl: "3600",
-          upsert: true,
+          contentType: validatedImage.mimeType,
+          upsert: false,
         });
 
       if (uploadError) throw uploadError;
@@ -611,16 +589,19 @@ export function SettingsPage() {
         .getPublicUrl(logoPath);
       const logoUrl = publicUrlData.publicUrl;
 
-      const { data, error: updateError } = await supabase
+      let updateQuery = supabase
         .from("organizations")
         .update({
           logo_path: logoPath,
           logo_url: logoUrl,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", organizationId)
-        .select(
-          "id, name, phone_number, email_address, website_url, physical_address, primary_contact, company_statement, is_licensed, is_insured, is_bonded, default_payment_terms, service_commitment, include_payment_terms_in_proposal, include_service_commitment_in_proposal, include_company_credentials_in_proposal, include_materials_used_in_proposal, safety_manager, stop_work_authority_statement, hazard_reporting_statement, emergency_procedures_summary, logo_path, logo_url",
+        .eq("id", organizationId);
+      updateQuery = settings.logoPath
+        ? updateQuery.eq('logo_path', settings.logoPath)
+        : updateQuery.is('logo_path', null);
+      const { data, error: updateError } = await updateQuery.select(
+          organizationProjection
         )
         .single();
 
@@ -628,16 +609,76 @@ export function SettingsPage() {
 
       const updatedSettings = normalizeSettings(data);
       setSettings(updatedSettings);
-      setDraft(updatedSettings);
+      setDraft((currentDraft) => ({ ...currentDraft, logoPath: updatedSettings.logoPath, logoUrl: updatedSettings.logoUrl }));
       invalidateOrganizationSettingsCache();
       uploadedLogoPath = null;
-      setMessage("Logo updated.");
+      const previousLogoPath = settings.logoPath;
+      if (previousLogoPath && previousLogoPath !== logoPath && previousLogoPath.startsWith(`${organizationId}/`)) {
+        const { error: removeError } = await supabase.storage.from('organization-logos').remove([previousLogoPath]);
+        if (removeError) {
+          setError('Logo updated, but its previous stored file could not be deleted.');
+          return;
+        }
+      }
+      setMessage('Logo updated.');
     } catch (logoError) {
       if (uploadedLogoPath)
         await supabase.storage
           .from("organization-logos")
           .remove([uploadedLogoPath]);
       setError(getErrorMessage(logoError, "Unable to upload logo."));
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  }
+
+  /**
+   * Removes the organization's current logo reference and, when safely scoped, its storage object.
+   * Fallback/error behavior: The reference remains cleared if storage cleanup fails, and the retained object is reported to the user.
+   */
+  async function handleLogoRemove() {
+    if (!organizationId || !currentLogoUrl) return;
+    if (!window.confirm('Remove the organization logo?')) return;
+
+    const logoPath = settings.logoPath;
+    const canDeleteLogoObject = Boolean(logoPath) && logoPath.startsWith(`${organizationId}/`);
+
+    setIsUploadingLogo(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      let updateQuery = supabase
+        .from('organizations')
+        .update({ logo_path: null, logo_url: null, updated_at: new Date().toISOString() })
+        .eq('id', organizationId);
+
+      updateQuery = logoPath ? updateQuery.eq('logo_path', logoPath) : updateQuery.eq('logo_url', settings.logoUrl);
+
+      const { data, error: updateError } = await updateQuery
+        .select(
+          organizationProjection
+        )
+        .single();
+
+      if (updateError) throw updateError;
+
+      const updatedSettings = normalizeSettings(data);
+      setSettings(updatedSettings);
+      setDraft((currentDraft) => ({ ...currentDraft, logoPath: updatedSettings.logoPath, logoUrl: updatedSettings.logoUrl }));
+      invalidateOrganizationSettingsCache();
+
+      if (canDeleteLogoObject) {
+        const { error: removeError } = await supabase.storage.from('organization-logos').remove([logoPath]);
+        if (removeError) {
+          setError('Logo removed, but its stored file could not be deleted.');
+          return;
+        }
+      }
+
+      setMessage('Logo removed.');
+    } catch (logoError) {
+      setError(getErrorMessage(logoError, 'Unable to remove logo.'));
     } finally {
       setIsUploadingLogo(false);
     }
@@ -724,11 +765,17 @@ export function SettingsPage() {
                       disabled={isUploadingLogo || !organizationId}
                     />
                   </label>
-                  <p className="mt-2 text-xs text-slate-500">
-                    {isUploadingLogo
-                      ? "Uploading logo..."
-                      : "Choosing a new image replaces the current logo."}
-                  </p>
+                  {currentLogoUrl ? (
+                    <button
+                      type="button"
+                      className="mt-3 min-h-11 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                      onClick={() => void handleLogoRemove()}
+                      disabled={isUploadingLogo || !organizationId}
+                    >
+                      Remove logo
+                    </button>
+                  ) : null}
+                  <p className="mt-2 text-xs text-slate-500">{isUploadingLogo ? 'Uploading logo...' : 'For best results, upload a square or horizontal logo with a transparent or white background. PNG recommended. Choosing a new image replaces the current logo.'}</p>
                 </>
               )}
             </div>
@@ -779,6 +826,19 @@ export function SettingsPage() {
                         />
                       </div>
                     ))}
+                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+                      Primary Service Type
+                      <select
+                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 disabled:text-slate-500 sm:py-2 sm:text-sm"
+                        value={draft.primaryServiceType}
+                        onChange={(event) => updateDraft('primaryServiceType', event.target.value)}
+                        disabled={isSaving}
+                      >
+                        <option value="">Not set</option>
+                        {serviceTypes.map((serviceType) => <option key={serviceType} value={serviceType}>{serviceType}</option>)}
+                      </select>
+                      <span className="mt-1 block text-xs font-normal text-slate-500">Used as the default service type when creating a new job. You can change it for any individual job.</span>
+                    </label>
                     <div className="sm:col-span-2">
                       <p className="text-sm font-medium text-slate-700">
                         Company Credentials
@@ -884,35 +944,11 @@ export function SettingsPage() {
                     </div>
                   ))}
                   <div className="sm:col-span-2">
-                    <FieldDisplay
-                      label="Company Credentials"
-                      value={[
-                        settings.isLicensed === "Yes" ? "Licensed" : "",
-                        settings.isInsured === "Yes" ? "Insured" : "",
-                        settings.isBonded === "Yes" ? "Bonded" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" • ")}
-                    />
-                    <FieldDisplay
-                      label="Proposal Inclusion Controls"
-                      value={[
-                        settings.includePaymentTermsInProposal === "Yes"
-                          ? "Payment Terms"
-                          : "",
-                        settings.includeServiceCommitmentInProposal === "Yes"
-                          ? "Service Commitment"
-                          : "",
-                        settings.includeCompanyCredentialsInProposal === "Yes"
-                          ? "Company Credentials"
-                          : "",
-                        settings.includeMaterialsUsedInProposal === "Yes"
-                          ? "Materials Used"
-                          : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" • ")}
-                    />
+                    <FieldDisplay label="Primary Service Type" value={settings.primaryServiceType} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <FieldDisplay label="Company Credentials" value={[settings.isLicensed === 'Yes' ? 'Licensed' : '', settings.isInsured === 'Yes' ? 'Insured' : '', settings.isBonded === 'Yes' ? 'Bonded' : ''].filter(Boolean).join(' • ')} />
+                    <FieldDisplay label="Proposal Inclusion Controls" value={[settings.includePaymentTermsInProposal === 'Yes' ? 'Payment Terms' : '', settings.includeServiceCommitmentInProposal === 'Yes' ? 'Service Commitment' : '', settings.includeCompanyCredentialsInProposal === 'Yes' ? 'Company Credentials' : '', settings.includeMaterialsUsedInProposal === 'Yes' ? 'Materials Used' : ''].filter(Boolean).join(' • ')} />
                   </div>
                 </dl>
               )}

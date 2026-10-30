@@ -546,6 +546,8 @@ export function EquipmentPage() {
       !formData.productCategory.trim()
     )
       return "Product category is required for Chemical / Material records.";
+    if (!editingEquipmentId && formData.introducesNewCapability === "Yes" && !formData.capabilityName.trim())
+      return "Name the new operational capability before starting its review.";
     return null;
   }
 
@@ -655,6 +657,7 @@ export function EquipmentPage() {
     setError(null);
     setSaveMessage(null);
     setIsSaving(true);
+    let createdEquipmentId: string | null = null;
 
     try {
       const { data: userData, error: userError } =
@@ -697,13 +700,10 @@ export function EquipmentPage() {
           .single();
 
         if (insertError) throw insertError;
+        createdEquipmentId = inserted.id;
         if (pendingDocuments.length)
           await uploadPendingDocuments(inserted.id, inserted.organization_id);
         if (formData.introducesNewCapability === "Yes") {
-          if (!formData.capabilityName.trim())
-            throw new Error(
-              "Name the new operational capability before starting its review.",
-            );
           const { data: moc, error: mocError } = await supabase.rpc(
             "start_management_of_change",
             {
@@ -737,7 +737,16 @@ export function EquipmentPage() {
       );
       await loadEquipment();
     } catch (saveError) {
-      setError(getErrorMessage(saveError));
+      if (createdEquipmentId) {
+        setFormData(initialFormState);
+        setEditingEquipmentId(null);
+        setIsFormOpen(false);
+        setPendingDocuments([]);
+        setError(`Equipment was saved, but a follow-up step failed: ${getErrorMessage(saveError)}. Review the saved record before trying again.`);
+        await loadEquipment().catch(() => undefined);
+      } else {
+        setError(getErrorMessage(saveError));
+      }
     } finally {
       setIsSaving(false);
     }
@@ -1390,17 +1399,7 @@ export function EquipmentPage() {
                     ) : null}
                   </div>
                   <div className="flex gap-2">
-                    <Link
-                      to="/sms/moc"
-                      className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-brand-700 shadow-sm hover:text-brand-900"
-                    >
-                      Start Change Review
-                    </Link>
-                    <button
-                      type="button"
-                      className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-brand-700 shadow-sm hover:text-brand-900"
-                      onClick={() => handleEdit(item)}
-                    >
+                    <button type="button" className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-brand-700 shadow-sm hover:text-brand-900" onClick={() => handleEdit(item)}>
                       Edit
                     </button>
                     <button

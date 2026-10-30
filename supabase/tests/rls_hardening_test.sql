@@ -1,5 +1,5 @@
 begin;
-select plan(7);
+select plan(16);
 
 insert into auth.users(id,email,aud,role) values
   ('10000000-0000-0000-0000-000000000001','owner-a@example.test','authenticated','authenticated'),
@@ -40,6 +40,21 @@ reset role;
 select ok(not has_table_privilege('authenticated','public.job_operation_closeouts','INSERT'),'authenticated cannot bypass closeout RPC with insert');
 select ok(not has_table_privilege('authenticated','public.preflight_checklists','UPDATE'),'authenticated cannot bypass preflight approval with update');
 select ok(has_function_privilege('anon','public.get_public_crew_briefing(text)','EXECUTE'),'anonymous capability-token lookup is available');
+select ok(to_regprocedure('public.create_crew_briefing_invitation(uuid)') is null,'legacy invitation RPC cannot disclose raw tokens');
+select ok(not has_function_privilege('authenticated','public.create_crew_briefing_invitation(uuid,uuid)','EXECUTE'),'authenticated clients cannot mint raw invitation tokens');
+select ok(has_function_privilege('service_role','public.create_crew_briefing_invitation(uuid,uuid)','EXECUTE'),'trusted email service can create invitations');
+select ok(not has_function_privilege('authenticated','public.mark_crew_briefing_email_result(uuid,boolean)','EXECUTE'),'authenticated clients cannot assert email delivery');
+select ok(has_function_privilege('service_role','public.mark_crew_briefing_email_result(uuid,boolean)','EXECUTE'),'trusted email service can record delivery');
+select ok(not has_function_privilege('authenticated','public.claim_storage_cleanup_batch(integer)','EXECUTE'),'authenticated clients cannot claim cleanup work');
+select ok(has_function_privilege('service_role','public.claim_storage_cleanup_batch(integer)','EXECUTE'),'trusted cleanup service can claim cleanup work');
+
+insert into public.storage_cleanup_queue(id,bucket_id,object_path,reason,delete_after,status,attempts,claimed_at)
+values('50000000-0000-0000-0000-000000000001','test-bucket','abandoned.txt','Lease recovery test',now()-interval '1 day','processing',1,now()-interval '20 minutes');
+set local role service_role;
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+select lives_ok($$select * from public.claim_storage_cleanup_batch(100)$$,'service worker reclaims abandoned cleanup work');
+reset role;
+select is((select attempts from public.storage_cleanup_queue where id='50000000-0000-0000-0000-000000000001'),2,'reclaimed work receives a new fenced attempt number');
 
 select * from finish();
 rollback;

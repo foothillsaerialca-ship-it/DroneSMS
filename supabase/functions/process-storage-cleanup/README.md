@@ -7,4 +7,6 @@ scheduler with `POST` and the secret in `x-cleanup-secret`.
 The worker removes at most 100 due objects per invocation. Database triggers place
 replaced/deleted objects in `storage_cleanup_queue` with a recovery grace period.
 Failed objects are retried up to five times and remain visible to operators for
-manual reconciliation.
+manual reconciliation. Claims older than 15 minutes can be reclaimed after a
+worker interruption. Result updates include the claim attempt number so an
+older worker cannot overwrite a newer claim.

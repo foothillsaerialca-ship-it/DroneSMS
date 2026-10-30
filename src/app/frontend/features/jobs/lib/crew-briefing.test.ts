@@ -4,13 +4,15 @@
  * Known limitation: These tests cover pure helper behavior and do not exercise Supabase or page rendering.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, requiredCrewAssignments, validateManualFieldBriefing } from './crew-briefing.ts';
+import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, manualFieldBriefingDisplayReason, requiredCrewAssignments, validateManualFieldBriefing } from './crew-briefing.ts';
 
 const assignments = [
   { id: 'rpic', assigned_role: 'RPIC', personnel: { id: 'p1', full_name: 'Pilot', email: null, status: 'Active' } },
   { id: 'vo', assigned_role: 'Visual Observer', personnel: { id: 'p2', full_name: 'Observer', email: 'vo@example.test', status: 'Active' } },
 ];
+const jobHubPage = readFileSync('src/app/frontend/features/jobs/pages/job-file-hub-page.tsx', 'utf8');
 
 test('solo RPIC and non-operational assignments create no crew acknowledgment requirement', () => {
   assert.equal(requiredCrewAssignments(assignments.slice(0, 1)).length, 0);
@@ -25,6 +27,18 @@ test('current electronic or manual evidence satisfies readiness, while sent and 
   assert.equal(crewBriefingStatus(assignments[1], [{ assignment_id: 'vo', briefing_version: 1, status: 'Acknowledged' }], 2), 'Stale');
   assert.equal(crewAcknowledgmentsCurrent(assignments, [{ assignment_id: 'vo', briefing_version: 2, status: 'Acknowledged' }], 2), true);
   assert.equal(crewAcknowledgmentsCurrent(assignments, [{ assignment_id: 'vo', briefing_version: 2, status: 'Manual Field Briefing' }], 2), true);
+  assert.equal(crewBriefingStatus(assignments[1], [{ assignment_id: 'vo', briefing_version: 2, status: 'Manual Field Briefing' }], 2), 'Manual Field Briefing Recorded');
+});
+
+test('manual field briefing audit reason uses persisted custom detail only for Other', () => {
+  assert.equal(manualFieldBriefingDisplayReason({ assignment_id: 'vo', briefing_version: 2, status: 'Manual Field Briefing', manual_reason: 'No internet/cellular service' }), 'No internet/cellular service');
+  assert.equal(manualFieldBriefingDisplayReason({ assignment_id: 'vo', briefing_version: 2, status: 'Manual Field Briefing', manual_reason: 'Other', manual_reason_detail: 'Shared device was unavailable' }), 'Other — Shared device was unavailable');
+});
+
+test('job hub uses an inline manual briefing form and reloads persisted audit fields', () => {
+  assert.doesNotMatch(jobHubPage, /window\.(?:prompt|confirm)/);
+  for (const text of ['Why is electronic acknowledgment unavailable?', 'Select a reason', 'Enter reason', 'Record Manual Briefing']) assert.ok(jobHubPage.includes(text));
+  for (const field of ['manual_reason', 'manual_reason_detail', 'attested_by_rpic_personnel_id', 'field_briefed_at']) assert.ok(jobHubPage.includes(field));
 });
 
 test('manual field briefing requires reason, Other explanation, and RPIC attestation', () => {

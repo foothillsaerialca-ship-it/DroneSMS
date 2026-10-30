@@ -392,12 +392,10 @@ export function JobsPage({ mode = "jobs" }: JobsPageProps) {
         target_proposal_id: proposal.id,
       });
       if (error) throw error;
-      if (!data || typeof data !== "object" || !("id" in data)) {
-        throw new Error(
-          "Proposal conversion did not return the operational job.",
-        );
-      }
 
+      if (!data || typeof data !== "object" || !("id" in data)) {
+        throw new Error("Proposal conversion did not return the operational job.");
+      }
       const createdJob = data as Job;
       const convertedAt = new Date().toISOString();
 

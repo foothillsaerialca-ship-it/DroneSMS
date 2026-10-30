@@ -12,6 +12,7 @@ const repairMigration = readFileSync('supabase/migrations/20260905010000_fix_cre
 const cryptoRepairMigration = readFileSync('supabase/migrations/20260905020000_fix_crew_invitation_crypto_schema.sql', 'utf8');
 const anonymousRevocationMigration = readFileSync('supabase/migrations/20260906090000_revoke_anonymous_crew_briefing_acknowledgment.sql', 'utf8');
 const anonymousLookupRevocationMigration = readFileSync('supabase/migrations/20260906100000_revoke_anonymous_crew_briefing_lookup.sql', 'utf8');
+const deliveryHardeningMigration = readFileSync('supabase/migrations/20261030000000_harden_crew_delivery_and_reclaim_storage_cleanup.sql', 'utf8');
 const sendFunction = readFileSync('supabase/functions/send-crew-acknowledgment/index.ts', 'utf8');
 
 test('crew invitation resolves pgcrypto without widening its SECURITY DEFINER search path', () => {
@@ -159,8 +160,21 @@ test('email function accepts supabase-js preflight and only marks Sent after pro
   assert.match(sendFunction, /Access-Control-Allow-Headers[^\n]+x-client-info/);
   assert.match(sendFunction, /Deno\.env\.get\('RESEND_FROM'\)/);
   assert.doesNotMatch(sendFunction, /briefing@dronesms\.app/);
+  assert.match(sendFunction, /userClient\.auth\.getUser\(token\)/);
+  assert.match(sendFunction, /p_actor_user_id: userData\.user\.id/);
   const providerCheck = sendFunction.indexOf('if (!emailResponse.ok)');
-  const sentUpdate = sendFunction.indexOf('p_sent: true');
-  assert.ok(providerCheck > -1 && sentUpdate > providerCheck);
-  assert.match(sendFunction, /if \(invitationId\)[^\n]+p_sent: false/);
+  const sentUpdate = sendFunction.indexOf('sent = true');
+  const statusRpc = sendFunction.indexOf("serviceClient.rpc('mark_crew_briefing_email_result'");
+  assert.ok(providerCheck > -1 && sentUpdate > providerCheck && statusRpc > sentUpdate);
+  assert.match(sendFunction, /p_sent: sent/);
+});
+
+test('crew delivery tokens and status updates require the trusted email service', () => {
+  assert.match(deliveryHardeningMigration, /revoke all on function public\.create_crew_briefing_invitation\(uuid,uuid\)[\s\S]+?from public, anon, authenticated/i);
+  assert.match(deliveryHardeningMigration, /grant execute on function public\.create_crew_briefing_invitation\(uuid,uuid\) to service_role/i);
+  assert.match(deliveryHardeningMigration, /drop function public\.create_crew_briefing_invitation\(uuid\)/i);
+  assert.match(deliveryHardeningMigration, /revoke all on function public\.mark_crew_briefing_email_result\(uuid,boolean\)[\s\S]+?from public, anon, authenticated/i);
+  assert.match(deliveryHardeningMigration, /grant execute on function public\.mark_crew_briefing_email_result\(uuid,boolean\)[\s\S]+?to service_role/i);
+  assert.match(sendFunction, /serviceClient\.rpc\('create_crew_briefing_invitation'/);
+  assert.match(sendFunction, /serviceClient\.rpc\('mark_crew_briefing_email_result'/);
 });
