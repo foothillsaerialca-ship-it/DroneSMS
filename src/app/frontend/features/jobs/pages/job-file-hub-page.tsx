@@ -10,7 +10,8 @@ import { daysUntilDate, formatIsoDate, formatIsoDate as formatPlannedDate, today
 import { OrganizationIdentityCard } from '@frontend/features/settings/components/organization-identity-card';
 import { generateJobPacketPdf } from '@frontend/features/jobs/lib/proposal-pdf';
 import { loadOrganizationSettingsById, type OrganizationSettings } from '@frontend/features/settings/lib/organization-settings';
-import { closeoutRequiresReadiness, getOperationReadinessStatus, getReadinessBlockingReasons, getCrewCredentialLabel, getCrewCredentialWarnings, getEquipmentMaintenanceLabel, getResourceReadinessIssues, isApprovalCurrent, isApprovalForToday, type OperationReadinessRecord, type OverridableReadinessIssue, type ReadinessOverrideRecord } from '@frontend/features/jobs/lib/operation-readiness';
+import { closeoutRequiresReadiness, getOperationReadinessStatus, getReadinessBlockingReasons, getCrewCredentialLabel, getCrewCredentialWarnings, getEquipmentMaintenanceLabel, getResourceReadinessIssues, isApprovalCurrent, isApprovalForToday, resultsAllowedWithoutReadiness, type OperationReadinessRecord, type OverridableReadinessIssue, type ReadinessOverrideRecord } from '@frontend/features/jobs/lib/operation-readiness';
+import { requiresPart107AtcAuthorization } from '@frontend/features/jobs/lib/part107-compliance';
 import { crewAcknowledgmentSendErrorMessage, crewAcknowledgmentsCurrent, crewBriefingStatus, currentCrewEvidence, manualFieldBriefingDisplayReason, manualFieldBriefingReasons, requiredCrewAssignments, validateManualFieldBriefing, type CrewBriefingEvidence } from '@frontend/features/jobs/lib/crew-briefing';
 import { followUpAreas, validateSafetyAssurance, type SafetyAssuranceInput } from '@frontend/features/sms/lib/safety-assurance';
 
@@ -53,9 +54,15 @@ const safetyEventOutcomes = ['Resolved', 'Operation Paused', 'Operation Terminat
  */
 const initialSafetyEventFormState = {
   category: safetyEventCategories[0],
+  occurredAt: new Date().toISOString().slice(0, 10),
   description: '',
   immediateActionsTaken: '',
   outcome: safetyEventOutcomes[0],
+  seriousInjury: '',
+  lossOfConsciousness: '',
+  nonSuasPropertyDamageCostUsd: '',
+  nonSuasPropertyTotalLoss: '',
+  nonSuasPropertyFairMarketValueUsd: '',
   promoteToHazardLibrary: false
 };
 
@@ -118,6 +125,9 @@ type EquipmentOption = {
   status: string;
   faa_registration_number?: string | null;
   maintenance_due_date?: string | null;
+  airworthy_confirmed?: boolean | null;
+  remote_id_status?: string | null;
+  maximum_wind_speed_mph?: number | null;
 };
 
 /**
@@ -145,6 +155,10 @@ type JobSafetyEvent = {
   outcome: string;
   promote_to_hazard_library: boolean;
   created_at: string;
+  occurred_at: string | null;
+  faa_report_deadline: string | null;
+  faa_reported_at: string | null;
+  faa_report_reference: string | null;
 };
 
 /**
@@ -169,6 +183,14 @@ type JhaSummary = {
   permit_authorization_required: boolean | null;
   permit_authorization_status: 'Pending' | 'Approved' | null;
   briefing_version: number;
+  visibility_distance_sm: number | null;
+  cloud_clearance_below_ft: number | null;
+  cloud_horizontal_distance_ft: number | null;
+  atc_authorization_status: string | null;
+  atc_authorization_reference: string | null;
+  atc_authorization_expires_at: string | null;
+  additional_authorization_required: string | null;
+  wind_speed: number | null;
 };
 
 /**
@@ -366,6 +388,9 @@ export function JobFileHubPage() {
   const [selectedRole, setSelectedRole] = useState(crewRoleOptions[0]);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState('');
   const [safetyEventFormData, setSafetyEventFormData] = useState<SafetyEventFormState>(initialSafetyEventFormState);
+  const [faaReportReferenceDrafts, setFaaReportReferenceDrafts] = useState<Record<string, string>>({});
+  const [reportingEventId, setReportingEventId] = useState<string | null>(null);
+  const [reportStatusError, setReportStatusError] = useState<string | null>(null);
   const [closeoutFormData, setCloseoutFormData] = useState<CloseoutFormState>({ operationResult: operationResultOptions[0], deviationNarrative: '', assurance: blankAssurance, relatedHazardId: '', relatedControlId: '', relatedSafetyEventId: '' });
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
   const [editedAssignmentRole, setEditedAssignmentRole] = useState(crewRoleOptions[0]);
@@ -413,7 +438,7 @@ export function JobFileHubPage() {
   async function loadEquipmentAssignments(currentJobId: string) {
     const { data, error: assignmentsError } = await supabase
       .from('job_equipment')
-      .select('id, equipment:equipment_id(id, name, equipment_type, status, faa_registration_number, maintenance_due_date)')
+      .select('id, equipment:equipment_id(id, name, equipment_type, status, faa_registration_number, maintenance_due_date, airworthy_confirmed, remote_id_status, maximum_wind_speed_mph)')
       .eq('job_id', currentJobId)
       .order('created_at', { ascending: true });
 
@@ -429,7 +454,7 @@ export function JobFileHubPage() {
   async function loadSafetyEvents(currentJobId: string) {
     const { data, error: safetyEventsError } = await supabase
       .from('job_safety_events')
-      .select('id, category, description, immediate_actions_taken, outcome, promote_to_hazard_library, created_at')
+      .select('id, category, description, immediate_actions_taken, outcome, promote_to_hazard_library, created_at, occurred_at, faa_report_deadline, faa_reported_at, faa_report_reference')
       .eq('job_id', currentJobId)
       .order('created_at', { ascending: false });
 
@@ -501,23 +526,23 @@ export function JobFileHubPage() {
           .order('created_at', { ascending: true });
         const equipmentQuery = supabase
           .from('equipment')
-          .select('id, name, equipment_type, status, faa_registration_number, maintenance_due_date')
+          .select('id, name, equipment_type, status, faa_registration_number, maintenance_due_date, airworthy_confirmed, remote_id_status, maximum_wind_speed_mph')
           // Equipment that is not available to fly cannot be newly assigned; Ready to Operate also blocks it.
           .not('status', 'in', '(Retired,Maintenance,Inactive)')
           .order('name', { ascending: true });
         const equipmentAssignmentsQuery = supabase
           .from('job_equipment')
-          .select('id, equipment:equipment_id(id, name, equipment_type, status, faa_registration_number, maintenance_due_date)')
+          .select('id, equipment:equipment_id(id, name, equipment_type, status, faa_registration_number, maintenance_due_date, airworthy_confirmed, remote_id_status, maximum_wind_speed_mph)')
           .eq('job_id', jobId)
           .order('created_at', { ascending: true });
         const safetyEventsQuery = supabase
           .from('job_safety_events')
-          .select('id, category, description, immediate_actions_taken, outcome, promote_to_hazard_library, created_at')
+          .select('id, category, description, immediate_actions_taken, outcome, promote_to_hazard_library, created_at, occurred_at, faa_report_deadline, faa_reported_at, faa_report_reference')
           .eq('job_id', jobId)
           .order('created_at', { ascending: false });
         const jhaSummaryQuery = supabase
           .from('jha_assessments')
-          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, safety_manager_reviewed_at, safety_manager_review_stale, rpic_accepted_at, rpic_acceptance_stale, rpic_personnel_id, hazard_entries, public_right_of_way_restriction_required, permit_authorization_required, permit_authorization_status, briefing_version')
+          .select('status, faa_airspace_class, laanc_required, crew_briefed, controls_in_place, certified_at, safety_manager_reviewed_at, safety_manager_review_stale, rpic_accepted_at, rpic_acceptance_stale, rpic_personnel_id, hazard_entries, public_right_of_way_restriction_required, permit_authorization_required, permit_authorization_status, briefing_version, visibility_distance_sm, cloud_clearance_below_ft, cloud_horizontal_distance_ft, atc_authorization_status, atc_authorization_reference, atc_authorization_expires_at, additional_authorization_required, wind_speed')
           .eq('job_id', jobId)
           .maybeSingle();
         const preflightSummaryQuery = supabase
@@ -641,7 +666,13 @@ export function JobFileHubPage() {
   const crewBriefingComplete = Boolean(jhaSummary?.crew_briefed && jhaComplete);
   const airspaceReviewComplete = Boolean(jhaSummary && (jhaSummary.faa_airspace_class || jhaSummary.laanc_required));
   const preflightComplete = preflightSummary?.status === 'Complete';
-  const closeoutComplete = Boolean(operationCloseout);
+  const closeoutComplete = Boolean(operationCloseout && (
+    resultsAllowedWithoutReadiness.has(operationCloseout.operation_result)
+    || isApprovalCurrent(operationReadiness, assignments.find((assignment) => assignment.assigned_role === 'RPIC' && assignment.personnel?.status === 'Active')?.personnel?.id ?? null)
+  ));
+  const displayedJobStatus = job?.status === 'Complete' && operationCloseout && closeoutRequiresReadiness(operationCloseout.operation_result) && !closeoutComplete
+    ? 'Closeout review required'
+    : job?.status ?? '';
   const personnelReadinessSummary = getPersonnelReadinessSummary(assignments);
   const closeoutNarrativeRequired = resultsRequiringNarrative.has(closeoutFormData.operationResult);
   const assignedRpic = assignments.find((assignment) => assignment.assigned_role === 'RPIC' && assignment.personnel?.status === 'Active')?.personnel ?? null;
@@ -656,6 +687,13 @@ export function JobFileHubPage() {
     publicRightOfWayRestrictionRequired: jhaSummary?.public_right_of_way_restriction_required,
     permitAuthorizationRequired: jhaSummary?.permit_authorization_required,
     permitAuthorizationStatus: jhaSummary?.permit_authorization_status,
+    visibilityDistanceSm: jhaSummary?.visibility_distance_sm ?? null,
+    cloudClearanceBelowFt: jhaSummary?.cloud_clearance_below_ft ?? null,
+    cloudHorizontalDistanceFt: jhaSummary?.cloud_horizontal_distance_ft ?? null,
+    atcAuthorizationRequired: requiresPart107AtcAuthorization(jhaSummary?.faa_airspace_class ?? null, jhaSummary?.faa_airspace_class === 'E' && jhaSummary?.additional_authorization_required === 'Yes'),
+    atcAuthorizationApproved: jhaSummary?.atc_authorization_status === 'Approved'
+      && Boolean(jhaSummary?.atc_authorization_reference?.trim())
+      && (!jhaSummary?.atc_authorization_expires_at || jhaSummary.atc_authorization_expires_at >= todayIsoDate()),
     crewAcknowledgmentsCurrent: job?.crew_acknowledgment_required_at ? crewEvidenceCurrent : undefined,
   };
   const resourceIssues = getResourceReadinessIssues(
@@ -668,19 +706,23 @@ export function JobFileHubPage() {
       equipmentId: assignment.equipment.id, name: assignment.equipment.name, equipmentType: assignment.equipment.equipment_type,
       status: assignment.equipment.status, faaRegistrationNumber: assignment.equipment.faa_registration_number ?? null,
       maintenanceDueDate: assignment.equipment.maintenance_due_date ?? null,
+      airworthyConfirmed: assignment.equipment.airworthy_confirmed ?? null,
+      remoteIdStatus: assignment.equipment.remote_id_status ?? null,
+      maximumWindSpeedMph: assignment.equipment.maximum_wind_speed_mph ?? null,
     }] : []),
     readinessOverrides,
     todayIsoDate(),
+    jhaSummary?.wind_speed ?? null,
   );
   const readinessBlockingReasons = [...getReadinessBlockingReasons(readinessPrerequisites), ...resourceIssues.blocking, ...resourceIssues.pendingOverrideReasons];
   const selectedCrewPerson = personnel.find((person) => person.id === selectedPersonnelId);
   const selectedCrewWarnings = selectedCrewPerson ? getCrewCredentialWarnings(selectedCrewPerson, selectedRole, todayIsoDate(), (date) => formatIsoDate(date)) : [];
   const readinessStatus = getOperationReadinessStatus(operationReadiness);
   // Before closeout, an approval from an earlier day must be given again on the day of the operation.
-  const readinessExpired = readinessStatus === 'Ready to Operate' && !operationCloseout && !isApprovalForToday(operationReadiness);
+  const readinessExpired = readinessStatus === 'Ready to Operate' && !closeoutComplete && !isApprovalForToday(operationReadiness);
   const readinessBadge = readinessExpired ? 'Approval Expired' : readinessStatus;
   const readinessCurrent = isApprovalCurrent(operationReadiness, assignedRpic?.id ?? null);
-  const closeoutBlockedByReadiness = closeoutRequiresReadiness(closeoutFormData.operationResult) && !readinessCurrent;
+  const closeoutBlockedByReadiness = closeoutRequiresReadiness(closeoutFormData.operationResult) && (!readinessCurrent || readinessExpired);
   const isSafetyManager = Boolean(safetyManager?.user_id && safetyManager.user_id === currentUserId);
 
   async function recordReadinessOverride(issue: OverridableReadinessIssue) {
@@ -966,6 +1008,17 @@ export function JobFileHubPage() {
       return;
     }
 
+    if (!safetyEventFormData.occurredAt || !safetyEventFormData.seriousInjury || !safetyEventFormData.lossOfConsciousness || !safetyEventFormData.nonSuasPropertyTotalLoss || !safetyEventFormData.nonSuasPropertyDamageCostUsd.trim() || (safetyEventFormData.nonSuasPropertyTotalLoss === 'Yes' && !safetyEventFormData.nonSuasPropertyFairMarketValueUsd.trim())) {
+      setSafetyEventError('Complete the Part 107 reportability questions before saving this Safety Event.');
+      return;
+    }
+    const damageCost = safetyEventFormData.nonSuasPropertyDamageCostUsd.trim() ? Number(safetyEventFormData.nonSuasPropertyDamageCostUsd) : null;
+    const fairMarketValue = safetyEventFormData.nonSuasPropertyFairMarketValueUsd.trim() ? Number(safetyEventFormData.nonSuasPropertyFairMarketValueUsd) : null;
+    if ((damageCost !== null && (!Number.isFinite(damageCost) || damageCost < 0)) || (fairMarketValue !== null && (!Number.isFinite(fairMarketValue) || fairMarketValue < 0))) {
+      setSafetyEventError('Property damage amounts must be zero or a positive dollar amount.');
+      return;
+    }
+
     setSafetyEventError(null);
     setSafetyEventMessage(null);
     setIsSavingSafetyEvent(true);
@@ -976,7 +1029,14 @@ export function JobFileHubPage() {
         description: safetyEventFormData.description.trim(),
         immediate_actions_taken: safetyEventFormData.immediateActionsTaken.trim() || null,
         outcome: safetyEventFormData.outcome,
-        promote_to_hazard_library: false
+        promote_to_hazard_library: false,
+        occurred_at: safetyEventFormData.occurredAt,
+        serious_injury: safetyEventFormData.seriousInjury === 'Yes',
+        loss_of_consciousness: safetyEventFormData.lossOfConsciousness === 'Yes',
+        non_suas_property_damage_cost_usd: damageCost,
+        non_suas_property_total_loss: safetyEventFormData.nonSuasPropertyTotalLoss === 'Yes',
+        non_suas_property_fair_market_value_usd: fairMarketValue,
+        faa_reportability_assessed: true,
       };
 
       const { data: userResult, error: userError } = await supabase.auth.getUser();
@@ -1002,6 +1062,31 @@ export function JobFileHubPage() {
       setSafetyEventError(getErrorMessage(saveError));
     } finally {
       setIsSavingSafetyEvent(false);
+    }
+  }
+
+  async function markFaaReportFiled(safetyEvent: JobSafetyEvent) {
+    if (!job) return;
+    const reference = faaReportReferenceDrafts[safetyEvent.id]?.trim();
+    if (!reference) {
+      setReportStatusError('Enter the FAA report confirmation or reference before recording it.');
+      return;
+    }
+    setReportingEventId(safetyEvent.id);
+    setReportStatusError(null);
+    try {
+      const { error: updateError } = await supabase
+        .from('job_safety_events')
+        .update({ faa_reported_at: new Date().toISOString(), faa_report_reference: reference })
+        .eq('id', safetyEvent.id)
+        .eq('job_id', job.id);
+      if (updateError) throw updateError;
+      await loadSafetyEvents(job.id);
+      setFaaReportReferenceDrafts((current) => ({ ...current, [safetyEvent.id]: '' }));
+    } catch (caught) {
+      setReportStatusError(getErrorMessage(caught));
+    } finally {
+      setReportingEventId(null);
     }
   }
 
@@ -1137,6 +1222,18 @@ export function JobFileHubPage() {
         </div>
       </div>
 
+      <nav className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-2" aria-label="Job File sections">
+        <div className="flex min-w-max gap-2 text-sm font-medium">
+          <a className="rounded-md px-3 py-2 text-brand-700 hover:bg-brand-50" href="#crew-assignment">Crew</a>
+          <a className="rounded-md px-3 py-2 text-brand-700 hover:bg-brand-50" href="#equipment-assignment">Equipment</a>
+          <Link className="rounded-md px-3 py-2 text-brand-700 hover:bg-brand-50" to={`/jobs/${job.id}/templates/jha`}>JHA</Link>
+          <a className="rounded-md px-3 py-2 text-brand-700 hover:bg-brand-50" href="#crew-briefing">Briefing</a>
+          <a className="rounded-md px-3 py-2 text-brand-700 hover:bg-brand-50" href="#ready-to-operate">Pre-flight / readiness</a>
+          <a className="rounded-md px-3 py-2 text-brand-700 hover:bg-brand-50" href="#safety-events">Safety Events</a>
+          <a className="rounded-md px-3 py-2 text-brand-700 hover:bg-brand-50" href="#operation-closeout">Closeout</a>
+        </div>
+      </nav>
+
       <OrganizationIdentityCard
         organization={organizationSettings}
         title="Job File Company Information"
@@ -1162,7 +1259,7 @@ export function JobFileHubPage() {
             <dt className="font-medium text-slate-500">Status</dt>
             <dd className="mt-1">
               <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-brand-700">
-                {job.status}
+                {displayedJobStatus}
               </span>
             </dd>
           </div>
@@ -1299,7 +1396,7 @@ export function JobFileHubPage() {
 
                 <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
                   <div className="rounded-lg bg-white p-3">
-                    <dt className="font-medium text-slate-500">Part 107 expiration date</dt>
+                    <dt className="font-medium text-slate-500">Part 107 recurrent training due</dt>
                     <dd className="mt-2 flex flex-wrap items-center gap-2 text-slate-800">
                       <span>{formatExpirationDate(person?.part_107_expiration_date ?? null)}</span>
                       <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${part107Readiness.className}`}>{part107Readiness.label}</span>
@@ -1508,7 +1605,7 @@ export function JobFileHubPage() {
         ) : null}
       </div>
 
-      <section className="rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="crew-briefing-heading">
+      <section id="crew-briefing" className="scroll-mt-4 rounded-xl border border-brand-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="crew-briefing-heading">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 id="crew-briefing-heading" className="text-lg font-semibold text-brand-900">Crew Briefing / Crew Acknowledgment</h2><p className="mt-1 text-sm text-slate-600">After the RPIC conducts the full in-person operation briefing, send each assigned non-RPIC crew member a request to review and acknowledge it.</p></div><button type="button" className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400" disabled={!jhaSummary || briefingActionId !== null || requiredCrewAssignments(assignments).length === 0 || currentUserId !== assignedRpic?.user_id} onClick={() => void (async () => { for (const assignment of requiredCrewAssignments(assignments)) await sendCrewAcknowledgment(assignment.id); })()}>Send Crew Acknowledgments</button></div>
         <div className="mt-4 space-y-3">
           {assignments.filter((assignment) => assignment.assigned_role === 'RPIC' || requiredCrewAssignments([assignment]).length).map((assignment) => {
@@ -1702,7 +1799,7 @@ export function JobFileHubPage() {
         </div>
       </section>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <div id="safety-events" className="scroll-mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">6</span>
@@ -1754,6 +1851,25 @@ export function JobFileHubPage() {
                     <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">Safety Manager Review</span>
                   </div>
                   <p className="text-sm text-slate-800">{safetyEvent.description}</p>
+                  {safetyEvent.faa_report_deadline ? (
+                    <div className="space-y-2 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-900">
+                      <p className="font-medium">                      Part 107 reportability criteria met. FAA report deadline: {formatIsoDate(safetyEvent.faa_report_deadline)}.</p>
+                      {safetyEvent.faa_reported_at ? (
+                        <p>Marked reported {formatIsoDate(safetyEvent.faa_reported_at.slice(0, 10))}. Reference: {safetyEvent.faa_report_reference || 'Not recorded'}.</p>
+                      ) : (
+                        <>
+                          <p>DroneSMS does not file the report. Record completion after submitting it through the FAA reporting process.</p>
+                          <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]" onSubmit={(event) => { event.preventDefault(); void markFaaReportFiled(safetyEvent); }}>
+                            <input className="rounded-lg border border-red-300 bg-white px-3 py-2" aria-label="FAA report reference" placeholder="FAA report confirmation/reference" value={faaReportReferenceDrafts[safetyEvent.id] ?? ''} onChange={(event) => setFaaReportReferenceDrafts((current) => ({ ...current, [safetyEvent.id]: event.target.value }))} required />
+                            <button className="min-h-10 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-900 disabled:opacity-60" type="submit" disabled={reportingEventId === safetyEvent.id}>{reportingEventId === safetyEvent.id ? 'Saving…' : 'Record FAA report filed'}</button>
+                          </form>
+                          {reportStatusError ? <p className="text-sm font-medium text-red-800" role="alert">{reportStatusError}</p> : null}
+                        </>
+                      )}
+                    </div>
+                  ) : safetyEvent.occurred_at ? (
+                    <p className="text-sm text-slate-600">Part 107 reportability assessment recorded; no reportability threshold was identified.</p>
+                  ) : null}
                   {safetyEvent.immediate_actions_taken ? (
                     <p className="text-sm text-slate-600">
                       <span className="font-medium text-slate-700">Immediate actions:</span> {safetyEvent.immediate_actions_taken}
@@ -1823,6 +1939,18 @@ export function JobFileHubPage() {
                 </select>
               </label>
 
+              <label className="block text-sm font-medium text-slate-700">
+                Date of operation
+                <input
+                  type="date"
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base sm:py-2 sm:text-sm"
+                  value={safetyEventFormData.occurredAt}
+                  onChange={(event) => updateSafetyEventField('occurredAt', event.target.value)}
+                  disabled={isSavingSafetyEvent}
+                  required
+                />
+              </label>
+
               <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
                 Description
                 <textarea
@@ -1834,6 +1962,36 @@ export function JobFileHubPage() {
                   required
                 />
               </label>
+
+              <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 sm:col-span-2">
+                <h4 className="font-semibold text-amber-950">FAA accident-reportability assessment (14 CFR §107.9)</h4>
+                <p className="text-sm text-amber-900">Assess serious injury, loss of consciousness, and damage to property other than the small unmanned aircraft. Damage is reportable when repair cost is more than $500; for total loss, use fair market value. DroneSMS records the assessment and deadline but does not file an FAA report.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm font-medium text-slate-700">Serious injury?
+                    <select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={safetyEventFormData.seriousInjury} onChange={(event) => updateSafetyEventField('seriousInjury', event.target.value)} disabled={isSavingSafetyEvent} required>
+                      <option value="">Select Yes or No</option><option>Yes</option><option>No</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium text-slate-700">Loss of consciousness?
+                    <select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={safetyEventFormData.lossOfConsciousness} onChange={(event) => updateSafetyEventField('lossOfConsciousness', event.target.value)} disabled={isSavingSafetyEvent} required>
+                      <option value="">Select Yes or No</option><option>Yes</option><option>No</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium text-slate-700">Non-aircraft property repair cost (USD; enter 0 if none)
+                    <input type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={safetyEventFormData.nonSuasPropertyDamageCostUsd} onChange={(event) => updateSafetyEventField('nonSuasPropertyDamageCostUsd', event.target.value)} disabled={isSavingSafetyEvent} required />
+                  </label>
+                  <label className="text-sm font-medium text-slate-700">Non-aircraft property was a total loss?
+                    <select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" value={safetyEventFormData.nonSuasPropertyTotalLoss} onChange={(event) => updateSafetyEventField('nonSuasPropertyTotalLoss', event.target.value)} disabled={isSavingSafetyEvent} required>
+                      <option value="">Select Yes or No</option><option>Yes</option><option>No</option>
+                    </select>
+                  </label>
+                  {safetyEventFormData.nonSuasPropertyTotalLoss === 'Yes' ? (
+                    <label className="text-sm font-medium text-slate-700">Fair market value (USD)
+                      <input type="number" min="0" step="0.01" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" value={safetyEventFormData.nonSuasPropertyFairMarketValueUsd} onChange={(event) => updateSafetyEventField('nonSuasPropertyFairMarketValueUsd', event.target.value)} disabled={isSavingSafetyEvent} required />
+                    </label>
+                  ) : null}
+                </div>
+              </div>
 
               <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
                 Immediate actions taken
@@ -1861,7 +2019,7 @@ export function JobFileHubPage() {
       </div>
 
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <div id="operation-closeout" className="scroll-mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">7</span>

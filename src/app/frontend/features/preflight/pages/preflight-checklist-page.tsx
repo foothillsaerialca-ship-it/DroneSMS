@@ -276,8 +276,8 @@ export function PreflightChecklistPage() {
         <button className="min-h-11 rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 disabled:opacity-60 sm:py-2" type="button" disabled={isSaving} onClick={() => void saveChecklist('Draft')}>
           {isSaving ? 'Saving...' : 'Save Draft'}
         </button>
-        <button className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:py-2" type="button" disabled={isSaving} onClick={() => void saveChecklist('Complete')}>
-          {isSaving ? 'Saving...' : 'Complete Checklist'}
+        <button className="min-h-11 rounded-lg bg-brand-700 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60 sm:py-2" type="button" disabled={isSaving || checklist.status === 'Complete'} onClick={() => void saveChecklist('Complete')}>
+          {isSaving ? 'Saving...' : checklist.status === 'Complete' ? 'Checklist Completed' : 'Complete Checklist'}
         </button>
       </div>
     </section>

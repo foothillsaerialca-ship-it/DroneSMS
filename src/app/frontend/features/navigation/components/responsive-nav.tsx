@@ -170,7 +170,7 @@ function BrandMark() {
  */
 export function DesktopSidebar() {
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white px-4 py-5 shadow-sm md:flex md:flex-col" aria-label="Main sidebar">
+    <aside className="hidden w-52 shrink-0 border-r border-slate-200 bg-white px-3 py-5 shadow-sm md:flex md:flex-col lg:w-56 lg:px-4 2xl:w-64" aria-label="Main sidebar">
       <BrandMark />
       <nav className="mt-8 flex-1" aria-label="Desktop navigation">
         <NavigationLinks layout="sidebar" />

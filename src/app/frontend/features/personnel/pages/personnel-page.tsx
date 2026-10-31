@@ -166,7 +166,7 @@ function getReadinessState(person: Personnel): ReadinessState {
   if (!person.part_107_expiration_date) {
     return {
       label: 'Cert Missing',
-      detail: 'Add a Part 107 expiration date before assigning as RPIC.',
+      detail: 'Record the Part 107 recurrent training due date before assigning as RPIC.',
       className: 'border-amber-200 bg-amber-50 text-amber-700',
       sortOrder: 1
     };
@@ -177,14 +177,14 @@ function getReadinessState(person: Personnel): ReadinessState {
   if (remainingDays < 0) {
     return {
       label: 'Cert Expired',
-      detail: `Part 107 expired ${Math.abs(remainingDays)} day${Math.abs(remainingDays) === 1 ? '' : 's'} ago.`,
+      detail: `Part 107 recurrent training was due ${Math.abs(remainingDays)} day${Math.abs(remainingDays) === 1 ? '' : 's'} ago.`,
       className: 'border-red-200 bg-red-50 text-red-700',
       sortOrder: 0
     };
   }
 
   if (remainingDays <= 60) {
-    const part107Detail = `Part 107 expires in ${remainingDays} day${remainingDays === 1 ? '' : 's'}.`;
+    const part107Detail = `Part 107 recurrent training is due in ${remainingDays} day${remainingDays === 1 ? '' : 's'}.`;
     const finalDetail = trainingStatus ? `${part107Detail} ${trainingStatus.detail}` : part107Detail;
     
     return {
@@ -206,7 +206,7 @@ function getReadinessState(person: Personnel): ReadinessState {
 
   return {
     label: 'Pilot Ready',
-    detail: `Part 107 current through ${formatIsoDate(person.part_107_expiration_date, 'Not tracked')}.`,
+    detail: `Part 107 recurrent training due ${formatIsoDate(person.part_107_expiration_date, 'date not tracked')}.`,
     className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
     sortOrder: 4
   };
@@ -589,7 +589,7 @@ export function PersonnelPage() {
           </label>
 
           <label className="block text-sm font-medium text-slate-700">
-            Part 107 expiration date
+            Part 107 recurrent training due
             <input
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
               type="date"
@@ -597,6 +597,7 @@ export function PersonnelPage() {
               onChange={(event) => updateField('part107ExpirationDate', event.target.value)}
               disabled={isSaving}
             />
+            <span className="mt-1 block text-xs font-normal text-slate-500">The certificate itself does not expire. Record the date recurrent training becomes due under §107.65 (within 24 calendar months).</span>
           </label>
 
           <label className="block text-sm font-medium text-slate-700">
@@ -860,7 +861,7 @@ export function PersonnelPage() {
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
                   <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Part 107</dt>
-                  <dd className="mt-1 text-slate-700">{person.part_107_certificate_number || 'No certificate'} • {formatIsoDate(person.part_107_expiration_date, 'Not tracked')}</dd>
+                  <dd className="mt-1 text-slate-700">{person.part_107_certificate_number || 'No certificate'} • recurrent training due {formatIsoDate(person.part_107_expiration_date, 'not tracked')}</dd>
                 </div>
                 <div className={`rounded-lg p-3 ${trainingStatus ? trainingStatus.className.replace('border', 'bg').split(' ').slice(1).join(' ') : 'bg-slate-50'}`}>
                   <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">Training</dt>

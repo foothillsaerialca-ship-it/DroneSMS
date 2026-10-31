@@ -17,6 +17,11 @@ export type ReadinessPrerequisites = {
   publicRightOfWayRestrictionRequired?: boolean | null;
   permitAuthorizationRequired?: boolean | null;
   permitAuthorizationStatus?: 'Pending' | 'Approved' | null;
+  visibilityDistanceSm?: number | null;
+  cloudClearanceBelowFt?: number | null;
+  cloudHorizontalDistanceFt?: number | null;
+  atcAuthorizationRequired?: boolean;
+  atcAuthorizationApproved?: boolean;
 };
 
 export type OperationReadinessRecord = {
@@ -69,6 +74,18 @@ export function getReadinessBlockingReasons(input: ReadinessPrerequisites) {
     input.crewAcknowledgmentsCurrent === false ? 'Every assigned non-RPIC operational crew member needs a current Crew Briefing acknowledgment or Manual Field Briefing.' : null,
     input.permitAuthorizationRequired === true && input.permitAuthorizationStatus !== 'Approved'
       ? 'Required public right-of-way permit or authorization must be Approved.'
+      : null,
+    input.visibilityDistanceSm === null || input.visibilityDistanceSm === undefined || input.visibilityDistanceSm < 3
+      ? 'Record at least 3 statute miles visibility at the control station.'
+      : null,
+    input.cloudClearanceBelowFt === null || input.cloudClearanceBelowFt === undefined || input.cloudClearanceBelowFt < 500
+      ? 'Record at least 500 feet below cloud clearance.'
+      : null,
+    input.cloudHorizontalDistanceFt === null || input.cloudHorizontalDistanceFt === undefined || input.cloudHorizontalDistanceFt < 2000
+      ? 'Record at least 2,000 feet horizontal cloud clearance.'
+      : null,
+    input.atcAuthorizationRequired && !input.atcAuthorizationApproved
+      ? 'Prior ATC authorization is required for this controlled airspace.'
       : null,
   ].filter((reason): reason is string => Boolean(reason));
 }
@@ -130,6 +147,9 @@ export type ReadinessEquipmentItem = {
   status: string | null;
   faaRegistrationNumber: string | null;
   maintenanceDueDate: string | null;
+  airworthyConfirmed?: boolean | null;
+  remoteIdStatus?: string | null;
+  maximumWindSpeedMph?: number | null;
 };
 
 export type ReadinessOverrideType = 'maintenance_overdue' | 'training_expired';
@@ -163,6 +183,7 @@ export function getResourceReadinessIssues(
   equipment: ReadinessEquipmentItem[],
   overrides: ReadinessOverrideRecord[],
   today: string,
+  windSpeedMph: number | null = null,
 ) {
   const blocking: string[] = [];
   const overridable: OverridableReadinessIssue[] = [];
@@ -171,7 +192,7 @@ export function getResourceReadinessIssues(
 
   for (const member of crew) {
     if (member.assignedRole === 'RPIC' && (!member.part107CertificateNumber?.trim() || !member.part107ExpirationDate || member.part107ExpirationDate < today)) {
-      blocking.push(`${member.name} (RPIC) needs a current Part 107 certificate number and expiration date in Personnel.`);
+      blocking.push(`${member.name} (RPIC) needs a Part 107 certificate number and current recurrent training due date in Personnel.`);
     }
   }
   for (const item of equipment) {
@@ -180,6 +201,16 @@ export function getResourceReadinessIssues(
     }
     if (item.equipmentType === 'Drone' && !item.faaRegistrationNumber?.trim()) {
       blocking.push(`${item.name} needs an FAA registration number in Equipment.`);
+    }
+    if (item.equipmentType === 'Drone' && item.airworthyConfirmed !== true) {
+      blocking.push(`${item.name} needs an affirmative airworthiness/condition-for-safe-operation confirmation in Equipment.`);
+    }
+    if (item.equipmentType === 'Drone' && !item.remoteIdStatus) {
+      blocking.push(`${item.name} needs a Remote ID compliance, FRIA, or verified applicable-exception determination in Equipment.`);
+    }
+    if (item.equipmentType === 'Drone' && item.maximumWindSpeedMph !== null && item.maximumWindSpeedMph !== undefined
+      && (windSpeedMph === null || windSpeedMph > item.maximumWindSpeedMph)) {
+      blocking.push(`${item.name} must operate within its recorded manufacturer wind limit.`);
     }
   }
 
@@ -216,10 +247,10 @@ export function getEquipmentMaintenanceLabel(maintenanceDueDate: string | null |
   return maintenanceDueDate && maintenanceDueDate < today ? ' (maintenance overdue)' : '';
 }
 
-/** Short picker suffix, such as " (Part 107 expired)", for a person whose credentials have lapsed. */
+/** Short picker suffix for a person whose Part 107 recurrent training is overdue. */
 export function getCrewCredentialLabel(person: CrewCredentialRecord, today: string) {
   const lapsed = [
-    person.part_107_expiration_date && person.part_107_expiration_date < today ? 'Part 107 expired' : null,
+    person.part_107_expiration_date && person.part_107_expiration_date < today ? 'Part 107 recurrent training overdue' : null,
     person.training_expiration_date && person.training_expiration_date < today ? 'training expired' : null,
   ].filter(Boolean);
   return lapsed.length ? ` (${lapsed.join(', ')})` : '';
@@ -234,9 +265,9 @@ export function getCrewCredentialWarnings(person: CrewCredentialRecord, role: st
   if (role === 'RPIC') {
     const expiration = person.part_107_expiration_date;
     if (expiration && expiration < today) {
-      warnings.push(`Part 107 expired on ${formatDate(expiration)}. Ready to Operate will be blocked until it's renewed in Personnel.`);
+      warnings.push(`Part 107 recurrent training was due on ${formatDate(expiration)}. Ready to Operate will be blocked until current training is recorded in Personnel.`);
     } else if (!person.part_107_certificate_number?.trim() || !expiration) {
-      warnings.push('No Part 107 certificate number and expiration date on file. Ready to Operate will be blocked until they are added in Personnel.');
+      warnings.push('No Part 107 certificate number and recurrent training due date on file. Ready to Operate will be blocked until they are added in Personnel.');
     }
   }
   if (person.training_expiration_date && person.training_expiration_date < today) {

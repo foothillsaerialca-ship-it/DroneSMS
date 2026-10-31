@@ -22,7 +22,7 @@ Production deployment: `https://7067bf63.dronesms-app.pages.dev/`
 ## Current release
 
 - Application version: `0.1.0`
-- Documentation audit date: 2026-10-30
+- Documentation audit date: 2026-10-31
 - Runtime: React 18, React Router 7, Supabase JS 2, TypeScript, Vite 7, and Tailwind CSS 3
 - Backend: hosted Supabase Authentication, Postgres, Storage, row-level security, and RPC functions
 - Package source of truth: `package.json`; exact resolved dependency tree: `package-lock.json`
@@ -37,8 +37,10 @@ The August 2026 schema history added expanded JHA site-planning fields, proposal
 - Proposal authoring, service-scope defaults, hazard selection, personnel/equipment selection, PDF generation, and conversion to jobs
 - Job details, assignments, readiness summaries, safety events, operation closeout, and closeout packet export
 - Personnel and equipment repositories, including credential, maintenance, chemical-material, and reference-document tracking
-- Multi-step operational JHA with airspace, environmental, hazard, PPE, photo evidence, and role-attestation workflows
+- Multi-step operational JHA with airspace, environmental, hazard, PPE, photo evidence, Part 107 visibility/cloud-clearance checks, ATC authorization evidence, and role-attestation workflows
 - Pre-flight checklist persistence and completion validation
+- Safety Event Part 107 reportability assessment with the 10-calendar-day deadline and manual FAA filing evidence
+- Aircraft registration, condition-for-safe-operation, Remote ID pathway, and manufacturer wind-limit readiness checks
 
 Reports and several future account-management controls are currently placeholder interfaces. Billing, subscriptions, broader account administration, external smart-site intelligence, and offline synchronization are planned rather than implemented.
 
@@ -73,7 +75,7 @@ npm run lint
 npm run audit:production
 ```
 
-At the 2026-10-30 verification, all 209 Node tests and 59 component tests passed, the build and lint completed, and the dependency audit found no vulnerabilities. The build still reports a non-fatal bundle-size warning.
+See [documentation.md](documentation.md) for the latest Part 107 implementation notes and verification status. Run the commands above against the current checkout before release.
 
 ## Documentation
 

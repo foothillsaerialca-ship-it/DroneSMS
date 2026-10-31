@@ -41,6 +41,8 @@ supabase test db
 
 For a linked hosted project, take a verified backup and review the pending migration plan before running `supabase db push`. The migrations establish tables, indexes, RLS, grants, RPCs, retention metadata, cleanup queues, and Storage buckets/policies. The CI database job rebuilds the complete schema and runs adversarial cross-tenant tests on every change.
 
+The current Part 107 workflow is introduced by `20261031000000_part107_operational_compliance_gates.sql`. Test it against the complete migration history and reconcile existing `personnel.part_107_expiration_date` values before rollout: the application now treats that legacy column as a recurrent-training due date, not as a certificate expiration. Do not apply it to production without a verified backup and explicit migration-plan approval.
+
 Deploy both Edge Functions after schema deployment:
 
 ```bash

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildReadinessPacketRows, closeoutRequiresReadiness, getOperationReadinessStatus, getPermitPlanningValidationMessage, getReadinessBlockingReasons, getResourceReadinessIssues, getCrewCredentialLabel, getCrewCredentialWarnings, getEquipmentMaintenanceLabel, isApprovalCurrent, isApprovalForToday, resolveReadinessApproverIdentity, type ReadinessCrewMember, type ReadinessEquipmentItem, type ReadinessPrerequisites } from './operation-readiness.ts';
 
-const ready: ReadinessPrerequisites = { jhaComplete: true, safetyManagerReviewCurrent: true, rpicAcceptanceCurrent: true, controlsInPlace: true, preflightComplete: true, assignedRpicId: 'rpic-1', fitnessForDutyConfirmed: true };
+const ready: ReadinessPrerequisites = { jhaComplete: true, safetyManagerReviewCurrent: true, rpicAcceptanceCurrent: true, controlsInPlace: true, preflightComplete: true, assignedRpicId: 'rpic-1', fitnessForDutyConfirmed: true, visibilityDistanceSm: 3, cloudClearanceBelowFt: 500, cloudHorizontalDistanceFt: 2000, atcAuthorizationRequired: false };
 
 test('Ready to Operate is blocked by each missing safety prerequisite', () => {
   for (const key of ['jhaComplete', 'safetyManagerReviewCurrent', 'rpicAcceptanceCurrent', 'controlsInPlace', 'preflightComplete', 'fitnessForDutyConfirmed'] as const) {
@@ -88,12 +88,28 @@ test('packet approver uses the exact assigned RPIC when an account has multiple 
 
 const today = '2026-10-22';
 const currentRpic: ReadinessCrewMember = { personnelId: 'p-rpic', name: 'Pat', assignedRole: 'RPIC', part107CertificateNumber: '4000001', part107ExpirationDate: '2027-06-01', trainingExpirationDate: '2027-01-01' };
-const readyDrone: ReadinessEquipmentItem = { equipmentId: 'e-drone', name: 'Drone A', equipmentType: 'Drone', status: 'Available', faaRegistrationNumber: 'FA12345', maintenanceDueDate: '2026-12-01' };
+const readyDrone: ReadinessEquipmentItem = { equipmentId: 'e-drone', name: 'Drone A', equipmentType: 'Drone', status: 'Available', faaRegistrationNumber: 'FA12345', maintenanceDueDate: '2026-12-01', airworthyConfirmed: true, remoteIdStatus: 'Compliant' };
 
 test('a current RPIC and a registered, available drone raise no readiness issues', () => {
   const issues = getResourceReadinessIssues([currentRpic], [readyDrone], [], today);
   assert.deepEqual(issues.blocking, []);
   assert.deepEqual(issues.overridable, []);
+});
+
+test('aircraft airworthiness, Remote ID, and manufacturer wind limits are checked', () => {
+  const missing = getResourceReadinessIssues([currentRpic], [{ ...readyDrone, airworthyConfirmed: null, remoteIdStatus: null }], [], today, 35);
+  assert.ok(missing.blocking.some((reason) => reason.includes('airworthiness')));
+  assert.ok(missing.blocking.some((reason) => reason.includes('Remote ID')));
+  assert.ok(getResourceReadinessIssues([], [readyDrone], [], today, 35).blocking.length === 0);
+  const windLimited = { ...readyDrone, maximumWindSpeedMph: 35 };
+  assert.ok(getResourceReadinessIssues([], [windLimited], [], today, 35).blocking.length === 0);
+  assert.ok(getResourceReadinessIssues([], [windLimited], [], today, 35.1).blocking.some((reason) => reason.includes('manufacturer wind limit')));
+});
+
+test('weather minimums and required ATC authorization block readiness', () => {
+  assert.ok(getReadinessBlockingReasons({ ...ready, visibilityDistanceSm: 2.9 }).some((reason) => reason.includes('3 statute miles')));
+  assert.ok(getReadinessBlockingReasons({ ...ready, cloudClearanceBelowFt: 499 }).some((reason) => reason.includes('500 feet')));
+  assert.ok(getReadinessBlockingReasons({ ...ready, atcAuthorizationRequired: true, atcAuthorizationApproved: false }).some((reason) => reason.includes('ATC authorization')));
 });
 
 test('an RPIC without a current Part 107 blocks readiness', () => {
@@ -160,12 +176,12 @@ test('crew pickers label lapsed credentials and warn for an RPIC without a curre
   const today = '2026-10-22';
   const expired = { part_107_certificate_number: '4000001', part_107_expiration_date: '2026-09-30', training_expiration_date: '2026-01-31' };
   const current = { part_107_certificate_number: '4000002', part_107_expiration_date: '2027-06-01', training_expiration_date: '2027-06-01' };
-  assert.equal(getCrewCredentialLabel(expired, today), ' (Part 107 expired, training expired)');
+  assert.equal(getCrewCredentialLabel(expired, today), ' (Part 107 recurrent training overdue, training expired)');
   assert.equal(getCrewCredentialLabel(current, today), '');
   assert.deepEqual(getCrewCredentialWarnings(current, 'RPIC', today), []);
   const rpicWarnings = getCrewCredentialWarnings(expired, 'RPIC', today);
   assert.equal(rpicWarnings.length, 2);
-  assert.match(rpicWarnings[0], /Part 107 expired on 2026-09-30\. Ready to Operate will be blocked/);
+  assert.match(rpicWarnings[0], /Part 107 recurrent training was due on 2026-09-30\. Ready to Operate will be blocked/);
   assert.match(rpicWarnings[1], /Training expired on 2026-01-31/);
   assert.deepEqual(getCrewCredentialWarnings(expired, 'Visual Observer', today).length, 1);
   assert.match(getCrewCredentialWarnings({ ...current, part_107_certificate_number: '' }, 'RPIC', today)[0], /No Part 107 certificate number/);

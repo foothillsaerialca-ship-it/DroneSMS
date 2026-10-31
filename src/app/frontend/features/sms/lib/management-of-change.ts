@@ -25,8 +25,18 @@ export function conciseEquipmentTitle(name: string, make?: string | null, model?
   return `Introduce ${modelName || name}`.slice(0, 120);
 }
 
-export function canApproveMoc(actions: MocAction[]) {
-  return !actions.some((action) => action.required_before_operational_use && !['Complete', 'Cancelled'].includes(action.status));
+export function canApproveMoc(
+  actions: MocAction[],
+  impactReview: Record<string, string> = {},
+  reviewComments = '',
+) {
+  const impactReviewComplete = mocImpactQuestions.every((_, index) =>
+    ['Yes', 'No', 'Unsure'].includes(impactReview[String(index)]),
+  );
+  const commentsRequired = Object.values(impactReview).some((answer) => answer === 'No' || answer === 'Unsure');
+  return impactReviewComplete
+    && (!commentsRequired || Boolean(reviewComments.trim()))
+    && !actions.some((action) => action.required_before_operational_use && !['Complete', 'Cancelled'].includes(action.status));
 }
 
 export function eventReviewRoute(answers: EventReviewAnswers) {

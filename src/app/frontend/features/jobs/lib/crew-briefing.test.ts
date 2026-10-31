@@ -17,6 +17,7 @@ const jobHubPage = readFileSync('src/app/frontend/features/jobs/pages/job-file-h
 test('solo RPIC and non-operational assignments create no crew acknowledgment requirement', () => {
   assert.equal(requiredCrewAssignments(assignments.slice(0, 1)).length, 0);
   assert.equal(crewAcknowledgmentsCurrent(assignments.slice(0, 1), [], 1), true);
+  assert.equal(crewBriefingStatus(assignments[0], [], 1), 'Acceptance tracked in JHA');
   assert.equal(requiredCrewAssignments([...assignments.slice(0, 1), { id: 'admin', assigned_role: 'Safety Manager', personnel: { id: 'p3', full_name: 'Safety', status: 'Active' } }]).length, 0);
 });
 

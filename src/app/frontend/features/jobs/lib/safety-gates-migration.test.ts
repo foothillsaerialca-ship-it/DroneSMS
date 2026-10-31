@@ -52,3 +52,36 @@ test('overdue maintenance no longer blocks Ready to Operate, while the other gat
   assert.match(reminderMigration, /o\.item_type='training_expired' and o\.item_id=p\.id and o\.item_date=p\.training_expiration_date/);
   assert.match(reminderMigration, /revoke all on function public\.confirm_job_ready_to_operate\(uuid, boolean\) from public, anon;/);
 });
+
+const part107Migration = readFileSync('supabase/migrations/20261031000000_part107_operational_compliance_gates.sql', 'utf8');
+
+test('Part 107 weather, ATC authorization, aircraft condition, and Remote ID are server-enforced', () => {
+  assert.match(part107Migration, /visibility_distance_sm numeric/);
+  assert.match(part107Migration, /cloud_clearance_below_ft numeric/);
+  assert.match(part107Migration, /cloud_horizontal_distance_ft numeric/);
+  assert.match(part107Migration, /new\.visibility_distance_sm < 3/);
+  assert.match(part107Migration, /new\.cloud_clearance_below_ft < 500/);
+  assert.match(part107Migration, /new\.cloud_horizontal_distance_ft < 2000/);
+  assert.match(part107Migration, /faa_airspace_class in \('B', 'C', 'D'\)/);
+  assert.match(part107Migration, /e\.airworthy_confirmed is distinct from true/);
+  assert.match(part107Migration, /e\.remote_id_status is null/);
+  assert.match(part107Migration, /target_jha\.wind_speed > e\.maximum_wind_speed_mph/);
+});
+
+test('Part 107 certificate does not expire, recurrent training remains gated, and reportability gets a ten-day deadline', () => {
+  assert.match(part107Migration, /assigned_rpic\.part_107_expiration_date is null or assigned_rpic\.part_107_expiration_date < current_date/);
+  assert.match(part107Migration, /part_107_expiration_date[\s\S]*?recurrent-training due date, with no override/);
+  assert.match(part107Migration, /occurred_at \+ 10/);
+  assert.match(part107Migration, /non_suas_property_damage_cost_usd, 0\) > 500/);
+  assert.match(part107Migration, /non_suas_property_fair_market_value_usd, 0\) > 500/);
+  assert.match(part107Migration, /faa_reportability_assessed/);
+});
+
+test('regulatory JHA changes invalidate readiness with definer privileges', () => {
+  assert.match(part107Migration, /function public\.zy_invalidate_regulatory_jha_review\(\)[\s\S]*?security definer[\s\S]*?update public\.job_operation_readiness/i);
+});
+
+test('MOC approval requires completed impact answers and written comments for No or Unsure', () => {
+  assert.match(part107Migration, /answer is null or answer not in \('Yes', 'No', 'Unsure'\)/);
+  assert.match(part107Migration, /answer in \('No', 'Unsure'\).*nullif\(btrim\(coalesce\(new\.safety_review_comments, ''\)\), ''\) is null/s);
+});

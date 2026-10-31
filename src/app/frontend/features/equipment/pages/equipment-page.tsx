@@ -55,6 +55,9 @@ const initialFormState = {
   model: '',
   serialNumber: '',
   faaRegistrationNumber: '',
+  airworthyConfirmed: '',
+  remoteIdStatus: '',
+  maximumWindSpeedMph: '',
   assignedLocation: '',
   status: statusOptions[0],
   maintenanceDueDate: '',
@@ -83,6 +86,9 @@ type Equipment = {
   model: string | null;
   serial_number: string | null;
   faa_registration_number: string | null;
+  airworthy_confirmed: boolean | null;
+  remote_id_status: string | null;
+  maximum_wind_speed_mph: number | null;
   assigned_location: string | null;
   status: string;
   maintenance_due_date: string | null;
@@ -228,6 +234,9 @@ function toFormState(equipment: Equipment): EquipmentFormState {
     model: equipment.model ?? '',
     serialNumber: equipment.serial_number ?? '',
     faaRegistrationNumber: equipment.faa_registration_number ?? '',
+    airworthyConfirmed: equipment.airworthy_confirmed === true ? 'Yes' : equipment.airworthy_confirmed === false ? 'No' : '',
+    remoteIdStatus: equipment.remote_id_status ?? '',
+    maximumWindSpeedMph: equipment.maximum_wind_speed_mph?.toString() ?? '',
     assignedLocation: equipment.assigned_location ?? '',
     status: equipment.status,
     maintenanceDueDate: equipment.maintenance_due_date ?? '',
@@ -273,6 +282,9 @@ function buildEquipmentPayload(formData: EquipmentFormState) {
     model: formData.model.trim() || null,
     serial_number: formData.serialNumber.trim() || null,
     faa_registration_number: formData.faaRegistrationNumber.trim() || null,
+    airworthy_confirmed: formData.equipmentType === 'Drone' ? (formData.airworthyConfirmed === 'Yes' ? true : formData.airworthyConfirmed === 'No' ? false : null) : null,
+    remote_id_status: formData.equipmentType === 'Drone' ? formData.remoteIdStatus || null : null,
+    maximum_wind_speed_mph: formData.equipmentType === 'Drone' && formData.maximumWindSpeedMph.trim() ? Number(formData.maximumWindSpeedMph) : null,
     assigned_location: formData.assignedLocation.trim() || null,
     status: formData.status,
     maintenance_due_date: formData.maintenanceDueDate || null,
@@ -323,7 +335,7 @@ export function EquipmentPage() {
     try {
       const { data, error: equipmentError } = await supabase
         .from('equipment')
-        .select('id, name, equipment_type, make, model, serial_number, faa_registration_number, assigned_location, status, maintenance_due_date, notes, product_category, typical_mix_ratio, application_notes, epa_registration_number, signal_word, restricted_use_product, purpose, updated_at')
+        .select('id, name, equipment_type, make, model, serial_number, faa_registration_number, airworthy_confirmed, remote_id_status, maximum_wind_speed_mph, assigned_location, status, maintenance_due_date, notes, product_category, typical_mix_ratio, application_notes, epa_registration_number, signal_word, restricted_use_product, purpose, updated_at')
         .order('status', { ascending: true })
         .order('name', { ascending: true });
 
@@ -487,6 +499,7 @@ export function EquipmentPage() {
     if (!formData.equipmentType) return 'Equipment type is required.';
     if (!formData.status) return 'Status is required.';
     if (formData.equipmentType === chemicalMaterialType && !formData.productCategory.trim()) return 'Product category is required for Chemical / Material records.';
+    if (formData.maximumWindSpeedMph.trim() && (!Number.isFinite(Number(formData.maximumWindSpeedMph)) || Number(formData.maximumWindSpeedMph) <= 0)) return 'Maximum wind speed must be a positive number.';
     return null;
   }
 
@@ -738,6 +751,52 @@ export function EquipmentPage() {
               disabled={isSaving}
             />
           </label>
+
+          {formData.equipmentType === 'Drone' ? (
+            <>
+              <label className="block text-sm font-medium text-slate-700">
+                Aircraft condition for safe operation
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base sm:py-2 sm:text-sm"
+                  value={formData.airworthyConfirmed}
+                  onChange={(event) => updateField('airworthyConfirmed', event.target.value)}
+                  disabled={isSaving}
+                >
+                  <option value="">Not confirmed</option>
+                  <option value="Yes">Confirmed safe for operation</option>
+                  <option value="No">Not safe for operation</option>
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                Remote ID operation basis
+                <select
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base sm:py-2 sm:text-sm"
+                  value={formData.remoteIdStatus}
+                  onChange={(event) => updateField('remoteIdStatus', event.target.value)}
+                  disabled={isSaving}
+                >
+                  <option value="">Not determined</option>
+                  <option value="Compliant">Standard Remote ID compliant</option>
+                  <option value="FRIA">Operating within an approved FRIA</option>
+                  <option value="Not Applicable">Operator verified an applicable exception</option>
+                </select>
+                <span className="mt-1 block text-xs text-slate-500">Verify the applicable Part 89 requirements and any exception with current FAA guidance.</span>
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                Manufacturer maximum wind speed (MPH)
+                <input
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base sm:py-2 sm:text-sm"
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  value={formData.maximumWindSpeedMph}
+                  onChange={(event) => updateField('maximumWindSpeedMph', event.target.value)}
+                  placeholder="Use the aircraft manual"
+                  disabled={isSaving}
+                />
+              </label>
+            </>
+          ) : null}
 
           <label className="block text-sm font-medium text-slate-700">
             Status

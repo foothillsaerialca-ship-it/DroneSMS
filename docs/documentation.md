@@ -6,7 +6,7 @@
 | --- | --- |
 | Application | DroneSMS |
 | Package version | `0.1.0` |
-| Documentation baseline | 2026-08-25 |
+| Documentation baseline | 2026-10-31 |
 | Recorded deployment | `https://7067bf63.dronesms-app.pages.dev/` |
 | Primary source of truth | Current source, package manifests, and Supabase migrations |
 
@@ -15,6 +15,33 @@ This document records the application as implemented at the audit date. Planning
 ## Product purpose
 
 DroneSMS is a multi-tenant operational safety system for commercial drone operators. It connects proposals and jobs to personnel/equipment readiness, operational JHAs, pre-flight checks, safety events, photo evidence, closeout records, and PDF artifacts. Supabase enforces organization-scoped access while the React client supplies the operational workflow.
+
+## Part 107 implementation update (2026-10-31)
+
+The current application and migration `supabase/migrations/20261031000000_part107_operational_compliance_gates.sql` add explicit Part 107 checks to JHA completion and Ready to Operate. These are operator-entered controls, not legal determinations, external airspace/weather lookups, or FAA reporting services. The RPIC remains responsible for confirming current regulations, airspace, conditions, aircraft limitations, and applicable exceptions.
+
+| Requirement | Implemented behavior |
+| --- | --- |
+| 14 CFR §107.9 accident reporting | New Safety Events require the event date, injury/loss-of-consciousness answers, and non-aircraft property damage answers. Qualifying events receive a calculated deadline 10 calendar days after the operation. Users can record a filed report reference after filing through FAA channels; DroneSMS does not file it. |
+| 14 CFR §107.41 controlled airspace | Ready to Operate requires recorded prior ATC approval and a reference in Class B/C/D, and in Class E only when the operation is in a designated airport surface area. LAANC is a way to request authorization, not authorization itself. |
+| 14 CFR §107.51 weather | JHA completion requires at least 3 statute miles visibility, 500 feet below clouds, and 2,000 feet horizontally. Wind is compared to the aircraft's recorded manufacturer maximum when available; the regulation does not set a universal wind maximum. Precipitation requires checking the specific aircraft's manufacturer limits. |
+| 14 CFR §§107.13, 107.15 and Part 89 | A drone must have an FAA registration number, a positive condition-for-safe-operation confirmation, and a Remote ID pathway recorded as Standard Remote ID, FRIA, or an operator-verified applicable exception. DroneSMS does not determine whether an exception applies. |
+| 14 CFR §§107.64–107.65 | A Part 107 certificate number remains required, but the certificate is no longer treated as expiring. The legacy `personnel.part_107_expiration_date` storage column is now labeled and treated by the UI as the recurrent-training due date. Organizations must review old values and correct any values that were entered as certificate expiration dates. The existing training override cannot substitute for an unexpired recurrent-training due date. |
+
+Primary official references:
+
+- [14 CFR §107.9 — Accident reporting](https://www.ecfr.gov/current/title-14/chapter-I/subchapter-F/part-107/section-107.9)
+- [14 CFR §107.13 — Registration](https://www.ecfr.gov/current/title-14/chapter-I/subchapter-F/part-107/section-107.13)
+- [14 CFR §107.15 — Condition for safe operation](https://www.ecfr.gov/current/title-14/chapter-I/subchapter-F/part-107/section-107.15)
+- [14 CFR §107.41 — Operation in certain airspace](https://www.ecfr.gov/current/title-14/chapter-I/subchapter-F/part-107/section-107.41)
+- [14 CFR §107.49 — Preflight familiarization, inspection, and actions](https://www.ecfr.gov/current/title-14/chapter-I/subchapter-F/part-107/section-107.49)
+- [14 CFR §107.51 — Operating limitations](https://www.ecfr.gov/current/title-14/chapter-I/subchapter-F/part-107/section-107.51)
+- [14 CFR §107.65 — Aeronautical knowledge recency](https://www.ecfr.gov/current/title-14/chapter-I/subchapter-F/part-107/section-107.65)
+- [FAA Remote Identification guidance](https://www.faa.gov/uas/getting_started/remote_id)
+
+Workflow changes include explicit JHA step progress labels and earlier per-step validation, truthful RPIC acceptance wording, MOC impact-answer/comment requirements enforced in both the UI and database, a responsive Job File jump menu, a narrower medium desktop sidebar, aligned checkboxes, and a completed-state label for the pre-flight action. The organization Safety Manager remains a distinct person from the RPIC for JHA role reviews; SMS now explains that solo operators need a second active organization member.
+
+The new migration has not been applied to any hosted database as part of this change. Before production rollout, take and verify a restorable backup, review the exact pending migration plan, confirm existing Part 107 date values, test the full migration history on a non-production project, and explicitly authorize production deployment. See [install.md](install.md).
 
 ## Architecture
 

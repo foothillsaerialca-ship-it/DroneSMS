@@ -218,8 +218,8 @@ function buildFallbackCredentials(person: ProposedRpic | null) {
   if (credentials) return credentials;
 
   const part107 = person.part_107_certificate_number?.trim();
-  const expires = person.part_107_expiration_date ? `expires ${person.part_107_expiration_date}` : null;
-  const fallback = [part107 ? `Part 107 ${part107}` : null, expires].filter(Boolean).join(' • ');
+  const recurrentTrainingDue = person.part_107_expiration_date ? `recurrent training due ${person.part_107_expiration_date}` : null;
+  const fallback = [part107 ? `Part 107 ${part107}` : null, recurrentTrainingDue].filter(Boolean).join(' • ');
   return fallback || null;
 }
 

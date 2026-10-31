@@ -41,7 +41,7 @@ export function crewAcknowledgmentsCurrent(assignments: OperationalAssignment[],
 }
 
 export function crewBriefingStatus(assignment: OperationalAssignment, evidence: CrewBriefingEvidence[], briefingVersion: number) {
-  if (assignment.assigned_role === 'RPIC') return 'RPIC Accepted';
+  if (assignment.assigned_role === 'RPIC') return 'Acceptance tracked in JHA';
   const records = evidence.filter((record) => record.assignment_id === assignment.id);
   const current = records.find((record) => record.briefing_version === briefingVersion && (!record.assigned_role || record.assigned_role === assignment.assigned_role) && !['Superseded', 'Email Failed'].includes(record.status));
   if (current?.status === 'Manual Field Briefing') return 'Manual Field Briefing Recorded';

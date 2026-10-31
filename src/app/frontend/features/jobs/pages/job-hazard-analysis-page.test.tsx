@@ -55,6 +55,20 @@ beforeEach(() => {
 });
 
 describe('Hazard Assessment hazard cards', () => {
+  it('distinguishes empty steps from complete and in-progress steps', async () => {
+    const user = userEvent.setup();
+    supabaseMock.setTable('jha_assessments', []);
+    renderWithRouter(`/jobs/${jhaJob.id}/templates/jha`);
+    await screen.findByRole('heading', { name: 'Job Hazard Analysis' });
+    const progress = screen.getByRole('navigation', { name: 'JHA progress' });
+    expect(within(progress).getByRole('button', { name: /Site Conditions/ })).toHaveTextContent('Not started');
+    expect(within(progress).getByRole('button', { name: /Environmental/ })).toHaveTextContent('Not started');
+
+    await user.click(within(progress).getByRole('button', { name: /Hazards/ }));
+    await user.click(screen.getByRole('button', { name: 'Add Custom Hazard' }));
+    expect(within(progress).getByRole('button', { name: /Hazards/ })).toHaveTextContent('In progress');
+  });
+
   it('starts saved hazards collapsed and expands and collapses one hazard', async () => {
     const user = userEvent.setup();
     await openHazardsStep(user);

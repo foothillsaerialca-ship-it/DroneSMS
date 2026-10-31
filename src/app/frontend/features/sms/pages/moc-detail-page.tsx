@@ -212,15 +212,14 @@ export function MocDetailPage() {
   }
   async function approve() {
     if (!moc) return;
-    const role = window.prompt(
-      "Role acting in for Operational Acceptance",
-      "Safety Manager",
-    );
-    if (!role) return;
+    if (!canApproveMoc(moc.management_of_change_actions, moc.impact_review, moc.safety_review_comments || "")) {
+      setError("Complete the impact review, add reviewer comments for any No or Unsure answer, and complete all required actions before approval.");
+      return;
+    }
     setBusy(true);
     const { error } = await supabase.rpc("approve_management_of_change", {
       target_moc_id: moc.id,
-      acceptance_role: role,
+      acceptance_role: "Safety Manager",
       review_comments: moc.safety_review_comments || null,
     });
     setBusy(false);
@@ -544,7 +543,7 @@ export function MocDetailPage() {
           {!locked ? (
             <button
               disabled={
-                busy || !canApproveMoc(moc.management_of_change_actions)
+                busy || !canApproveMoc(moc.management_of_change_actions, moc.impact_review, moc.safety_review_comments || "")
               }
               onClick={() => void approve()}
               className="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-400"
@@ -575,10 +574,9 @@ export function MocDetailPage() {
             </button>
           ) : null}
         </div>
-        {!canApproveMoc(moc.management_of_change_actions) ? (
+        {!canApproveMoc(moc.management_of_change_actions, moc.impact_review, moc.safety_review_comments || "") ? (
           <p className="mt-2 text-sm text-amber-700">
-            Complete every open action required before operational use to enable
-            approval.
+            Answer every impact question; add reviewer comments for any No or Unsure answer; and complete every action required before operational use.
           </p>
         ) : null}
       </Card>
