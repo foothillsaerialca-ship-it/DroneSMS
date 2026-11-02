@@ -29,6 +29,10 @@ Production deployment: `https://7067bf63.dronesms-app.pages.dev/`
 
 The August 2026 schema history added expanded JHA site-planning fields, proposal/JHA airspace workflow fields, organization Safety Manager designation, and independent Safety Manager/RPIC attestations. See [documentation.md](documentation.md) for the complete implementation history, file/function notes, verification results, and known errors.
 
+The authenticated application gates access on current, versioned Privacy Policy and Terms of Service acceptance. The documents are available in [privacy-policy.md](privacy-policy.md) and [terms-of-service.md](terms-of-service.md), and can be reopened through Settings. The versioned dependency inventory is in [licenses.md](licenses.md); production builds also publish full notices at `/vendor-licenses.txt`.
+
+Regenerate the dependency inventory after changing npm dependencies with `npm run licenses:generate`.
+
 ## Implemented application areas
 
 - Email/password registration, confirmation callback, login, password recovery, password change, and secure email-change requests
@@ -41,6 +45,7 @@ The August 2026 schema history added expanded JHA site-planning fields, proposal
 - Pre-flight checklist persistence and completion validation
 - Safety Event Part 107 reportability assessment with the 10-calendar-day deadline and manual FAA filing evidence
 - Aircraft registration, condition-for-safe-operation, Remote ID pathway, and manufacturer wind-limit readiness checks
+- Required account-level Privacy Policy and Terms of Service acceptance with version-resettable database flags
 
 Reports and several future account-management controls are currently placeholder interfaces. Billing, subscriptions, broader account administration, external smart-site intelligence, and offline synchronization are planned rather than implemented.
 

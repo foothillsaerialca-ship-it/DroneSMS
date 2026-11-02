@@ -43,6 +43,14 @@ Workflow changes include explicit JHA step progress labels and earlier per-step 
 
 The new migration has not been applied to any hosted database as part of this change. Before production rollout, take and verify a restorable backup, review the exact pending migration plan, confirm existing Part 107 date values, test the full migration history on a non-production project, and explicitly authorize production deployment. See [install.md](install.md).
 
+## Privacy, terms, and third-party licenses
+
+The authenticated shell is blocked until each account acknowledges the current [Privacy Policy](privacy-policy.md) and accepts the current [Terms of Service](terms-of-service.md). The consent migration stores per-account flags, timestamps, and accepted versions. A database trigger resets the corresponding flag and timestamp whenever the version in `legal_document_versions` changes, so deployers must update that version row when publishing revised terms or privacy text. Acceptance is recorded only by an authenticated, version-bound RPC; direct profile writes cannot forge it. Active sessions recheck when the app returns to focus, and users can review either document again from Organization Settings.
+
+These policies describe the current product at a high level. The Terms are an initial draft and are not a substitute for counsel review; confirm the service operator identity, jurisdiction, retention periods, vendor/subprocessor details, and applicable privacy obligations before commercial deployment. DroneSMS records user-entered safety information but does not determine legal compliance, authorize flights, or replace operator responsibility.
+
+The complete dependency/license inventory is [licenses.md](licenses.md), generated from the exact package lockfile including runtime and development dependencies. Regenerate it after dependency changes with `npm run licenses:generate`. The production build separately emits full license notices for bundled browser dependencies at `/vendor-licenses.txt`.
+
 ## Architecture
 
 ### Client

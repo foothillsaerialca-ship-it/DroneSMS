@@ -169,8 +169,39 @@ describe('Equipment inline editing', () => {
     const form = screen.getByRole('form', { name: 'Add equipment' });
     expect(within(form).getByRole('heading', { name: 'Add Equipment' })).toBeInTheDocument();
     expect(within(form).getByLabelText('Equipment name')).toHaveValue('');
+    expect(within(form).getByLabelText('Equipment name')).toBeRequired();
+    expect(within(form).getByLabelText('Type')).toBeRequired();
+    expect(within(form).getByLabelText('Status')).toBeRequired();
+    expect(within(form).getByText(/Fields marked \* are required/)).toBeInTheDocument();
     expect(within(form).getByRole('button', { name: 'Add Equipment' })).toBeInTheDocument();
     expect(form.compareDocumentPosition(recordCard('Alpha Drone')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('marks chemical product category as required when chemical fields are shown', async () => {
+    renderWithRouter('/equipment');
+    const user = userEvent.setup();
+    await screen.findByText('Alpha Drone');
+    await user.click(screen.getByRole('button', { name: '+ Add Equipment' }));
+
+    const form = screen.getByRole('form', { name: 'Add equipment' });
+    await user.selectOptions(within(form).getByLabelText('Type'), 'Chemical / Material');
+    expect(within(form).getByLabelText('Product Category')).toBeRequired();
+  });
+
+  it('shows the database save error in the add form', async () => {
+    supabaseMock.respond((call) => call.table === 'equipment' && call.operation === 'insert'
+      ? { data: null, error: { message: 'Equipment could not be saved.' } }
+      : undefined);
+    renderWithRouter('/equipment');
+    const user = userEvent.setup();
+    await screen.findByText('Alpha Drone');
+    await user.click(screen.getByRole('button', { name: '+ Add Equipment' }));
+
+    const form = screen.getByRole('form', { name: 'Add equipment' });
+    await user.type(within(form).getByLabelText('Equipment name'), 'New drone');
+    await user.click(within(form).getByRole('button', { name: 'Add Equipment' }));
+    expect(await within(form).findByText('Equipment could not be saved.')).toBeInTheDocument();
+    expect(within(form).queryByText('Unable to load equipment. Please try again.')).not.toBeInTheDocument();
   });
 });
 

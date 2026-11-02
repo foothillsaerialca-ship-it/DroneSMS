@@ -87,6 +87,7 @@ describe('Platform admin access', () => {
     fireEvent.focus(window);
 
     await waitFor(() => expect(view.currentLocation()).toBe('/dashboard'));
+    await screen.findByRole('navigation', { name: 'Desktop navigation' });
     expect(within(desktopNav()).queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
   });
 

@@ -10,6 +10,7 @@ import { validateImageUpload } from '../../../lib/file-validation';
 import { DEFAULT_SERVICE_COMMITMENT, invalidateOrganizationSettingsCache } from '../lib/organization-settings';
 import { serviceTypes } from '../../jobs/lib/workflow-types';
 import { useAuth } from '../../auth/components/use-auth';
+import { LegalDocumentViewer, type LegalDocumentKind } from '../../legal/legal-documents';
 import {
   DEFAULT_EMERGENCY_PROCEDURES_SUMMARY,
   DEFAULT_HAZARD_REPORTING_STATEMENT,
@@ -341,6 +342,7 @@ function CheckboxField({
  */
 export function SettingsPage() {
   const { session } = useAuth();
+  const [legalDocument, setLegalDocument] = useState<LegalDocumentKind | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [settings, setSettings] = useState<SettingsForm>(emptySettingsForm);
   const [draft, setDraft] = useState<SettingsForm>(emptySettingsForm);
@@ -956,6 +958,15 @@ export function SettingsPage() {
           </article>
         </>
       )}
+      <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <h2 className="text-lg font-semibold text-brand-900">Legal Documents</h2>
+        <p className="mt-1 text-sm text-slate-600">Review the current Privacy Policy and Terms of Service at any time.</p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button type="button" className="min-h-11 rounded-lg border border-brand-700 px-4 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50" onClick={() => setLegalDocument('privacy')}>View Privacy Policy</button>
+          <button type="button" className="min-h-11 rounded-lg border border-brand-700 px-4 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50" onClick={() => setLegalDocument('terms')}>View Terms of Service</button>
+        </div>
+      </article>
+      {legalDocument ? <LegalDocumentViewer initialDocument={legalDocument} onClose={() => setLegalDocument(null)} /> : null}
     </section>
   );
 }

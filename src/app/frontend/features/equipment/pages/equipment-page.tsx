@@ -139,8 +139,10 @@ const equipmentReferenceDocumentsBucket = 'equipment-reference-documents';
  * Computes get error message for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to load equipment. Please try again.';
+function getErrorMessage(error: unknown, fallbackMessage: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' && error.message) return error.message;
+  return fallbackMessage;
 }
 
 /**
@@ -367,7 +369,7 @@ export function EquipmentPage() {
         })),
       );
     } catch (loadError) {
-      setError(getErrorMessage(loadError));
+      setError(getErrorMessage(loadError, 'Unable to load equipment. Please try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -604,7 +606,7 @@ export function EquipmentPage() {
       setSaveMessage(formData.introducesNewCapability === 'Yes' && !editingEquipmentId ? 'This equipment change introduces a new operational capability. A Management of Change review has been started.' : successMessage);
       await loadEquipment();
     } catch (saveError) {
-      setError(getErrorMessage(saveError));
+      setError(getErrorMessage(saveError, 'Unable to save equipment. Please try again.'));
     } finally {
       setIsSaving(false);
     }
@@ -631,7 +633,7 @@ export function EquipmentPage() {
       setSaveMessage('Equipment record deleted.');
       await loadEquipment();
     } catch (deleteError) {
-      setError(getErrorMessage(deleteError));
+      setError(getErrorMessage(deleteError, 'Unable to delete equipment. Please try again.'));
     } finally {
       setDeletingEquipmentId(null);
     }
@@ -660,13 +662,14 @@ export function EquipmentPage() {
         ref={editingEquipmentId ? editFormRef : undefined}
         className={editingEquipmentId ? 'rounded-xl border-2 border-brand-700 bg-white p-4 shadow-md ring-4 ring-brand-100 sm:p-6' : 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6'}
         onSubmit={handleSubmit}
+        noValidate
         aria-label={editingEquipmentId ? `Edit ${formData.name || 'equipment'}` : 'Add equipment'}
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             {editingEquipmentId ? <span className="inline-flex rounded-full bg-brand-700 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">Editing</span> : null}
             <h2 className="mt-1 text-lg font-semibold text-brand-900">{editingEquipmentId ? 'Edit Equipment' : 'Add Equipment'}</h2>
-            <p className="mt-1 text-sm text-slate-600">Capture required equipment details first, then add maintenance, tracking, and chemical/material reference fields when applicable.</p>
+            <p className="mt-1 text-sm text-slate-600">Fields marked * are required. Add maintenance, tracking, and chemical/material reference fields when applicable.</p>
           </div>
           <button type="button" className="text-sm font-medium text-brand-700 hover:text-brand-900" onClick={resetForm} disabled={isSaving}>
             Cancel
@@ -675,8 +678,10 @@ export function EquipmentPage() {
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <label className="block text-sm font-medium text-slate-700">
-            Equipment name
+            Equipment name <span aria-hidden="true" className="text-red-700">*</span>
             <input
+              aria-label="Equipment name"
+              required
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
               type="text"
               value={formData.name}
@@ -686,11 +691,13 @@ export function EquipmentPage() {
             />
           </label>
 
-          {!editingEquipmentId?<><label className="block text-sm font-medium text-slate-700">Does this equipment introduce a new operational capability?<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base sm:py-2 sm:text-sm" value={formData.introducesNewCapability} onChange={event=>updateField('introducesNewCapability',event.target.value)}><option>No</option><option>Yes</option></select></label>{formData.introducesNewCapability==='Yes'?<label className="block text-sm font-medium text-slate-700">New capability name<input required className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base sm:py-2 sm:text-sm" value={formData.capabilityName} onChange={event=>updateField('capabilityName',event.target.value)} placeholder="Thermal Inspection"/></label>:null}</>:null}
+          {!editingEquipmentId?<><label className="block text-sm font-medium text-slate-700">Does this equipment introduce a new operational capability?<select className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base sm:py-2 sm:text-sm" value={formData.introducesNewCapability} onChange={event=>updateField('introducesNewCapability',event.target.value)}><option>No</option><option>Yes</option></select></label>{formData.introducesNewCapability==='Yes'?<label className="block text-sm font-medium text-slate-700">New capability name <span aria-hidden="true" className="text-red-700">*</span><input aria-label="New capability name" required className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base sm:py-2 sm:text-sm" value={formData.capabilityName} onChange={event=>updateField('capabilityName',event.target.value)} placeholder="Thermal Inspection"/></label>:null}</>:null}
 
           <label className="block text-sm font-medium text-slate-700">
-            Type
+            Type <span aria-hidden="true" className="text-red-700">*</span>
             <select
+              aria-label="Type"
+              required
               className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
               value={formData.equipmentType}
               onChange={(event) => updateField('equipmentType', event.target.value)}
@@ -799,8 +806,10 @@ export function EquipmentPage() {
           ) : null}
 
           <label className="block text-sm font-medium text-slate-700">
-            Status
+            Status <span aria-hidden="true" className="text-red-700">*</span>
             <select
+              aria-label="Status"
+              required
               className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
               value={formData.status}
               onChange={(event) => updateField('status', event.target.value)}
@@ -843,7 +852,7 @@ export function EquipmentPage() {
               <div className="mt-3 grid gap-4 sm:grid-cols-2">
                 <label className="block text-sm font-medium text-slate-700">Product Name<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.name} onChange={(event) => updateField('name', event.target.value)} disabled={isSaving} /></label>
                 <label className="block text-sm font-medium text-slate-700">Manufacturer<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.make} onChange={(event) => updateField('make', event.target.value)} disabled={isSaving} /></label>
-                <label className="block text-sm font-medium text-slate-700">Product Category<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.productCategory} onChange={(event) => updateField('productCategory', event.target.value)} placeholder="Cleaner, carrier water, pesticide, surfactant" disabled={isSaving} /></label>
+                <label className="block text-sm font-medium text-slate-700">Product Category <span aria-hidden="true" className="text-red-700">*</span><input aria-label="Product Category" required className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.productCategory} onChange={(event) => updateField('productCategory', event.target.value)} placeholder="Cleaner, carrier water, pesticide, surfactant" disabled={isSaving} /></label>
                 <label className="block text-sm font-medium text-slate-700">Typical Mix Ratio<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.typicalMixRatio} onChange={(event) => updateField('typicalMixRatio', event.target.value)} placeholder="Optional" disabled={isSaving} /></label>
                 <label className="block text-sm font-medium text-slate-700 sm:col-span-2">Purpose<input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.purpose} onChange={(event) => updateField('purpose', event.target.value)} placeholder="Exterior window cleaning detergent, rinse water, herbicide" disabled={isSaving} /></label>
                 <label className="block text-sm font-medium text-slate-700 sm:col-span-2">Application Notes<textarea className="mt-1 min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={formData.applicationNotes} onChange={(event) => updateField('applicationNotes', event.target.value)} placeholder="Optional" disabled={isSaving} /></label>

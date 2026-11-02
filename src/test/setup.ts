@@ -21,6 +21,15 @@ vi.mock('@backend/integrations/supabase/client', async () => {
 
 beforeEach(() => {
   supabaseMock.reset();
+  supabaseMock.respondRpc('get_legal_consent_status', () => ({
+    data: {
+      terms_version: '2026-10-30-v1',
+      privacy_version: '2026-10-30-v1',
+      terms_accepted: true,
+      privacy_accepted: true,
+    },
+    error: null,
+  }));
   resetAppSettings();
   window.sessionStorage.clear();
   vi.stubGlobal('fetch', (input: unknown) => {

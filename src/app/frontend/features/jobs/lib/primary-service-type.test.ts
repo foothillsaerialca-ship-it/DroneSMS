@@ -22,12 +22,7 @@ test('a user-selected service type remains the value written to a new job', () =
 });
 
 test('an explicit selection wins when organization settings resolve afterward', () => {
-  let serviceType = serviceTypes[0] as string;
-  let serviceTypeTouched = false;
-
-  serviceType = 'Roof Inspection';
-  serviceTypeTouched = true;
-  serviceType = applyPrimaryServiceTypeDefault(serviceType, 'Cleaning Operations', serviceTypeTouched);
+  const serviceType = applyPrimaryServiceTypeDefault('Roof Inspection', 'Cleaning Operations', true);
 
   assert.equal(serviceType, 'Roof Inspection');
   assert.match(newJobPage, /serviceTypeTouched\.current = true/);

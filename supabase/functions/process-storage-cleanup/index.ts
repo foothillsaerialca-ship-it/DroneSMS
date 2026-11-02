@@ -43,7 +43,7 @@ Deno.serve(async (request) => {
     auth: { persistSession: false },
   });
   let data: CleanupItem[] | null = null;
-  let error: { message: string } | null = null;
+  let error: { message: string } | null;
   try {
     const result = await client.rpc("claim_storage_cleanup_batch", {
       p_batch_limit: 100,
@@ -72,7 +72,7 @@ Deno.serve(async (request) => {
   let failed = 0;
   let statusUpdateFailures = 0;
   for (const item of data ?? []) {
-    let removeError: { message: string } | null = null;
+    let removeError: { message: string } | null;
     try {
       const result = await client.storage
         .from(item.bucket_id)

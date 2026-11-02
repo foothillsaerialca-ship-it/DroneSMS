@@ -9,6 +9,7 @@
     "audit:production": "npm audit --omit=dev --audit-level=high",
     "preview": "vite preview",
     "lint": "eslint .",
+    "licenses:generate": "node scripts/generate-license-inventory.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test --experimental-strip-types \"src/**/*.test.ts\"",
     "test:components": "vitest run",
@@ -23,7 +24,7 @@
     "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
@@ -34,7 +35,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.0.0",
     "autoprefixer": "^10.4.20",
-    "eslint": "^9.15.0",
+    "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^16.5.0",
     "jsdom": "^26.1.0",
@@ -48,6 +49,7 @@
   },
   "overrides": {
     "esbuild": "^0.25.0",
-    "lodash": "^4.17.30"
+    "lodash": "^4.17.30",
+    "minimatch": "^11.0.3"
   }
 }

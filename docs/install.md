@@ -43,6 +43,8 @@ For a linked hosted project, take a verified backup and review the pending migra
 
 The current Part 107 workflow is introduced by `20261031000000_part107_operational_compliance_gates.sql`. Test it against the complete migration history and reconcile existing `personnel.part_107_expiration_date` values before rollout: the application now treats that legacy column as a recurrent-training due date, not as a certificate expiration. Do not apply it to production without a verified backup and explicit migration-plan approval.
 
+The authenticated application also requires `20261031010000_legal_document_consent.sql`. Deploy that migration before deploying the matching application build; until the consent RPC and version table exist, the application deliberately blocks authenticated access rather than treating an unverifiable consent state as accepted. When publishing revised legal documents, add a migration that updates the corresponding `legal_document_versions` value; its database trigger clears the affected acceptance flags and timestamps so users must review the new version. Active sessions recheck after users return focus to the app.
+
 Deploy both Edge Functions after schema deployment:
 
 ```bash
