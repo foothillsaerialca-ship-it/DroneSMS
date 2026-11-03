@@ -39,6 +39,7 @@ Supabase returns query errors as plain objects, not `Error` instances. The stand
 | `features/jobs/pages/jobs-page.test.tsx` | Jobs/Proposals page identity, URL-driven tab selection, sidebar switching, back/forward, section refresh, and the loading, empty, and failure states |
 | `features/auth/components/protected-route.test.tsx` | Waiting for auth initialization, deep links, sign-in redirect, sign-out, onboarding redirects, relinking an owned organization, delayed profile lookups, and lookup failures |
 | `features/jobs/pages/job-hazard-analysis-page.test.tsx` | Expanding and collapsing hazards, multiple expanded hazards, Expand All and Collapse All, auto-expanding new hazards, search filtering, keeping unsaved field and caption values, and keeping state on the right hazard while filtered |
+| `features/equipment/pages/inline-editing.test.tsx` | Equipment and personnel form saves, personnel identity fields required by RLS, RLS no-row update feedback, and equipment follow-up failures after a successful insert |
 
 Each guarded behavior was checked by temporarily breaking it in a throwaway copy of the source and confirming that a test failed.
 

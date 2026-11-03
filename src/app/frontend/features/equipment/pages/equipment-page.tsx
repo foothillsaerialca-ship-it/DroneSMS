@@ -330,7 +330,7 @@ export function EquipmentPage() {
    * Performs load equipment for the surrounding workflow.
    * Fallback/error behavior: Service, storage, browser, or authentication failures are returned or thrown to the caller for user-visible handling.
    */
-  async function loadEquipment() {
+  async function loadEquipment(): Promise<string | null> {
     setIsLoading(true);
     setError(null);
 
@@ -368,8 +368,11 @@ export function EquipmentPage() {
           equipment_reference_documents: documentsByEquipmentId.get(item.id) ?? [],
         })),
       );
+      return null;
     } catch (loadError) {
-      setError(getErrorMessage(loadError, 'Unable to load equipment. Please try again.'));
+      const message = getErrorMessage(loadError, 'Unable to load equipment. Please try again.');
+      setError(message);
+      return message;
     } finally {
       setIsLoading(false);
     }
@@ -502,6 +505,7 @@ export function EquipmentPage() {
     if (!formData.status) return 'Status is required.';
     if (formData.equipmentType === chemicalMaterialType && !formData.productCategory.trim()) return 'Product category is required for Chemical / Material records.';
     if (formData.maximumWindSpeedMph.trim() && (!Number.isFinite(Number(formData.maximumWindSpeedMph)) || Number(formData.maximumWindSpeedMph) <= 0)) return 'Maximum wind speed must be a positive number.';
+    if (!editingEquipmentId && formData.introducesNewCapability === 'Yes' && !formData.capabilityName.trim()) return 'Name the new operational capability before starting its review.';
     return null;
   }
 
@@ -552,6 +556,7 @@ export function EquipmentPage() {
     setError(null);
     setSaveMessage(null);
     setIsSaving(true);
+    let equipmentSaved = false;
 
     try {
       const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -565,6 +570,7 @@ export function EquipmentPage() {
       if (editingEquipmentId) {
         const { data: updated, error: updateError } = await supabase.from('equipment').update(payload).eq('id', editingEquipmentId).select('id, organization_id').single();
         if (updateError) throw updateError;
+        equipmentSaved = true;
         if (pendingDocuments.length) await uploadPendingDocuments(updated.id, updated.organization_id);
       } else {
         const organizationId = await getCurrentOrganizationId(userData.user.id);
@@ -580,9 +586,9 @@ export function EquipmentPage() {
         }).select('id, organization_id').single();
 
         if (insertError) throw insertError;
+        equipmentSaved = true;
         if (pendingDocuments.length) await uploadPendingDocuments(inserted.id, inserted.organization_id);
         if (formData.introducesNewCapability === 'Yes') {
-          if (!formData.capabilityName.trim()) throw new Error('Name the new operational capability before starting its review.');
           const { data: moc, error: mocError } = await supabase.rpc('start_management_of_change', {
             change_title: conciseEquipmentTitle(formData.name, formData.make, formData.model),
             change_description: `New ${formData.equipmentType} may introduce ${formData.capabilityName.trim()}.`,
@@ -606,7 +612,20 @@ export function EquipmentPage() {
       setSaveMessage(formData.introducesNewCapability === 'Yes' && !editingEquipmentId ? 'This equipment change introduces a new operational capability. A Management of Change review has been started.' : successMessage);
       await loadEquipment();
     } catch (saveError) {
-      setError(getErrorMessage(saveError, 'Unable to save equipment. Please try again.'));
+      const message = getErrorMessage(saveError, 'Unable to save equipment. Please try again.');
+      if (equipmentSaved) {
+        setFormData(initialFormState);
+        setEditingEquipmentId(null);
+        setIsFormOpen(false);
+        setPendingDocuments([]);
+        setUpdatedEquipmentId(editingEquipmentId);
+        setSaveMessage(editingEquipmentId ? 'Equipment record updated.' : 'Equipment record added.');
+        const loadError = await loadEquipment();
+        const saveLabel = editingEquipmentId ? 'updated' : 'added';
+        setError(`Equipment record ${saveLabel}, but follow-up work failed: ${message}${loadError ? ` Equipment could not be refreshed: ${loadError}` : ''}`);
+      } else {
+        setError(message);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -876,7 +895,7 @@ export function EquipmentPage() {
           </label>
         </div>
 
-        {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+        {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p> : null}
         {saveMessage ? <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{saveMessage}</p> : null}
 
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -948,7 +967,7 @@ export function EquipmentPage() {
               + Add Equipment
             </button>
           </div>
-          {error && !editingEquipmentId ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+          {error && !editingEquipmentId ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p> : null}
           {saveMessage && !updatedEquipmentId ? <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700"><p>{saveMessage}</p>{createdMocId?<div className="mt-2 flex gap-3"><Link className="font-semibold underline" to={`/sms/moc/${createdMocId}`}>Review now</Link><button type="button" className="font-semibold underline" onClick={()=>setCreatedMocId(null)}>Review later</button></div>:null}</div> : null}
         </div>
       )}

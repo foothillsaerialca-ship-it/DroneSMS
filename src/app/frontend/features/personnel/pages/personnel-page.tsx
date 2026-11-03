@@ -91,8 +91,10 @@ type TrainingStatus = {
  * Computes get error message for the surrounding workflow.
  * Fallback/error behavior: Missing optional input uses the defaults defined in the function; unexpected input or runtime failures propagate unless explicitly normalized.
  */
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unable to load personnel. Please try again.';
+function getErrorMessage(error: unknown, fallbackMessage = 'Unable to load personnel. Please try again.') {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string' && error.message) return error.message;
+  return fallbackMessage;
 }
 
 /**
@@ -420,7 +422,7 @@ export function PersonnelPage() {
       const successMessage = editingPersonId ? 'Personnel record updated.' : 'Personnel record added.';
 
       if (editingPersonId) {
-        const { error: updateError } = await supabase.from('personnel').update(payload).eq('id', editingPersonId);
+        const { error: updateError } = await supabase.from('personnel').update(payload).eq('id', editingPersonId).select('id').single();
         if (updateError) throw updateError;
       } else {
         const organizationId = await getCurrentOrganizationId(userData.user.id);
@@ -432,7 +434,8 @@ export function PersonnelPage() {
         const { error: insertError } = await supabase.from('personnel').insert({
           ...payload,
           organization_id: organizationId,
-          user_id: userData.user.id
+          user_id: null,
+          created_by_user_id: userData.user.id
         });
 
         if (insertError) throw insertError;
@@ -443,7 +446,7 @@ export function PersonnelPage() {
       setSaveMessage(successMessage);
       await loadPersonnel();
     } catch (saveError) {
-      setError(getErrorMessage(saveError));
+      setError(getErrorMessage(saveError, 'Unable to save personnel. Please try again.'));
     } finally {
       setIsSaving(false);
     }

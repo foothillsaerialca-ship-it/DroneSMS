@@ -203,6 +203,46 @@ describe('Equipment inline editing', () => {
     expect(await within(form).findByText('Equipment could not be saved.')).toBeInTheDocument();
     expect(within(form).queryByText('Unable to load equipment. Please try again.')).not.toBeInTheDocument();
   });
+
+  it('requires a capability name before saving equipment', async () => {
+    renderWithRouter('/equipment');
+    const user = userEvent.setup();
+    await screen.findByText('Alpha Drone');
+    await user.click(screen.getByRole('button', { name: '+ Add Equipment' }));
+
+    const form = screen.getByRole('form', { name: 'Add equipment' });
+    await user.type(within(form).getByLabelText('Equipment name'), 'New drone');
+    await user.selectOptions(within(form).getByLabelText(/introduce a new operational capability/), 'Yes');
+    await user.click(within(form).getByRole('button', { name: 'Add Equipment' }));
+
+    expect(within(form).getByRole('alert')).toHaveTextContent('Name the new operational capability before starting its review.');
+    expect(supabaseMock.calls.filter((call) => call.table === 'equipment' && call.operation === 'insert')).toHaveLength(0);
+  });
+
+  it('reports follow-up failure without making a saved equipment row appear unsaved', async () => {
+    supabaseMock.respondRpc('start_management_of_change', () => ({ data: null, error: { message: 'Change review could not be started.' } }));
+    renderWithRouter('/equipment');
+    const user = userEvent.setup();
+    await screen.findByText('Alpha Drone');
+    await user.click(screen.getByRole('button', { name: '+ Add Equipment' }));
+
+    const form = screen.getByRole('form', { name: 'Add equipment' });
+    await user.type(within(form).getByLabelText('Equipment name'), 'New drone');
+    await user.selectOptions(within(form).getByLabelText(/introduce a new operational capability/), 'Yes');
+    await user.type(within(form).getByLabelText('New capability name'), 'Thermal inspection');
+    await user.click(within(form).getByRole('button', { name: 'Add Equipment' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Equipment record added, but follow-up work failed: Change review could not be started.');
+    expect(screen.queryByRole('form', { name: 'Add equipment' })).not.toBeInTheDocument();
+    expect(screen.getByText('Equipment record added.')).toBeInTheDocument();
+    const equipmentInserts = supabaseMock.calls.filter((call) => call.table === 'equipment' && call.operation === 'insert');
+    expect(equipmentInserts).toHaveLength(1);
+    expect(equipmentInserts[0].payload).toMatchObject({
+      name: 'New drone',
+      organization_id: 'org-1',
+      user_id: 'user-1'
+    });
+  });
 });
 
 describe('Personnel inline editing', () => {
@@ -243,6 +283,43 @@ describe('Personnel inline editing', () => {
     expect(updates('personnel')[0].payload).toMatchObject({ full_name: 'Avery Lane', phone: '555-0100' });
     expect(await within(recordCard('Avery Lane')).findByText('Personnel record updated.')).toBeInTheDocument();
     expect(screen.queryByRole('form')).not.toBeInTheDocument();
+  });
+
+  it('creates personnel using the verified-identity schema expected by RLS', async () => {
+    renderWithRouter('/personnel');
+    const user = userEvent.setup();
+    await screen.findByText('Avery Lane');
+    await user.click(screen.getByRole('button', { name: '+ Add Personnel' }));
+
+    const form = screen.getByRole('form', { name: 'Add personnel' });
+    await user.type(within(form).getByLabelText('Full name'), 'Casey Morgan');
+    await user.click(within(form).getByRole('button', { name: 'Add Personnel' }));
+
+    await waitFor(() => {
+      expect(supabaseMock.calls.filter((call) => call.table === 'personnel' && call.operation === 'insert')).toHaveLength(1);
+    });
+    expect(supabaseMock.calls.find((call) => call.table === 'personnel' && call.operation === 'insert')?.payload).toMatchObject({
+      full_name: 'Casey Morgan',
+      organization_id: 'org-1',
+      user_id: null,
+      created_by_user_id: 'user-1'
+    });
+  });
+
+  it('keeps the edit form open and reports when RLS updates no personnel row', async () => {
+    supabaseMock.respond((call) => call.table === 'personnel' && call.operation === 'update'
+      ? { data: null, error: { message: 'No personnel row was updated.' } }
+      : undefined);
+    renderWithRouter('/personnel');
+    const user = userEvent.setup();
+    await screen.findByText('Avery Lane');
+    await user.click(within(recordCard('Avery Lane')).getByRole('button', { name: 'Edit' }));
+
+    const form = screen.getByRole('form', { name: 'Edit Avery Lane' });
+    await user.click(within(form).getByRole('button', { name: 'Save Changes' }));
+
+    expect(await within(form).findByRole('alert')).toHaveTextContent('No personnel row was updated.');
+    expect(screen.getByRole('form', { name: 'Edit Avery Lane' })).toBeInTheDocument();
   });
 
   it('cancel discards unsaved changes and only one record is editable at a time', async () => {
