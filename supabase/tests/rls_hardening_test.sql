@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(19);
 
 insert into auth.users(id,email,aud,role) values
   ('10000000-0000-0000-0000-000000000001','owner-a@example.test','authenticated','authenticated'),
@@ -17,6 +17,10 @@ insert into public.profiles(id,organization_id,company_name) values
   ('10000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000001','Tenant A');
 insert into public.jobs(id,organization_id,user_id,name,service_type,location,planned_date,status) values
   ('30000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000002','Tenant B private job','Other','Private site',current_date,'Planned');
+insert into public.personnel(id,organization_id,user_id,created_by_user_id,full_name) values
+  ('40000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',null,'10000000-0000-0000-0000-000000000001','Tenant A Crew');
+insert into public.personnel(id,organization_id,user_id,created_by_user_id,full_name) values
+  ('40000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000002',null,'10000000-0000-0000-0000-000000000002','Tenant B Crew');
 
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated","email":"owner-a@example.test"}',true);
@@ -35,6 +39,8 @@ select throws_ok(
   $$select public.list_organization_members()$$,
   'P0001','Owner or administrator access is required.','read-only members cannot enumerate auth emails'
 );
+select is((select count(*)::integer from public.personnel where id='40000000-0000-0000-0000-000000000001'),1,'organization members can read their personnel roster');
+select is((select count(*)::integer from public.personnel where id='40000000-0000-0000-0000-000000000002'),0,'organization members cannot read another tenant personnel');
 reset role;
 
 select ok(not has_table_privilege('authenticated','public.job_operation_closeouts','INSERT'),'authenticated cannot bypass closeout RPC with insert');

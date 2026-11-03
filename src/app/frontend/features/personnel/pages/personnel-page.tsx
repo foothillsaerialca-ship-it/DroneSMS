@@ -530,13 +530,14 @@ export function PersonnelPage() {
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <label className="block text-sm font-medium text-slate-700">
-            Full name
+            Full name <span className="text-xs font-normal text-red-700">(required)</span>
             <input
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
               type="text"
               value={formData.fullName}
               onChange={(event) => updateField('fullName', event.target.value)}
               placeholder="Alex Morgan"
+              required
               disabled={isSaving}
             />
           </label>

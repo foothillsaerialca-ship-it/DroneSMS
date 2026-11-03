@@ -216,23 +216,25 @@ export function NewJobPage() {
       <form className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" onSubmit={handleSubmit}>
         <div className="space-y-4">
           <label className="block text-sm font-medium text-slate-700">
-            Job name
+            Job name <span className="text-xs font-normal text-red-700">(required)</span>
             <input
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
               type="text"
               value={formData.jobName}
               onChange={(event) => updateField('jobName', event.target.value)}
               placeholder="Downtown roof inspection"
+              required
               disabled={isSaving}
             />
           </label>
 
           <label className="block text-sm font-medium text-slate-700">
-            Service type
+            Service type <span className="text-xs font-normal text-red-700">(required)</span>
             <select
               className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
               value={formData.serviceType}
               onChange={(event) => updateServiceType(event.target.value)}
+              required
               disabled={isSaving}
             >
               {serviceTypes.map((serviceType) => (
@@ -244,24 +246,26 @@ export function NewJobPage() {
           </label>
 
           <label className="block text-sm font-medium text-slate-700">
-            Job location
+            Job location <span className="text-xs font-normal text-red-700">(required)</span>
             <input
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
               type="text"
               value={formData.jobLocation}
               onChange={(event) => updateField('jobLocation', event.target.value)}
               placeholder="123 Main St, Auburn, CA"
+              required
               disabled={isSaving}
             />
           </label>
 
           <label className="block text-sm font-medium text-slate-700">
-            Planned date
+            Planned date <span className="text-xs font-normal text-red-700">(required)</span>
             <input
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-3 text-base outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm"
               type="date"
               value={formData.plannedDate}
               onChange={(event) => updateField('plannedDate', event.target.value)}
+              required
               disabled={isSaving}
             />
           </label>

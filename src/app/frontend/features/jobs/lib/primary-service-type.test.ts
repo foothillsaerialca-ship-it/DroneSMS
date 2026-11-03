@@ -39,6 +39,18 @@ test('organizations without a preference retain the existing first-option fallba
   assert.equal(resolveInitialJobServiceType('Unknown legacy value'), serviceTypes[0]);
 });
 
+test('new-job fields enforced by validation are visibly and natively marked required', () => {
+  for (const label of ['Job name', 'Service type', 'Job location', 'Planned date']) {
+    const fieldStart = newJobPage.indexOf(label);
+    const fieldEnd = newJobPage.indexOf('</label>', fieldStart);
+    const field = newJobPage.slice(fieldStart, fieldEnd);
+
+    assert.ok(field, `${label} field should be present`);
+    assert.match(field, /\(required\)/);
+    assert.match(field, /\n\s+required\s*\n/);
+  }
+});
+
 test('changing the preference only changes future form initialization', () => {
   const existingJob = { service_type: 'Roof Inspection' };
   assert.equal(resolveInitialJobServiceType('Cleaning Operations'), 'Cleaning Operations');
