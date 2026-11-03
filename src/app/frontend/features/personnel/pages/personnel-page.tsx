@@ -429,13 +429,28 @@ export function PersonnelPage() {
           throw new Error('Finish company onboarding before adding personnel.');
         }
 
-        const { error: insertError } = await supabase.from('personnel').insert({
-          ...payload,
-          organization_id: organizationId,
-          user_id: userData.user.id
-        });
+        // The insert policy only accepts unlinked records attributed to the
+        // creator; account linking goes through the verified claim RPC.
+        const { data: inserted, error: insertError } = await supabase
+          .from('personnel')
+          .insert({
+            ...payload,
+            organization_id: organizationId,
+            user_id: null,
+            created_by_user_id: userData.user.id
+          })
+          .select('id')
+          .single();
 
         if (insertError) throw insertError;
+
+        const accountEmail = userData.user.email?.trim().toLowerCase();
+        if (inserted && accountEmail && payload.email?.toLowerCase() === accountEmail) {
+          const { error: claimError } = await supabase.rpc('claim_personnel_identity', {
+            target_personnel_id: inserted.id
+          });
+          if (claimError) throw claimError;
+        }
       }
 
       resetForm();
